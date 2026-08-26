@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: mai-comic-generator
+metadata:
+  template: MaiComicGenerator@0.1.0
+hooks:
+  preprovision:
+    shell: pwsh
+    run: ./scripts/set-caphost-idempotency-flag.ps1
+    continueOnError: false
+    interactive: false
+services:
+  api:
+    project: ./src/MaiImageGenerator.Api
+    language: dotnet
+    host: containerapp
+    docker:
+      path: Dockerfile
+      context: ..
+      remoteBuild: true
+  generationjob:
+    project: ./src/MaiImageGenerator.Jobs.BoardGeneration
+    host: containerapp
+    language: dotnet
+    docker:
+      path: Dockerfile
+      context: ..
+      remoteBuild: true
+  web:
+    host: staticwebapp
+    project: ./src/MaiImageGenerator.Web
+    dist: ./bin/output/build/wwwroot
+    hooks:
+      prepackage:
+        shell: pwsh
+        run: ../../scripts/prepare-frontend.ps1; dotnet publish -c Release -o bin/output/build
+        continueOnError: false
+        interactive: false
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+

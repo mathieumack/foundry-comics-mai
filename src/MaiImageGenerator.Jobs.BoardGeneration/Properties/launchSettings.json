@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "MaiImageGenerator.Jobs.BoardGeneration": {
+      "commandName": "Project"
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker"
+    }
+  }
+}

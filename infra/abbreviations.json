@@ -1,0 +1,26 @@
+{
+  "aiSearch": "ais-",
+  "cognitiveServices": "cog-",
+  "cognitiveServicesProjects": "cogp-",
+  "resourceGroup": "rg-",
+  "logAnalyticsWorkspace": "log-",
+  "applicationInsights": "appi-",
+  "virtualNetwork": "vnet-",
+  "managedIdentity": "id-",
+  "containerRegistry": "cr",
+  "keyVault": "kv",
+  "containerAppEnvironment": "cae-",
+  "containerApp": "ca-",
+  "staticWebApp": "swa-",
+  "storageAccountName": "st",
+  "appServicePlan": "plan-",
+  "appService": "app-",
+  "cosmosDbAccount": "cosmos-",
+  "signalR": "sigr-",
+  "apiManagementService": "apim-",
+  "locationAbbreviations": {
+    "francecentral": "frc",
+    "swedencentral": "swc",
+    "westeurope": "weu"
+  }
+}

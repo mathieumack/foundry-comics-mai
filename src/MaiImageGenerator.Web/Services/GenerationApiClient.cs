@@ -1,0 +1,66 @@
+using System.Net.Http.Json;
+using MaiImageGenerator.Web.Models;
+using Microsoft.AspNetCore.Components.Forms;
+
+namespace MaiImageGenerator.Web.Services;
+
+public sealed class GenerationApiClient(HttpClient httpClient)
+{
+    public async Task<ReferenceUploadResponse> UploadReferenceAsync(
+        IBrowserFile file,
+        CancellationToken cancellationToken)
+    {
+        using var form = new MultipartFormDataContent();
+        await using var source = file.OpenReadStream(10 * 1024 * 1024, cancellationToken);
+        using var content = new StreamContent(source);
+        content.Headers.ContentType = new(file.ContentType);
+        form.Add(content, "file", file.Name);
+        using var response = await httpClient.PostAsync("api/references", form, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ReferenceUploadResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no reference metadata.");
+    }
+
+    public async Task<GenerationResponse> CreateAsync(
+        CreateGenerationRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.PostAsJsonAsync("api/generations", request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<GenerationResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no generation result.");
+    }
+
+    public async Task<GenerationResponse> GetAsync(Guid generationId, CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.GetAsync($"api/generations/{generationId:D}", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<GenerationResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no generation status.");
+    }
+
+    public async Task<string> DownloadDataUrlAsync(Uri relativeUri, CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.GetAsync(relativeUri, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        var contentType = response.Content.Headers.ContentType?.MediaType ?? "image/png";
+        return $"data:{contentType};base64,{Convert.ToBase64String(bytes)}";
+    }
+
+    private static async Task EnsureSuccessAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        var details = await response.Content.ReadAsStringAsync(cancellationToken);
+        throw new GenerationApiException(
+            $"The API returned {(int)response.StatusCode} ({response.ReasonPhrase}). {details}");
+    }
+}
+
+public sealed class GenerationApiException(string message) : Exception(message);
