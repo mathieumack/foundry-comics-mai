@@ -6,7 +6,6 @@ using MaiImageGenerator.Jobs.BoardGeneration.Services;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Messages;
 using MDev.Dotnet.AspNetCore.Apis.Extensions;
-using MDev.Dotnet.AspNetCore.OpenTelemetry.Apis.Extensions;
 using MDev.Dotnet.Azure.CosmosDb.Startup;
 using MDev.Dotnet.Azure.StorageAccount.Settings;
 using MDev.Dotnet.Azure.StorageAccount.Startup;
@@ -89,8 +88,10 @@ var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Bo
 var queueClientOptions = new QueueClientOptions();
 if (storageSettings.QueueMessagesEncodeBase64)
     queueClientOptions.MessageEncoding = QueueMessageEncoding.Base64;
+    
+var jobsQueueName = builder.Configuration["Storage:JobsQueueName"] ?? "generation-jobs";
 var jobsQueue = new QueueClient(
-    new Uri($"{storageSettings.QueuesEndpoint.TrimEnd('/')}/generation-jobs"),
+    new Uri($"{storageSettings.QueuesEndpoint.TrimEnd('/')}/${jobsQueueName}"),
     credential,
     queueClientOptions);
 
@@ -122,7 +123,7 @@ catch (Exception exception)
     if (queueMessage.DequeueCount >= maximumDequeueCount)
     {
         await jobsQueue.DeleteMessageAsync(queueMessage.MessageId, queueMessage.PopReceipt);
-        logger.LogError("Moved queue message {MessageId} to the poison queue.", queueMessage.MessageId);
+        logger.LogError("Deleted queue message {MessageId} after {Attempt} attempts.", queueMessage.MessageId, queueMessage.DequeueCount);
     }
 
     await host.StopAsync();

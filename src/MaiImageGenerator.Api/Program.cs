@@ -97,12 +97,6 @@ builder.Services.AddHttpContextAccessor()
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
-
 app.UseCors("AllowFrontend");
 
 // Only use HTTPS redirection in development
@@ -115,7 +109,6 @@ if (app.Environment.IsDevelopment())
 //app.UseCloudEvents();
 
 app.MapControllers();
-app.MapOpenApi();
 
 // Subscribe to Dapr pub/sub (if needed in future)
 //app.MapSubscribeHandler();
