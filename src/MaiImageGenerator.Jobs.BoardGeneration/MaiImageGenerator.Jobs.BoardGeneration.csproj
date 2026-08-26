@@ -1,0 +1,51 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+	<RootNamespace>MaiImageGenerator.Jobs.BoardGeneration</RootNamespace>
+	<AssemblyName>MaiImageGenerator.Jobs.BoardGeneration</AssemblyName>
+    <UserSecretsId>ab157d7e-71f1-4c13-b2df-b2c045d0a24e</UserSecretsId>
+	<EnableSdkContainerSupport>true</EnableSdkContainerSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.24.1-preview.1" />
+	<!-- Azure SDKs -->
+	<PackageReference Include="Azure.Identity" Version="1.21.0" />
+	<PackageReference Include="Azure.Storage.Blobs" Version="12.29.2" />
+	<PackageReference Include="Azure.Storage.Queues" Version="12.27.1" />
+	<PackageReference Include="MDev.Dotnet.Azure.ContainerApps" Version="1.18.0" />
+	<PackageReference Include="MDev.Dotnet.Azure.CosmosDb" Version="1.18.0" />
+	<PackageReference Include="MDev.Dotnet.Azure.StorageAccount" Version="1.18.0" />
+	<!-- Hosting / DI -->
+	<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+	<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.11" />
+	<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.11" />
+	<PackageReference Include="Microsoft.Extensions.Http" Version="10.0.11" />
+	<PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.19.0" />
+	<PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
+	<PackageReference Include="OpenAI" Version="2.13.0" />
+
+	<!-- Image Processing -->
+	<PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+	<PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.7" />
+	<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+	<PackageReference Include="ServiceCollectionHelpers.AssemblyFinder" Version="1.8.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MaiImageGenerator.Shared\MaiImageGenerator.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

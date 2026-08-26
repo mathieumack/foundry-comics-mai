@@ -1,0 +1,87 @@
+:host {
+    display: block;
+    min-height: 100vh;
+}
+
+.app-header-content {
+    width: min(1580px, 100%);
+    margin: 0 auto;
+    padding-inline: clamp(18px, 3vw, 48px);
+}
+
+.app-header-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 78px;
+}
+
+.brand-block,
+.connection-state {
+    display: flex;
+    align-items: center;
+}
+
+.brand-block { gap: 14px; }
+
+.brand-mark {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    color: #17201a;
+    background: #d9f36b;
+    border: 2px solid #17201a;
+    font: 700 1.5rem Georgia, serif;
+}
+
+.brand-block strong {
+    display: block;
+    font: 700 1.65rem Georgia, serif;
+}
+
+.eyebrow {
+    display: block;
+    color: #5c685f;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08rem;
+}
+
+.connection-state {
+    gap: 9px;
+    color: #445149;
+    font-size: 0.78rem;
+}
+
+.status-dot {
+    width: 9px;
+    height: 9px;
+    background: #ff735c;
+    border: 1px solid #17201a;
+}
+
+@media (prefers-color-scheme: dark) {
+    .brand-mark {
+        color: #17201a;
+        border-color: #edf2ea;
+    }
+
+    .eyebrow,
+    .connection-state {
+        color: #b8c2ba;
+    }
+
+    .status-dot {
+        border-color: #edf2ea;
+    }
+}
+
+@media (max-width: 860px) {
+    .app-header-content { min-height: 70px; }
+    .connection-state { display: none; }
+}
+
+@media (max-width: 480px) {
+    .brand-mark { width: 42px; height: 42px; }
+}

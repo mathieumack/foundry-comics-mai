@@ -1,0 +1,543 @@
+﻿@page "/"
+@attribute [Authorize]
+@implements IDisposable
+@inject GenerationApiClient GenerationClient
+@inject NotificationService NotificationService
+
+<PageTitle>MAI Studio</PageTitle>
+
+<div class="studio-shell">
+	<main class="workspace">
+		<section class="control-rail" aria-label="Generation settings">
+			<div class="section-heading">
+				<span>01</span>
+				<div>
+					<h1>Storyboard</h1>
+					<p>Compose panels in their reading order.</p>
+				</div>
+			</div>
+
+			<label for="board-title">Board title</label>
+			<RadzenTextBox @bind-Value="boardTitle"
+							Name="board-title"
+							Placeholder="Title displayed above the panels"
+							Disabled="EditingLocked"
+							Style="width: 100%" />
+
+			<label for="context">Art direction <span>optional</span></label>
+			<RadzenTextArea @bind-Value="context"
+							Name="context"
+							Placeholder="Shared style, characters, period, palette, and visual continuity..."
+							Rows="4"
+							Disabled="EditingLocked"
+							Style="width: 100%" />
+
+			<div class="panel-list-heading">
+				<div>
+					<strong>Panels</strong>
+					<small>@panels.Count / 8</small>
+				</div>
+				<RadzenButton Icon="add"
+							  Text="Add panel"
+							  ButtonStyle="ButtonStyle.Light"
+							  Variant="Variant.Flat"
+							  Size="ButtonSize.Small"
+							  Disabled="@(EditingLocked || panels.Count >= 8)"
+							  Click="@AddPanel" />
+			</div>
+
+			<div class="panel-editor-list">
+				@for (var index = 0; index < panels.Count; index++)
+				{
+					var panel = panels[index];
+					var panelIndex = index;
+					<div class="panel-editor" @key="panel.Id">
+						<div class="panel-editor-toolbar">
+							<span>Panel @(panelIndex + 1)</span>
+							<div class="panel-actions">
+								<RadzenButton Icon="arrow_upward"
+												  title="Move panel up"
+												  aria-label="@($"Move panel {panelIndex + 1} up")"
+												  ButtonStyle="ButtonStyle.Light"
+												  Variant="Variant.Flat"
+												  Size="ButtonSize.Small"
+												  Disabled="@(EditingLocked || panelIndex == 0)"
+												  Click="@(() => MovePanel(panelIndex, -1))" />
+								<RadzenButton Icon="arrow_downward"
+												  title="Move panel down"
+												  aria-label="@($"Move panel {panelIndex + 1} down")"
+												  ButtonStyle="ButtonStyle.Light"
+												  Variant="Variant.Flat"
+												  Size="ButtonSize.Small"
+												  Disabled="@(EditingLocked || panelIndex == panels.Count - 1)"
+												  Click="@(() => MovePanel(panelIndex, 1))" />
+								<RadzenButton Icon="delete_outline"
+												  title="Delete panel"
+												  aria-label="@($"Delete panel {panelIndex + 1}")"
+												  ButtonStyle="ButtonStyle.Danger"
+												  Variant="Variant.Flat"
+												  Size="ButtonSize.Small"
+												  Disabled="@(EditingLocked || panels.Count == 1)"
+												  Click="@(() => RemovePanel(panel))" />
+							</div>
+						</div>
+						<RadzenTextArea @bind-Value="panel.Prompt"
+										Name="@($"panel-{panel.Id}")"
+										Placeholder="Describe the framing, action, setting, and dialogue for this panel..."
+										Rows="4"
+										Disabled="EditingLocked"
+										Style="width: 100%" />
+						@if (characters.Count > 0)
+						{
+							<RadzenDropDown @bind-Value="panel.CharacterIds"
+											TValue="IEnumerable<string>"
+											Data="characters"
+											TextProperty="Name"
+											ValueProperty="Id"
+											Multiple="true"
+											Placeholder="Characters in this panel"
+											Disabled="EditingLocked"
+											Style="width: 100%" />
+						}
+					</div>
+				}
+			</div>
+
+			<div class="inline-setting">
+				<div>
+					<strong>Rewrite with MAI-Thinking</strong>
+					<small>Structures the prompt before generation.</small>
+				</div>
+				<RadzenSwitch @bind-Value="rewritePrompt" Disabled="EditingLocked" />
+			</div>
+
+			<details class="connection-panel">
+				<summary>
+					<span>Character references</span>
+					<small>Optional identity images stored securely</small>
+				</summary>
+				<div class="connection-fields">
+					@foreach (var character in characters)
+					{
+						<div class="panel-editor" @key="character.Id">
+							<div class="panel-editor-toolbar">
+								<strong>Character</strong>
+								<RadzenButton Icon="delete_outline"
+												  title="Remove character"
+												  ButtonStyle="ButtonStyle.Danger"
+												  Variant="Variant.Flat"
+												  Size="ButtonSize.Small"
+												  Disabled="EditingLocked"
+												  Click="@(() => RemoveCharacter(character))" />
+							</div>
+							<RadzenTextBox @bind-Value="character.Name" Placeholder="Character name" Disabled="EditingLocked" Style="width: 100%" />
+							<InputFile OnChange="@(args => UploadReferencesAsync(character, args))"
+									   accept="image/png,image/jpeg"
+									   multiple />
+							@if (character.References.Count > 0)
+							{
+								<small>@string.Join(", ", character.References.Select(reference => reference.FileName))</small>
+							}
+						</div>
+					}
+					<RadzenButton Icon="person_add"
+								  Text="Add character"
+								  ButtonStyle="ButtonStyle.Light"
+								  Variant="Variant.Flat"
+								  Disabled="EditingLocked"
+								  Click="AddCharacter" />
+					<p class="security-note">References are uploaded through the authenticated API and remain in private storage.</p>
+				</div>
+			</details>
+
+			<div class="generation-actions">
+				<RadzenButton Text="Generate board"
+							  Icon="auto_awesome"
+							  ButtonStyle="ButtonStyle.Primary"
+							  Size="ButtonSize.Large"
+							  IsBusy="isSubmitting"
+							  Disabled="EditingLocked"
+							  Click="@GenerateBoardAsync"
+							  Style="width: 100%" />
+				@if (activeGenerationId is not null && boardDataUrl is null)
+				{
+					<RadzenButton Text="Refresh board"
+								  Icon="refresh"
+								  ButtonStyle="ButtonStyle.Light"
+								  Variant="Variant.Outlined"
+								  IsBusy="isRefreshing"
+								  Disabled="isRefreshing"
+								  Click="@RefreshGenerationAsync"
+								  Style="width: 100%" />
+				}
+			</div>
+
+			@if (isGenerating)
+			{
+				<div class="generation-progress" role="status">
+					<RadzenProgressBarCircular Value="@GenerationProgress" ShowValue="true" />
+					<div>
+						<strong>Generating board</strong>
+						<span>@progressMessage</span>
+					</div>
+				</div>
+			}
+		</section>
+
+		<section class="preview-stage" aria-label="Generation result">
+			<div class="preview-toolbar">
+				<div>
+					<span class="eyebrow">02 / layout</span>
+					<h2>Comic board</h2>
+				</div>
+				@if (boardDataUrl is not null)
+				{
+					<a class="download-link" href="@boardDataUrl" download="mai-comic-board.png">
+						<RadzenIcon Icon="download" />
+						Download board
+					</a>
+				}
+			</div>
+
+			@if (boardDataUrl is not null)
+			{
+				<div class="board-frame">
+					<img src="@boardDataUrl" alt="Generated comic board" />
+				</div>
+			}
+			else
+			{
+				<div class="board-draft @(panels.All(panel => panel.ImageDataUrl is null) ? "is-empty" : null)">
+					<div class="board-title-preview">@(string.IsNullOrWhiteSpace(boardTitle) ? "Board title" : boardTitle)</div>
+					<div class="board-grid">
+						@for (var index = 0; index < panels.Count; index++)
+						{
+							var panel = panels[index];
+							<div class="panel-preview @PanelStatusClass(panel.Status)" @key="panel.Id">
+								@if (panel.ImageDataUrl is not null)
+								{
+									<img src="@panel.ImageDataUrl" alt="Generated panel @(index + 1)" />
+								}
+								else
+								{
+									<span class="panel-number">@(index + 1)</span>
+									<RadzenIcon Icon="@(panel.Status == PanelUiStatus.Generating ? "hourglass_top" : "image")" />
+									<small>@PanelStatusLabel(panel.Status)</small>
+								}
+							</div>
+						}
+					</div>
+					@if (panels.All(panel => panel.ImageDataUrl is null) && !isGenerating)
+					{
+						<div class="board-empty-copy">
+							<strong>Your comic board takes shape here</strong>
+							<span>Each prompt creates one panel, assembled automatically in order.</span>
+						</div>
+					}
+				</div>
+			}
+
+			@if (panels.Any(panel => !string.IsNullOrWhiteSpace(panel.EffectivePrompt)))
+			{
+				<details class="rewritten-prompt">
+					<summary>Final prompts sent to the model</summary>
+					<ol>
+						@foreach (var panel in panels.Where(panel => !string.IsNullOrWhiteSpace(panel.EffectivePrompt)))
+						{
+							<li>@panel.EffectivePrompt</li>
+						}
+					</ol>
+				</details>
+			}
+		</section>
+	</main>
+</div>
+
+@code {
+	private readonly List<ComicPanelDraft> panels = [new(), new(), new(), new()];
+	private readonly List<CharacterDraft> characters = [];
+	private CancellationTokenSource? generationCancellation;
+	private Guid? activeGenerationId;
+	private string boardTitle = "New comic board";
+	private string? context;
+	private string? boardDataUrl;
+	private string? progressMessage;
+	private int generatedPanelCount;
+	private bool rewritePrompt = true;
+	private bool isGenerating;
+	private bool isRefreshing;
+	private bool isSubmitting;
+
+	private double GenerationProgress => panels.Count == 0 ? 0 : generatedPanelCount * 100d / panels.Count;
+	private bool EditingLocked => isSubmitting || isGenerating;
+
+	private async Task GenerateBoardAsync()
+	{
+		if (!ValidateBoard())
+		{
+			return;
+		}
+
+		generationCancellation?.Cancel();
+		generationCancellation?.Dispose();
+		generationCancellation = new CancellationTokenSource();
+		boardDataUrl = null;
+		generatedPanelCount = 0;
+		isGenerating = true;
+		isSubmitting = true;
+		activeGenerationId = null;
+
+		try
+		{
+			foreach (var panel in panels)
+			{
+				panel.Status = PanelUiStatus.Pending;
+				panel.ImageDataUrl = null;
+				panel.EffectivePrompt = null;
+			}
+
+			progressMessage = "Submitting generation";
+			var request = new CreateGenerationRequest(
+				boardTitle.Trim(),
+				context?.Trim(),
+				rewritePrompt,
+				panels.Select(panel => new PanelRequest(
+					panel.Prompt.Trim(),
+					panel.CharacterIds.ToArray())).ToArray(),
+				characters.Select(character => new CharacterRequest(
+					character.Id,
+					character.Name.Trim(),
+					character.References.Select(reference => reference.ReferenceId).ToArray())).ToArray());
+			var generation = await GenerationClient.CreateAsync(request, generationCancellation.Token);
+			activeGenerationId = generation.GenerationId;
+			await ApplyGenerationAsync(generation, generationCancellation.Token);
+			await HandleGenerationStatusAsync(generation, generationCancellation.Token);
+			if (generation.Status is GenerationStatus.Pending or GenerationStatus.Processing)
+			{
+				Notify(NotificationSeverity.Info, "Generation queued", "Use Refresh board to retrieve the latest panels and status.");
+			}
+		}
+		catch (AccessTokenNotAvailableException exception)
+		{
+			exception.Redirect();
+		}
+		catch (GenerationApiException exception)
+		{
+			isGenerating = false;
+			Notify(NotificationSeverity.Error, "Generation failed", exception.Message);
+		}
+		catch (OperationCanceledException)
+		{
+			isGenerating = false;
+		}
+		finally
+		{
+			isSubmitting = false;
+		}
+	}
+
+	private async Task RefreshGenerationAsync()
+	{
+		if (activeGenerationId is not Guid generationId || isRefreshing)
+		{
+			return;
+		}
+
+		isRefreshing = true;
+		try
+		{
+			var generation = await GenerationClient.GetAsync(generationId, generationCancellation?.Token ?? CancellationToken.None);
+			await ApplyGenerationAsync(generation, generationCancellation?.Token ?? CancellationToken.None);
+			await HandleGenerationStatusAsync(generation, generationCancellation?.Token ?? CancellationToken.None);
+		}
+		catch (AccessTokenNotAvailableException exception)
+		{
+			exception.Redirect();
+		}
+		catch (GenerationApiException exception)
+		{
+			Notify(NotificationSeverity.Error, "Refresh failed", exception.Message);
+		}
+		catch (OperationCanceledException)
+		{
+		}
+		finally
+		{
+			isRefreshing = false;
+		}
+	}
+
+	private async Task HandleGenerationStatusAsync(GenerationResponse generation, CancellationToken cancellationToken)
+	{
+		isGenerating = generation.Status is GenerationStatus.Pending or GenerationStatus.Processing;
+		if (generation.Status == GenerationStatus.Completed)
+		{
+			if (generation.BoardUri is not null && boardDataUrl is null)
+			{
+				boardDataUrl = await GenerationClient.DownloadDataUrlAsync(generation.BoardUri, cancellationToken);
+			}
+
+			Notify(NotificationSeverity.Success, "Board ready", "Your comic board was generated successfully.");
+		}
+		else if (generation.Status == GenerationStatus.Failed)
+		{
+			Notify(NotificationSeverity.Error, "Generation failed", generation.Error ?? "The API could not complete the board.");
+		}
+		else if (generation.Status == GenerationStatus.Canceled)
+		{
+			Notify(NotificationSeverity.Warning, "Generation canceled", "The board generation was canceled by the worker.");
+		}
+	}
+
+	private bool ValidateBoard()
+	{
+		if (string.IsNullOrWhiteSpace(boardTitle))
+		{
+			Notify(NotificationSeverity.Warning, "Board title required", "Enter a title before starting generation.");
+			return false;
+		}
+
+		var emptyPanelIndex = panels.FindIndex(panel => string.IsNullOrWhiteSpace(panel.Prompt));
+		if (emptyPanelIndex >= 0)
+		{
+			Notify(NotificationSeverity.Warning, "Panel prompt required", $"Describe panel {emptyPanelIndex + 1} before starting generation.");
+			return false;
+		}
+
+		var invalidCharacter = characters.FirstOrDefault(character =>
+			string.IsNullOrWhiteSpace(character.Name) || character.References.Count == 0);
+		if (invalidCharacter is not null)
+		{
+			Notify(NotificationSeverity.Warning, "Character incomplete", "Every character needs a name and at least one reference image.");
+			return false;
+		}
+
+		return true;
+	}
+
+	private void AddPanel()
+	{
+		if (panels.Count < 8)
+		{
+			panels.Add(new ComicPanelDraft());
+			boardDataUrl = null;
+		}
+	}
+
+	private void RemovePanel(ComicPanelDraft panel)
+	{
+		if (panels.Count > 1)
+		{
+			panels.Remove(panel);
+			boardDataUrl = null;
+		}
+	}
+
+	private void MovePanel(int index, int offset)
+	{
+		var destination = index + offset;
+		if (destination < 0 || destination >= panels.Count)
+		{
+			return;
+		}
+
+		(panels[index], panels[destination]) = (panels[destination], panels[index]);
+		boardDataUrl = null;
+	}
+
+	private void AddCharacter() => characters.Add(new CharacterDraft());
+
+	private void RemoveCharacter(CharacterDraft character)
+	{
+		characters.Remove(character);
+		foreach (var panel in panels)
+		{
+			panel.CharacterIds = panel.CharacterIds.Where(id => id != character.Id).ToArray();
+		}
+	}
+
+	private async Task UploadReferencesAsync(CharacterDraft character, InputFileChangeEventArgs args)
+	{
+		try
+		{
+			foreach (var file in args.GetMultipleFiles(4))
+			{
+				var uploaded = await GenerationClient.UploadReferenceAsync(file, CancellationToken.None);
+				character.References.Add(new UploadedReference(uploaded.ReferenceId, uploaded.FileName));
+			}
+			StateHasChanged();
+		}
+		catch (AccessTokenNotAvailableException exception)
+		{
+			exception.Redirect();
+		}
+		catch (Exception exception)
+		{
+			Notify(NotificationSeverity.Error, "Reference upload failed", exception.Message);
+		}
+	}
+
+	private async Task ApplyGenerationAsync(GenerationResponse generation, CancellationToken cancellationToken)
+	{
+		generatedPanelCount = generation.CompletedPanelCount;
+		progressMessage = generation.Status switch
+		{
+			GenerationStatus.Pending => "Waiting for an available generation worker",
+			GenerationStatus.Processing => $"Generated {generation.CompletedPanelCount} of {generation.PanelCount} panels",
+			GenerationStatus.Completed => "Board assembled",
+			GenerationStatus.Failed => "Generation failed",
+			GenerationStatus.Canceled => "Generation canceled",
+			_ => "Generating board"
+		};
+
+		foreach (var panelStatus in generation.Panels)
+		{
+			var panel = panels[panelStatus.Number - 1];
+			panel.Status = panelStatus.Status switch
+			{
+				PanelGenerationStatus.Processing => PanelUiStatus.Generating,
+				PanelGenerationStatus.Completed => PanelUiStatus.Ready,
+				PanelGenerationStatus.Failed => PanelUiStatus.Error,
+				_ => PanelUiStatus.Pending
+			};
+			panel.EffectivePrompt = panelStatus.EffectivePrompt;
+			if (panel.ImageDataUrl is null && panelStatus.ImageUri is not null)
+			{
+				panel.ImageDataUrl = await GenerationClient.DownloadDataUrlAsync(panelStatus.ImageUri, cancellationToken);
+			}
+		}
+	}
+
+	private void Notify(NotificationSeverity severity, string summary, string detail)
+	{
+		NotificationService.Notify(new NotificationMessage
+		{
+			Severity = severity,
+			Summary = summary,
+			Detail = detail,
+			Duration = 6000
+		});
+	}
+
+	private static string PanelStatusClass(PanelUiStatus status) => status switch
+	{
+		PanelUiStatus.Generating => "is-generating",
+		PanelUiStatus.Ready => "is-ready",
+		PanelUiStatus.Error => "has-error",
+		_ => string.Empty
+	};
+
+	private static string PanelStatusLabel(PanelUiStatus status) => status switch
+	{
+		PanelUiStatus.Generating => "Generating...",
+		PanelUiStatus.Ready => "Ready",
+		PanelUiStatus.Error => "Failed",
+		_ => "Pending"
+	};
+
+	public void Dispose()
+	{
+		generationCancellation?.Cancel();
+		generationCancellation?.Dispose();
+	}
+}
