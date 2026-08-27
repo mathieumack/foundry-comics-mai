@@ -6,6 +6,7 @@ public sealed class GenerationDocument
     public string OwnerId { get; set; } = string.Empty;
     public int SchemaVersion { get; set; } = 1;
     public string Title { get; set; } = string.Empty;
+    public string? Description { get; set; }
     public string? Context { get; set; }
     public bool RewritePrompt { get; set; } = true;
     public List<GenerationCharacter> Characters { get; set; } = [];

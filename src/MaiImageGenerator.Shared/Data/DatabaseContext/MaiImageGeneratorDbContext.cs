@@ -20,6 +20,7 @@ public sealed class MaiImageGeneratorDbContext(
         generation.Property(item => item.OwnerId).ToJsonProperty("ownerId");
         generation.Property(item => item.SchemaVersion).ToJsonProperty("schemaVersion");
         generation.Property(item => item.Title).ToJsonProperty("title");
+        generation.Property(item => item.Description).ToJsonProperty("description");
         generation.Property(item => item.Context).ToJsonProperty("context");
         generation.Property(item => item.RewritePrompt).ToJsonProperty("rewritePrompt");
         generation.Property(item => item.Status).HasConversion<string>().ToJsonProperty("status");

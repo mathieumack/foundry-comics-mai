@@ -46,7 +46,7 @@ public sealed class GenerationService(
 
         try
         {
-            var panelImages = new List<byte[]>(document.Panels.Count);
+            var panelImages = new List<byte[]?>(document.Panels.Count);
             foreach (var panel in document.Panels)
             {
                 if (panel.Status == PanelGenerationStatus.Completed && panel.ImageBlobName is not null)
@@ -64,6 +64,7 @@ public sealed class GenerationService(
                 }
 
                 panel.Status = PanelGenerationStatus.Processing;
+                panel.Error = null;
                 panel.EffectivePrompt = request.RewritePrompt
                     ? await foundryClient.RewritePromptAsync(document.Context, panel.Prompt, cancellationToken)
                     : panel.Prompt;
@@ -95,6 +96,15 @@ public sealed class GenerationService(
                         $"panel-{panel.Number:00}.png");
                     await UploadPngAsync(panel.ImageBlobName, image, cancellationToken);
                     panel.Status = PanelGenerationStatus.Completed;
+                    document.UpdatedAt = DateTimeOffset.UtcNow;
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                }
+                catch (FoundryContentSafetyException exception)
+                {
+                    panelImages.Add(null);
+                    panel.Status = PanelGenerationStatus.Failed;
+                    panel.ImageBlobName = null;
+                    panel.Error = exception.Message;
                     document.UpdatedAt = DateTimeOffset.UtcNow;
                     await dbContext.SaveChangesAsync(cancellationToken);
                 }

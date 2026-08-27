@@ -23,10 +23,41 @@
 				</div>
 			</div>
 
+			<details class="connection-panel" open>
+				<summary>
+					<span>Start from a story</span>
+					<small>Let MAI-Thinking draft the whole project</small>
+				</summary>
+				<div class="connection-fields">
+					<RadzenTextArea @bind-Value="storyDescription"
+									Name="story-description"
+									Placeholder="Describe your story, characters, setting, tone, and key events..."
+									Rows="5"
+									Disabled="EditingLocked"
+									Style="width: 100%" />
+					<RadzenButton Text="Scaffold project"
+								  Icon="auto_fix_high"
+								  ButtonStyle="ButtonStyle.Light"
+								  Variant="Variant.Outlined"
+								  IsBusy="isScaffolding"
+								  Disabled="EditingLocked"
+								  Click="@CreateScaffoldAsync"
+								  Style="width: 100%" />
+				</div>
+			</details>
+
 			<label for="board-title">Board title</label>
 			<RadzenTextBox @bind-Value="boardTitle"
 							Name="board-title"
 							Placeholder="Title displayed above the panels"
+							Disabled="EditingLocked"
+							Style="width: 100%" />
+
+			<label for="project-description">Project description</label>
+			<RadzenTextArea @bind-Value="projectDescription"
+							Name="project-description"
+							Placeholder="A summary of the story and project..."
+							Rows="3"
 							Disabled="EditingLocked"
 							Style="width: 100%" />
 
@@ -243,6 +274,23 @@
 				</div>
 			}
 
+			@if (panels.Any(panel => panel.Status == PanelUiStatus.Error))
+			{
+				<div class="panel-generation-errors" role="alert">
+					<strong>Some panels could not be generated</strong>
+					<ul>
+						@for (var index = 0; index < panels.Count; index++)
+						{
+							var panel = panels[index];
+							if (panel.Status == PanelUiStatus.Error)
+							{
+								<li><span>Panel @(index + 1)</span> @(panel.Error ?? "The image could not be generated.")</li>
+							}
+						}
+					</ul>
+				</div>
+			}
+
 			@if (panels.Any(panel => !string.IsNullOrWhiteSpace(panel.EffectivePrompt)))
 			{
 				<details class="rewritten-prompt">
@@ -264,8 +312,10 @@
 	private readonly List<CharacterDraft> characters = [];
 	private CancellationTokenSource? generationCancellation;
 	private Guid? activeGenerationId;
+	private string? storyDescription;
 	private Guid? loadedGenerationId;
 	private string boardTitle = "New comic board";
+	private string? projectDescription;
 	private string? context;
 	private string? boardDataUrl;
 	private string? progressMessage;
@@ -274,9 +324,47 @@
 	private bool isGenerating;
 	private bool isRefreshing;
 	private bool isSubmitting;
+	private bool isScaffolding;
 
 	private double GenerationProgress => panels.Count == 0 ? 0 : generatedPanelCount * 100d / panels.Count;
-	private bool EditingLocked => isSubmitting || isGenerating;
+	private bool EditingLocked => isSubmitting || isGenerating || isScaffolding;
+
+	private async Task CreateScaffoldAsync()
+	{
+		if (string.IsNullOrWhiteSpace(storyDescription))
+		{
+			Notify(NotificationSeverity.Warning, "Story description required", "Describe your story before creating a project.");
+			return;
+		}
+
+		isScaffolding = true;
+		try
+		{
+			var scaffold = await GenerationClient.CreateScaffoldAsync(
+				new CreateProjectScaffoldRequest(storyDescription.Trim(), panels.Count),
+				CancellationToken.None);
+			boardTitle = scaffold.Title;
+			projectDescription = scaffold.Description;
+			context = scaffold.Context;
+			panels.Clear();
+			panels.AddRange(scaffold.PanelPrompts.Select(prompt => new ComicPanelDraft { Prompt = prompt }));
+			activeGenerationId = null;
+			boardDataUrl = null;
+			Notify(NotificationSeverity.Success, "Project scaffolded", "Review and edit the generated project before creating images.");
+		}
+		catch (AccessTokenNotAvailableException exception)
+		{
+			exception.Redirect();
+		}
+		catch (GenerationApiException exception)
+		{
+			Notify(NotificationSeverity.Error, "Scaffolding failed", exception.Message);
+		}
+		finally
+		{
+			isScaffolding = false;
+		}
+	}
 
 	protected override async Task OnParametersSetAsync()
 	{
@@ -304,6 +392,7 @@
 		{
 			var generation = await GenerationClient.GetAsync(generationId, generationCancellation.Token);
 			boardTitle = generation.Title;
+			projectDescription = generation.Description;
 			context = generation.Context;
 			rewritePrompt = generation.RewritePrompt;
 			activeGenerationId = generation.GenerationId;
@@ -349,6 +438,7 @@
 		activeGenerationId = null;
 		loadedGenerationId = null;
 		boardTitle = "New comic board";
+		projectDescription = null;
 		context = null;
 		boardDataUrl = null;
 		progressMessage = null;
@@ -385,11 +475,13 @@
 				panel.Status = PanelUiStatus.Pending;
 				panel.ImageDataUrl = null;
 				panel.EffectivePrompt = null;
+				panel.Error = null;
 			}
 
 			progressMessage = "Submitting generation";
 			var request = new CreateGenerationRequest(
 				boardTitle.Trim(),
+				projectDescription?.Trim(),
 				context?.Trim(),
 				rewritePrompt,
 				panels.Select(panel => new PanelRequest(
@@ -468,7 +560,18 @@
 				boardDataUrl = await GenerationClient.DownloadDataUrlAsync(generation.BoardUri, cancellationToken);
 			}
 
-			Notify(NotificationSeverity.Success, "Board ready", "Your comic board was generated successfully.");
+			var failedPanelCount = generation.Panels.Count(panel => panel.Status == PanelGenerationStatus.Failed);
+			if (failedPanelCount > 0)
+			{
+				Notify(
+					NotificationSeverity.Warning,
+					"Board generated with missing panels",
+					$"{failedPanelCount} panel(s) were blocked by content safety. Review the details below the board.");
+			}
+			else
+			{
+				Notify(NotificationSeverity.Success, "Board ready", "Your comic board was generated successfully.");
+			}
 		}
 		else if (generation.Status == GenerationStatus.Failed)
 		{
@@ -592,6 +695,7 @@
 				_ => PanelUiStatus.Pending
 			};
 			panel.EffectivePrompt = panelStatus.EffectivePrompt;
+			panel.Error = panelStatus.Error;
 			if (panel.ImageDataUrl is null && panelStatus.ImageUri is not null)
 			{
 				panel.ImageDataUrl = await GenerationClient.DownloadDataUrlAsync(panelStatus.ImageUri, cancellationToken);
