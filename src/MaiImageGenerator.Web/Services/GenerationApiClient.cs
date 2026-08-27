@@ -31,6 +31,16 @@ public sealed class GenerationApiClient(HttpClient httpClient)
             ?? throw new GenerationApiException("The API returned no generation result.");
     }
 
+    public async Task<ProjectScaffoldResponse> CreateScaffoldAsync(
+        CreateProjectScaffoldRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.PostAsJsonAsync("api/generations/scaffold", request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ProjectScaffoldResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no project scaffold.");
+    }
+
     public async Task<GenerationResponse> GetAsync(Guid generationId, CancellationToken cancellationToken)
     {
         using var response = await httpClient.GetAsync($"api/generations/{generationId:D}", cancellationToken);

@@ -7,6 +7,14 @@ public sealed record CreateGenerationRequest(
     IReadOnlyList<PanelRequest> Panels,
     IReadOnlyList<CharacterRequest> Characters);
 
+public sealed record CreateProjectScaffoldRequest(string StoryDescription, int PanelCount);
+
+public sealed record ProjectScaffoldResponse(
+    string Title,
+    string Description,
+    string Context,
+    IReadOnlyList<string> PanelPrompts);
+
 public sealed record PanelRequest(string Prompt, IReadOnlyList<string> CharacterIds);
 
 public sealed record CharacterRequest(

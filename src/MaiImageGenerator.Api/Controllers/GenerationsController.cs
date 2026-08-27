@@ -7,8 +7,38 @@ namespace MaiImageGenerator.Api.Controllers;
 
 [ApiController]
 [Route("api/generations")]
-public sealed class GenerationsController(IHttpContextAccessor httpContextAccessor, GenerationService generationService) : ControllerBase
+public sealed class GenerationsController(
+    IHttpContextAccessor httpContextAccessor,
+    GenerationService generationService,
+    ProjectScaffolder projectScaffolder) : ControllerBase
 {
+    [HttpPost("scaffold")]
+    public async Task<ActionResult<ProjectScaffoldResponse>> CreateScaffold(
+        CreateProjectScaffoldRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (httpContextAccessor.GetUserId() is null)
+        {
+            return Unauthorized();
+        }
+
+        try
+        {
+            return Ok(await projectScaffolder.CreateAsync(request, cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid scaffold request", Detail = exception.Message });
+        }
+        catch (FoundryGenerationException exception)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status502BadGateway,
+                title: "Project scaffolding failed",
+                detail: exception.Message);
+        }
+    }
+
     [HttpPost]
     public async Task<ActionResult<GenerationResponse>> Create(
         CreateGenerationRequest request,
