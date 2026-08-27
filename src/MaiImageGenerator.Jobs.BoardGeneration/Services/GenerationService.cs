@@ -25,7 +25,9 @@ public sealed class GenerationService(
         var document = await dbContext.Generations
             .WithPartitionKey(request.OwnerId)
             .SingleOrDefaultAsync(
-                item => item.Id == request.BoardId && item.OwnerId == request.OwnerId,
+                item => item.Id == request.BoardId &&
+                    item.ProjectId == request.ProjectId &&
+                    item.OwnerId == request.OwnerId,
                 cancellationToken)
             ?? throw new InvalidOperationException($"Generation '{request.BoardId}' was not found.");
 
@@ -33,6 +35,13 @@ public sealed class GenerationService(
         {
             return;
         }
+
+        var project = await dbContext.Projects
+            .WithPartitionKey(request.OwnerId)
+            .SingleOrDefaultAsync(
+                item => item.Id == request.ProjectId && item.OwnerId == request.OwnerId,
+                cancellationToken)
+            ?? throw new InvalidOperationException($"Project '{request.ProjectId}' was not found.");
 
         document.Status = GenerationStatus.Processing;
         document.Error = null;
@@ -69,13 +78,16 @@ public sealed class GenerationService(
                     ? await foundryClient.RewritePromptAsync(document.Context, panel.Prompt, cancellationToken)
                     : panel.Prompt;
 
-                var selectedCharacters = request.Characters
+                var selectedCharacters = project.Characters
                     .Where(character => panel.CharacterIds.Contains(character.Id, StringComparer.Ordinal))
                     .ToArray();
                 var referenceStreams = new List<Stream>();
                 try
                 {
-                    foreach (var referenceId in selectedCharacters.SelectMany(character => character.ReferenceIds).Distinct())
+                    foreach (var referenceId in selectedCharacters
+                        .SelectMany(character => character.References)
+                        .Select(reference => reference.Id)
+                        .Distinct(StringComparer.Ordinal))
                     {
                         var stream = await referenceService.OpenReadAsync(request.OwnerId, referenceId, cancellationToken)
                             ?? throw new InvalidOperationException($"Reference '{referenceId}' was not found.");
@@ -166,12 +178,14 @@ public sealed class GenerationService(
 
     private static void Validate(BoardGenerationRequestMessage request)
     {
-        if (request.SchemaVersion != 1)
+        if (request.SchemaVersion != 2)
         {
             throw new InvalidDataException($"Unsupported board generation message schema {request.SchemaVersion}.");
         }
 
-        if (!Guid.TryParse(request.BoardId, out _) || string.IsNullOrWhiteSpace(request.OwnerId))
+        if (!Guid.TryParse(request.BoardId, out _) ||
+            !Guid.TryParse(request.ProjectId, out _) ||
+            string.IsNullOrWhiteSpace(request.OwnerId))
         {
             throw new InvalidDataException("The board generation message has invalid identifiers.");
         }

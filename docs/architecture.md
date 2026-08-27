@@ -62,10 +62,10 @@ sequenceDiagram
     API->>Blob: Store private reference images
     API->>DB: Store reference metadata by ownerId
     Web->>API: Create generation
-    API->>DB: Create pending generation
-    API->>Queue: Send versioned job message
+    API->>DB: Create project and pending generation
+    API->>Queue: Send versioned job message with project ID
     Queue->>Job: Deliver message
-    Job->>DB: Mark generation processing
+    Job->>DB: Load project characters and mark generation processing
     loop Each panel
         Job->>MAI: Optionally rewrite prompt
         Job->>MAI: Generate panel with references
@@ -88,7 +88,7 @@ The projects view reads generations through an owner-partition-scoped API query.
 
 Cosmos documents use `/ownerId` as their partition key. Controllers derive the owner from the authenticated principal instead of accepting it from request payloads. Blob paths also include the owner and generation identifiers. Preserve these boundaries whenever adding queries, endpoints, or background messages.
 
-The queue contract contains a schema version. Make backward compatibility explicit before changing it because deployed API and worker revisions may overlap.
+The queue contract contains a schema version and identifies the owner, project, and board without embedding character definitions. The worker loads project-owned characters and references through owner-partition-scoped queries. Make backward compatibility explicit before changing the contract because deployed API and worker revisions may overlap.
 
 ## Identity and secrets
 
