@@ -29,25 +29,35 @@ public sealed class GenerationService(
 
         var references = await LoadReferencesAsync(ownerId, request, cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        var document = new GenerationDocument
+        var project = new ProjectDocument
         {
             Id = Guid.NewGuid().ToString("D"),
             OwnerId = ownerId,
-            SchemaVersion = 2,
             Title = request.Title.Trim(),
-            Description = request.Description?.Trim(),
             Context = request.Context?.Trim(),
-            RewritePrompt = request.RewritePrompt,
-            Characters = request.Characters.Select(character => new GenerationCharacter
+            Characters = request.Characters.Select(character => new ProjectCharacter
             {
                 Id = character.Id,
                 Name = character.Name.Trim(),
-                References = character.ReferenceIds.Select(referenceId => new GenerationCharacterReference
+                References = character.ReferenceIds.Select(referenceId => new ProjectCharacterReference
                 {
                     Id = referenceId,
                     FileName = references[referenceId].FileName
                 }).ToList()
             }).ToList(),
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        var document = new GenerationDocument
+        {
+            Id = Guid.NewGuid().ToString("D"),
+            OwnerId = ownerId,
+            ProjectId = project.Id,
+            SchemaVersion = 2,
+            Title = request.Title.Trim(),
+            Description = request.Description?.Trim(),
+            Context = request.Context?.Trim(),
+            RewritePrompt = request.RewritePrompt,
             Status = GenerationStatus.Pending,
             CreatedAt = now,
             UpdatedAt = now,
@@ -60,6 +70,7 @@ public sealed class GenerationService(
             }).ToList()
         };
 
+        dbContext.Projects.Add(project);
         dbContext.Generations.Add(document);
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -86,7 +97,7 @@ public sealed class GenerationService(
             throw;
         }
 
-        return ToResponse(document);
+        return ToResponse(document, project);
     }
 
     public async Task<GenerationResponse?> GetAsync(
@@ -98,7 +109,17 @@ public sealed class GenerationService(
         var document = await dbContext.Generations
             .WithPartitionKey(ownerId)
             .SingleOrDefaultAsync(item => item.Id == id && item.OwnerId == ownerId, cancellationToken);
-        return document is null ? null : ToResponse(document);
+        if (document is null)
+        {
+            return null;
+        }
+
+        var project = await dbContext.Projects
+            .WithPartitionKey(ownerId)
+            .SingleAsync(
+                item => item.Id == document.ProjectId && item.OwnerId == ownerId,
+                cancellationToken);
+        return ToResponse(document, project);
     }
 
     public async Task<IReadOnlyList<GenerationSummaryResponse>> ListAsync(
@@ -147,14 +168,14 @@ public sealed class GenerationService(
         return references;
     }
 
-    private static GenerationResponse ToResponse(GenerationDocument document) => new(
+    private static GenerationResponse ToResponse(GenerationDocument document, ProjectDocument project) => new(
         Guid.Parse(document.Id),
         document.Title,
         document.Description,
         document.Context,
         document.CreatedAt,
         document.RewritePrompt,
-        document.Characters.Select(character => new CharacterGenerationResponse(
+        project.Characters.Select(character => new CharacterGenerationResponse(
             character.Id,
             character.Name,
             character.References.Select(reference => new CharacterReferenceResponse(
@@ -167,7 +188,7 @@ public sealed class GenerationService(
             panel.Number,
             panel.Prompt,
             panel.CharacterIds
-                .Where(characterId => document.Characters.Any(character => character.Id == characterId))
+                .Where(characterId => project.Characters.Any(character => character.Id == characterId))
                 .ToArray(),
             panel.Status,
             panel.EffectivePrompt,
