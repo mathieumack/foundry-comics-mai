@@ -18,6 +18,9 @@ public sealed record ReferenceUploadResponse(string ReferenceId, string FileName
 
 public sealed record GenerationResponse(
     Guid GenerationId,
+    string Title,
+    string? Context,
+    DateTimeOffset CreatedAt,
     GenerationStatus Status,
     int PanelCount,
     int CompletedPanelCount,
@@ -27,9 +30,17 @@ public sealed record GenerationResponse(
 
 public sealed record PanelGenerationResponse(
     int Number,
+    string Prompt,
     PanelGenerationStatus Status,
     string? EffectivePrompt,
     Uri? ImageUri);
+
+public sealed record GenerationSummaryResponse(
+    Guid GenerationId,
+    string Title,
+    DateTimeOffset CreatedAt,
+    GenerationStatus Status,
+    Uri? ThumbnailUri);
 
 public enum GenerationStatus
 {

@@ -88,6 +88,18 @@ public sealed class GenerationService(
         return document is null ? null : ToResponse(document);
     }
 
+    public async Task<IReadOnlyList<GenerationSummaryResponse>> ListAsync(
+        string ownerId,
+        CancellationToken cancellationToken)
+    {
+        var documents = await dbContext.Generations
+            .WithPartitionKey(ownerId)
+            .Where(item => item.OwnerId == ownerId)
+            .OrderByDescending(item => item.CreatedAt)
+            .ToListAsync(cancellationToken);
+        return documents.Select(ToSummaryResponse).ToArray();
+    }
+
     public async Task<(Stream Content, string ContentType)?> OpenArtifactAsync(
         string ownerId,
         Guid generationId,
@@ -120,14 +132,34 @@ public sealed class GenerationService(
 
     private static GenerationResponse ToResponse(GenerationDocument document) => new(
         Guid.Parse(document.Id),
+        document.Title,
+        document.Context,
+        document.CreatedAt,
         document.Status,
         document.Panels.Count,
         document.Panels.Count(panel => panel.Status == PanelGenerationStatus.Completed),
         document.Panels.Select(panel => new PanelGenerationResponse(
             panel.Number,
+            panel.Prompt,
             panel.Status,
             panel.EffectivePrompt,
             panel.ImageBlobName is null ? null : new Uri($"api/generations/{document.Id}/panels/{panel.Number}", UriKind.Relative))).ToArray(),
         document.BoardBlobName is null ? null : new Uri($"api/generations/{document.Id}/board", UriKind.Relative),
         document.Error);
+
+    private static GenerationSummaryResponse ToSummaryResponse(GenerationDocument document)
+    {
+        var thumbnailPanel = document.Panels
+            .Where(panel => panel.ImageBlobName is not null)
+            .OrderBy(panel => panel.Number)
+            .FirstOrDefault();
+        return new(
+            Guid.Parse(document.Id),
+            document.Title,
+            document.CreatedAt,
+            document.Status,
+            thumbnailPanel is null
+                ? null
+                : new Uri($"api/generations/{document.Id}/panels/{thumbnailPanel.Number}", UriKind.Relative));
+    }
 }
