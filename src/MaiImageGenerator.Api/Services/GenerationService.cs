@@ -33,6 +33,7 @@ public sealed class GenerationService(
         {
             Id = Guid.NewGuid().ToString("D"),
             OwnerId = ownerId,
+            SchemaVersion = 2,
             Title = request.Title.Trim(),
             Context = request.Context?.Trim(),
             RewritePrompt = request.RewritePrompt,
@@ -163,7 +164,9 @@ public sealed class GenerationService(
         document.Panels.Select(panel => new PanelGenerationResponse(
             panel.Number,
             panel.Prompt,
-            panel.CharacterIds,
+            panel.CharacterIds
+                .Where(characterId => document.Characters.Any(character => character.Id == characterId))
+                .ToArray(),
             panel.Status,
             panel.EffectivePrompt,
             panel.ImageBlobName is null ? null : new Uri($"api/generations/{document.Id}/panels/{panel.Number}", UriKind.Relative))).ToArray(),
