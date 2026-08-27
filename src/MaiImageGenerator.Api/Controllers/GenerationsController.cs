@@ -9,6 +9,18 @@ namespace MaiImageGenerator.Api.Controllers;
 [Route("api/generations")]
 public sealed class GenerationsController(IHttpContextAccessor httpContextAccessor, GenerationService generationService) : ControllerBase
 {
+    [HttpGet]
+    public async Task<ActionResult<IReadOnlyList<GenerationSummaryResponse>>> List(CancellationToken cancellationToken)
+    {
+        var ownerId = httpContextAccessor.GetUserId();
+        if (ownerId is null)
+        {
+            return Unauthorized();
+        }
+
+        return Ok(await generationService.ListAsync(ownerId, cancellationToken));
+    }
+
     [HttpPost]
     public async Task<ActionResult<GenerationResponse>> Create(
         CreateGenerationRequest request,

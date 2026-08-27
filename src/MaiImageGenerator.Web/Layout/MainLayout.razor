@@ -10,6 +10,14 @@
 					<strong>MAI Studio</strong>
 				</div>
 			</div>
+			<AuthorizeView>
+				<Authorized>
+					<nav class="app-navigation" aria-label="Main navigation">
+						<NavLink href="" Match="NavLinkMatch.All">New board</NavLink>
+						<NavLink href="projects">My projects</NavLink>
+					</nav>
+				</Authorized>
+			</AuthorizeView>
 			<div class="connection-state">
 				<span class="status-dot" aria-hidden="true"></span>
 				Direct browser connection

@@ -4,6 +4,12 @@
 @inject GenerationApiClient GenerationClient
 @inject NotificationService NotificationService
 
+@code {
+	[Parameter]
+	[SupplyParameterFromQuery(Name = "generationId")]
+	public Guid? GenerationId { get; set; }
+}
+
 <PageTitle>MAI Studio</PageTitle>
 
 <div class="studio-shell">
@@ -258,6 +264,7 @@
 	private readonly List<CharacterDraft> characters = [];
 	private CancellationTokenSource? generationCancellation;
 	private Guid? activeGenerationId;
+	private Guid? loadedGenerationId;
 	private string boardTitle = "New comic board";
 	private string? context;
 	private string? boardDataUrl;
@@ -270,6 +277,90 @@
 
 	private double GenerationProgress => panels.Count == 0 ? 0 : generatedPanelCount * 100d / panels.Count;
 	private bool EditingLocked => isSubmitting || isGenerating;
+
+	protected override async Task OnParametersSetAsync()
+	{
+		if (GenerationId is not Guid generationId)
+		{
+			if (loadedGenerationId is not null)
+			{
+				ResetBoard();
+			}
+
+			return;
+		}
+
+		if (loadedGenerationId == generationId)
+		{
+			return;
+		}
+
+		loadedGenerationId = generationId;
+		generationCancellation?.Cancel();
+		generationCancellation?.Dispose();
+		generationCancellation = new CancellationTokenSource();
+
+		try
+		{
+			var generation = await GenerationClient.GetAsync(generationId, generationCancellation.Token);
+			boardTitle = generation.Title;
+			context = generation.Context;
+			rewritePrompt = generation.RewritePrompt;
+			activeGenerationId = generation.GenerationId;
+			boardDataUrl = null;
+			characters.Clear();
+			foreach (var character in generation.Characters)
+			{
+				var draft = new CharacterDraft { Id = character.Id, Name = character.Name };
+				draft.References.AddRange(character.References.Select(reference =>
+					new UploadedReference(reference.ReferenceId, reference.FileName)));
+				characters.Add(draft);
+			}
+
+			panels.Clear();
+			panels.AddRange(generation.Panels
+				.OrderBy(panel => panel.Number)
+				.Select(panel => new ComicPanelDraft
+				{
+					Prompt = panel.Prompt,
+					CharacterIds = panel.CharacterIds
+				}));
+			await ApplyGenerationAsync(generation, generationCancellation.Token);
+			await HandleGenerationStatusAsync(generation, generationCancellation.Token);
+		}
+		catch (AccessTokenNotAvailableException exception)
+		{
+			exception.Redirect();
+		}
+		catch (GenerationApiException exception)
+		{
+			Notify(NotificationSeverity.Error, "Board could not be opened", exception.Message);
+		}
+		catch (OperationCanceledException)
+		{
+		}
+	}
+
+	private void ResetBoard()
+	{
+		generationCancellation?.Cancel();
+		generationCancellation?.Dispose();
+		generationCancellation = null;
+		activeGenerationId = null;
+		loadedGenerationId = null;
+		boardTitle = "New comic board";
+		context = null;
+		boardDataUrl = null;
+		progressMessage = null;
+		generatedPanelCount = 0;
+		rewritePrompt = true;
+		isGenerating = false;
+		isRefreshing = false;
+		isSubmitting = false;
+		characters.Clear();
+		panels.Clear();
+		panels.AddRange([new(), new(), new(), new()]);
+	}
 
 	private async Task GenerateBoardAsync()
 	{

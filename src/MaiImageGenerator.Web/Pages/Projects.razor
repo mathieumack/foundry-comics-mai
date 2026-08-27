@@ -1,0 +1,125 @@
+@page "/projects"
+@attribute [Authorize]
+@implements IDisposable
+@inject GenerationApiClient GenerationClient
+
+<PageTitle>My projects</PageTitle>
+
+<main class="projects-shell">
+    <header class="projects-header">
+        <div>
+            <span class="eyebrow">Comic boards</span>
+            <h1>My projects</h1>
+            <p>Open a previous board or begin a new story.</p>
+        </div>
+        <a class="new-board" href="">
+            <RadzenIcon Icon="add" />
+            New board
+        </a>
+    </header>
+
+    @if (isLoading)
+    {
+        <div class="projects-state" role="status">
+            <RadzenProgressBarCircular ShowValue="false" />
+            <span>Loading projects…</span>
+        </div>
+    }
+    else if (error is not null)
+    {
+        <div class="projects-state error" role="alert">@error</div>
+    }
+    else if (projects.Count == 0)
+    {
+        <section class="empty-projects">
+            <RadzenIcon Icon="auto_stories" />
+            <h2>Create your first comic board</h2>
+            <p>Your generated boards will appear here.</p>
+            <a class="new-board" href="">New board</a>
+        </section>
+    }
+    else
+    {
+        <section class="projects-grid" aria-label="Your comic boards">
+            @foreach (var project in projects)
+            {
+                <a class="project-card" href="@($"/?generationId={project.GenerationId:D}")">
+                    <div class="project-thumbnail">
+                        @if (project.ThumbnailDataUrl is not null)
+                        {
+                            <img src="@project.ThumbnailDataUrl" alt="" />
+                        }
+                        else
+                        {
+                            <RadzenIcon Icon="image" />
+                        }
+                    </div>
+                    <div class="project-details">
+                        <span class="status @project.Status.ToString().ToLowerInvariant()">@project.Status</span>
+                        <h2>@project.Title</h2>
+                        <time datetime="@project.CreatedAt.ToString("O")">@project.CreatedAt.ToLocalTime().ToString("d MMM yyyy")</time>
+                    </div>
+                </a>
+            }
+        </section>
+    }
+</main>
+
+@code {
+    private readonly CancellationTokenSource cancellation = new();
+    private readonly List<ProjectViewModel> projects = [];
+    private bool isLoading = true;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var summaries = await GenerationClient.ListAsync(cancellation.Token);
+            foreach (var summary in summaries)
+            {
+                string? thumbnailDataUrl = null;
+                if (summary.ThumbnailUri is not null)
+                {
+                    try
+                    {
+                        thumbnailDataUrl = await GenerationClient.DownloadDataUrlAsync(summary.ThumbnailUri, cancellation.Token);
+                    }
+                    catch (GenerationApiException)
+                    {
+                    }
+                }
+
+                projects.Add(new(summary.GenerationId, summary.Title, summary.CreatedAt, summary.Status, thumbnailDataUrl));
+            }
+        }
+        catch (AccessTokenNotAvailableException exception)
+        {
+            exception.Redirect();
+        }
+        catch (GenerationApiException exception)
+        {
+            error = exception.Message;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        cancellation.Cancel();
+        cancellation.Dispose();
+    }
+
+    private sealed record ProjectViewModel(
+        Guid GenerationId,
+        string Title,
+        DateTimeOffset CreatedAt,
+        GenerationStatus Status,
+        string? ThumbnailDataUrl);
+}
