@@ -23,6 +23,8 @@ public sealed record GenerationResponse(
     string Title,
     string? Context,
     DateTimeOffset CreatedAt,
+    bool RewritePrompt,
+    IReadOnlyList<CharacterGenerationResponse> Characters,
     GenerationStatus Status,
     int PanelCount,
     int CompletedPanelCount,
@@ -33,9 +35,17 @@ public sealed record GenerationResponse(
 public sealed record PanelGenerationResponse(
     int Number,
     string Prompt,
+    IReadOnlyList<string> CharacterIds,
     PanelGenerationStatus Status,
     string? EffectivePrompt,
     Uri? ImageUri);
+
+public sealed record CharacterGenerationResponse(
+    string Id,
+    string Name,
+    IReadOnlyList<CharacterReferenceResponse> References);
+
+public sealed record CharacterReferenceResponse(string ReferenceId, string FileName);
 
 public sealed record GenerationSummaryResponse(
     Guid GenerationId,

@@ -12,7 +12,7 @@ public sealed class ComicPanelDraft
 
 public sealed class CharacterDraft
 {
-    public string Id { get; } = Guid.NewGuid().ToString("N");
+    public string Id { get; init; } = Guid.NewGuid().ToString("N");
     public string Name { get; set; } = string.Empty;
     public List<UploadedReference> References { get; } = [];
 }

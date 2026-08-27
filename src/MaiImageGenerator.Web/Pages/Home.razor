@@ -305,13 +305,26 @@
 			var generation = await GenerationClient.GetAsync(generationId, generationCancellation.Token);
 			boardTitle = generation.Title;
 			context = generation.Context;
+			rewritePrompt = generation.RewritePrompt;
 			activeGenerationId = generation.GenerationId;
 			boardDataUrl = null;
 			characters.Clear();
+			foreach (var character in generation.Characters)
+			{
+				var draft = new CharacterDraft { Id = character.Id, Name = character.Name };
+				draft.References.AddRange(character.References.Select(reference =>
+					new UploadedReference(reference.ReferenceId, reference.FileName)));
+				characters.Add(draft);
+			}
+
 			panels.Clear();
 			panels.AddRange(generation.Panels
 				.OrderBy(panel => panel.Number)
-				.Select(panel => new ComicPanelDraft { Prompt = panel.Prompt }));
+				.Select(panel => new ComicPanelDraft
+				{
+					Prompt = panel.Prompt,
+					CharacterIds = panel.CharacterIds
+				}));
 			await ApplyGenerationAsync(generation, generationCancellation.Token);
 			await HandleGenerationStatusAsync(generation, generationCancellation.Token);
 		}

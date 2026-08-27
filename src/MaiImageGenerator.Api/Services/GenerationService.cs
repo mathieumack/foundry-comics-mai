@@ -27,7 +27,7 @@ public sealed class GenerationService(
             throw new ArgumentException(string.Join(" ", validationErrors.SelectMany(item => item.Value)));
         }
 
-        await LoadReferencesAsync(ownerId, request, cancellationToken);
+        var references = await LoadReferencesAsync(ownerId, request, cancellationToken);
         var now = DateTimeOffset.UtcNow;
         var document = new GenerationDocument
         {
@@ -35,6 +35,17 @@ public sealed class GenerationService(
             OwnerId = ownerId,
             Title = request.Title.Trim(),
             Context = request.Context?.Trim(),
+            RewritePrompt = request.RewritePrompt,
+            Characters = request.Characters.Select(character => new GenerationCharacter
+            {
+                Id = character.Id,
+                Name = character.Name.Trim(),
+                References = character.ReferenceIds.Select(referenceId => new GenerationCharacterReference
+                {
+                    Id = referenceId,
+                    FileName = references[referenceId].FileName
+                }).ToList()
+            }).ToList(),
             Status = GenerationStatus.Pending,
             CreatedAt = now,
             UpdatedAt = now,
@@ -118,16 +129,20 @@ public sealed class GenerationService(
             : (await _container.GetBlobClient(blobName).OpenReadAsync(cancellationToken: cancellationToken), "image/png");
     }
 
-    private async Task LoadReferencesAsync(
+    private async Task<IReadOnlyDictionary<string, GenerationDocumentReference>> LoadReferencesAsync(
         string ownerId,
         CreateGenerationRequest request,
         CancellationToken cancellationToken)
     {
+        var references = new Dictionary<string, GenerationDocumentReference>(StringComparer.Ordinal);
         foreach (var referenceId in request.Characters.SelectMany(character => character.ReferenceIds).Distinct())
         {
-            _ = await referenceService.GetAsync(ownerId, referenceId, cancellationToken)
+            var reference = await referenceService.GetAsync(ownerId, referenceId, cancellationToken)
                 ?? throw new ArgumentException($"Reference '{referenceId}' was not found.");
+            references[referenceId] = new(reference.FileName);
         }
+
+        return references;
     }
 
     private static GenerationResponse ToResponse(GenerationDocument document) => new(
@@ -135,12 +150,20 @@ public sealed class GenerationService(
         document.Title,
         document.Context,
         document.CreatedAt,
+        document.RewritePrompt,
+        document.Characters.Select(character => new CharacterGenerationResponse(
+            character.Id,
+            character.Name,
+            character.References.Select(reference => new CharacterReferenceResponse(
+                reference.Id,
+                reference.FileName)).ToArray())).ToArray(),
         document.Status,
         document.Panels.Count,
         document.Panels.Count(panel => panel.Status == PanelGenerationStatus.Completed),
         document.Panels.Select(panel => new PanelGenerationResponse(
             panel.Number,
             panel.Prompt,
+            panel.CharacterIds,
             panel.Status,
             panel.EffectivePrompt,
             panel.ImageBlobName is null ? null : new Uri($"api/generations/{document.Id}/panels/{panel.Number}", UriKind.Relative))).ToArray(),
@@ -162,4 +185,6 @@ public sealed class GenerationService(
                 ? null
                 : new Uri($"api/generations/{document.Id}/panels/{thumbnailPanel.Number}", UriKind.Relative));
     }
+
+    private sealed record GenerationDocumentReference(string FileName);
 }
