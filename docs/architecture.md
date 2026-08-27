@@ -4,8 +4,8 @@
 
 | Component | Responsibility |
 | --- | --- |
-| Blazor WebAssembly | Authenticates users with Microsoft Entra ID, lists their projects, captures board and character inputs, uploads references, and displays generation progress. |
-| .NET API | Enforces user ownership, validates requests, stores metadata, uploads references, submits queue messages, and streams generated artifacts. |
+| Blazor WebAssembly | Authenticates users with Microsoft Entra ID, lists their projects, captures or scaffolds editable board and character inputs, uploads references, and displays generation progress. |
+| .NET API | Enforces user ownership, uses MAI-Thinking to scaffold stories, validates requests, stores metadata, uploads references, submits queue messages, and streams generated artifacts. |
 | Board generation job | Receives one queue message, rewrites prompts, generates panels, composes the board, and updates durable status. |
 | Shared library | Defines Cosmos entities, configuration types, database context, and the versioned queue message contract. |
 
@@ -51,6 +51,12 @@ sequenceDiagram
     participant Job as Generation Job
     participant MAI as Foundry MAI models
     participant Blob as Blob Storage
+    opt Scaffold from one story description
+        User->>Web: Describe the story
+        Web->>API: Request project scaffold with Entra token
+        API->>MAI: Generate title, description, style, and panel prompts
+        MAI-->>Web: Return editable project scaffold
+    end
     User->>Web: Define board, panels, and references
     Web->>API: Upload references with Entra token
     API->>Blob: Store private reference images
@@ -74,7 +80,7 @@ sequenceDiagram
     API-->>Web: Status and images
 ```
 
-The worker processes one message per execution. Failed messages are retried and removed after the configured maximum dequeue count; the generation document records the failure state.
+The worker processes one message per execution. Technical failures are retried and removed after the configured maximum dequeue count. An image content-safety rejection is recorded on the affected panel instead: the worker continues with later panels, leaves a placeholder in the composed board, and completes the job with panel-level error details available to the UI.
 
 The projects view reads generations through an owner-partition-scoped API query. Opening a project retrieves the same owner-scoped generation details and private artifacts used by the editor.
 

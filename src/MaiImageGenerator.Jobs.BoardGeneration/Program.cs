@@ -91,7 +91,7 @@ if (storageSettings.QueueMessagesEncodeBase64)
     
 var jobsQueueName = builder.Configuration["Storage:JobsQueueName"] ?? "generation-jobs";
 var jobsQueue = new QueueClient(
-    new Uri($"{storageSettings.QueuesEndpoint.TrimEnd('/')}/${jobsQueueName}"),
+    new Uri($"{storageSettings.QueuesEndpoint.TrimEnd('/')}/{jobsQueueName}"),
     credential,
     queueClientOptions);
 
