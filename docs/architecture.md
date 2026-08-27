@@ -4,7 +4,7 @@
 
 | Component | Responsibility |
 | --- | --- |
-| Blazor WebAssembly | Authenticates users with Microsoft Entra ID, captures or scaffolds editable board and character inputs, uploads references, and displays generation progress. |
+| Blazor WebAssembly | Authenticates users with Microsoft Entra ID, lists their projects, captures or scaffolds editable board and character inputs, uploads references, and displays generation progress. |
 | .NET API | Enforces user ownership, uses MAI-Thinking to scaffold stories, validates requests, stores metadata, uploads references, submits queue messages, and streams generated artifacts. |
 | Board generation job | Receives one queue message, rewrites prompts, generates panels, composes the board, and updates durable status. |
 | Shared library | Defines Cosmos entities, configuration types, database context, and the versioned queue message contract. |
@@ -81,6 +81,8 @@ sequenceDiagram
 ```
 
 The worker processes one message per execution. Failed messages are retried and removed after the configured maximum dequeue count; the generation document records the failure state.
+
+The projects view reads generations through an owner-partition-scoped API query. Opening a project retrieves the same owner-scoped generation details and private artifacts used by the editor.
 
 ## Data ownership
 

@@ -6,7 +6,10 @@ public sealed class GenerationDocument
     public string OwnerId { get; set; } = string.Empty;
     public int SchemaVersion { get; set; } = 1;
     public string Title { get; set; } = string.Empty;
+    public string? Description { get; set; }
     public string? Context { get; set; }
+    public bool RewritePrompt { get; set; } = true;
+    public List<GenerationCharacter> Characters { get; set; } = [];
     public GenerationStatus Status { get; set; }
     public List<GenerationPanel> Panels { get; set; } = [];
     public string? BoardBlobName { get; set; }
@@ -14,6 +17,19 @@ public sealed class GenerationDocument
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public string? ETag { get; set; }
+}
+
+public sealed class GenerationCharacter
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public List<GenerationCharacterReference> References { get; set; } = [];
+}
+
+public sealed class GenerationCharacterReference
+{
+    public string Id { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
 }
 
 public sealed class GenerationPanel

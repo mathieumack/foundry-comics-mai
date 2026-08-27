@@ -39,6 +39,18 @@ public sealed class GenerationsController(
         }
     }
 
+    [HttpGet]
+    public async Task<ActionResult<IReadOnlyList<GenerationSummaryResponse>>> List(CancellationToken cancellationToken)
+    {
+        var ownerId = httpContextAccessor.GetUserId();
+        if (ownerId is null)
+        {
+            return Unauthorized();
+        }
+
+        return Ok(await generationService.ListAsync(ownerId, cancellationToken));
+    }
+
     [HttpPost]
     public async Task<ActionResult<GenerationResponse>> Create(
         CreateGenerationRequest request,

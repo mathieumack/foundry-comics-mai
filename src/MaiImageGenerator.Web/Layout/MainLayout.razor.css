@@ -17,7 +17,8 @@
 }
 
 .brand-block,
-.connection-state {
+.connection-state,
+.app-navigation {
     display: flex;
     align-items: center;
 }
@@ -54,6 +55,25 @@
     font-size: 0.78rem;
 }
 
+.app-navigation {
+    gap: 8px;
+}
+
+.app-navigation ::deep a {
+    padding: 9px 12px;
+    color: #445149;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+}
+
+.app-navigation ::deep a:hover,
+.app-navigation ::deep a.active {
+    color: #17201a;
+    border-bottom-color: #ff735c;
+}
+
 .status-dot {
     width: 9px;
     height: 9px;
@@ -68,8 +88,14 @@
     }
 
     .eyebrow,
-    .connection-state {
+    .connection-state,
+    .app-navigation ::deep a {
         color: #b8c2ba;
+    }
+
+    .app-navigation ::deep a:hover,
+    .app-navigation ::deep a.active {
+        color: #edf2ea;
     }
 
     .status-dot {
@@ -84,4 +110,8 @@
 
 @media (max-width: 480px) {
     .brand-mark { width: 42px; height: 42px; }
+    .brand-block .eyebrow { display: none; }
+    .brand-block strong { font-size: 1.2rem; }
+    .app-navigation { gap: 0; }
+    .app-navigation ::deep a { padding-inline: 8px; }
 }

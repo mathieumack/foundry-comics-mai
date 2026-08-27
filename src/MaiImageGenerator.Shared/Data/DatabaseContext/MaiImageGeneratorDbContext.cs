@@ -21,6 +21,7 @@ public sealed class MaiImageGeneratorDbContext(
         generation.Property(item => item.SchemaVersion).ToJsonProperty("schemaVersion");
         generation.Property(item => item.Title).ToJsonProperty("title");
         generation.Property(item => item.Context).ToJsonProperty("context");
+        generation.Property(item => item.RewritePrompt).ToJsonProperty("rewritePrompt");
         generation.Property(item => item.Status).HasConversion<string>().ToJsonProperty("status");
         generation.Property(item => item.BoardBlobName).ToJsonProperty("boardBlobName");
         generation.Property(item => item.Error).ToJsonProperty("error");
@@ -31,6 +32,14 @@ public sealed class MaiImageGeneratorDbContext(
         {
             panel.ToJsonProperty("panels");
             panel.Property(item => item.Status).HasConversion<string>();
+        });
+        generation.OwnsMany(item => item.Characters, character =>
+        {
+            character.ToJsonProperty("characters");
+            character.OwnsMany(item => item.References, reference =>
+            {
+                reference.ToJsonProperty("references");
+            });
         });
 
         var reference = modelBuilder.Entity<ReferenceDocument>();

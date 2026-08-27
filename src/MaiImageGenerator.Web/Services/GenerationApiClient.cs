@@ -49,6 +49,14 @@ public sealed class GenerationApiClient(HttpClient httpClient)
             ?? throw new GenerationApiException("The API returned no generation status.");
     }
 
+    public async Task<IReadOnlyList<GenerationSummaryResponse>> ListAsync(CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.GetAsync("api/generations", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<GenerationSummaryResponse[]>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no generations list.");
+    }
+
     public async Task<string> DownloadDataUrlAsync(Uri relativeUri, CancellationToken cancellationToken)
     {
         using var response = await httpClient.GetAsync(relativeUri, cancellationToken);
