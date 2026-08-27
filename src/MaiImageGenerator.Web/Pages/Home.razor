@@ -274,6 +274,23 @@
 				</div>
 			}
 
+			@if (panels.Any(panel => panel.Status == PanelUiStatus.Error))
+			{
+				<div class="panel-generation-errors" role="alert">
+					<strong>Some panels could not be generated</strong>
+					<ul>
+						@for (var index = 0; index < panels.Count; index++)
+						{
+							var panel = panels[index];
+							if (panel.Status == PanelUiStatus.Error)
+							{
+								<li><span>Panel @(index + 1)</span> @(panel.Error ?? "The image could not be generated.")</li>
+							}
+						}
+					</ul>
+				</div>
+			}
+
 			@if (panels.Any(panel => !string.IsNullOrWhiteSpace(panel.EffectivePrompt)))
 			{
 				<details class="rewritten-prompt">
@@ -458,6 +475,7 @@
 				panel.Status = PanelUiStatus.Pending;
 				panel.ImageDataUrl = null;
 				panel.EffectivePrompt = null;
+				panel.Error = null;
 			}
 
 			progressMessage = "Submitting generation";
@@ -542,7 +560,18 @@
 				boardDataUrl = await GenerationClient.DownloadDataUrlAsync(generation.BoardUri, cancellationToken);
 			}
 
-			Notify(NotificationSeverity.Success, "Board ready", "Your comic board was generated successfully.");
+			var failedPanelCount = generation.Panels.Count(panel => panel.Status == PanelGenerationStatus.Failed);
+			if (failedPanelCount > 0)
+			{
+				Notify(
+					NotificationSeverity.Warning,
+					"Board generated with missing panels",
+					$"{failedPanelCount} panel(s) were blocked by content safety. Review the details below the board.");
+			}
+			else
+			{
+				Notify(NotificationSeverity.Success, "Board ready", "Your comic board was generated successfully.");
+			}
 		}
 		else if (generation.Status == GenerationStatus.Failed)
 		{
@@ -666,6 +695,7 @@
 				_ => PanelUiStatus.Pending
 			};
 			panel.EffectivePrompt = panelStatus.EffectivePrompt;
+			panel.Error = panelStatus.Error;
 			if (panel.ImageDataUrl is null && panelStatus.ImageUri is not null)
 			{
 				panel.ImageDataUrl = await GenerationClient.DownloadDataUrlAsync(panelStatus.ImageUri, cancellationToken);

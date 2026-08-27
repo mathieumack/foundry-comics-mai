@@ -46,7 +46,8 @@ public sealed record PanelGenerationResponse(
     IReadOnlyList<string> CharacterIds,
     PanelGenerationStatus Status,
     string? EffectivePrompt,
-    Uri? ImageUri);
+    Uri? ImageUri,
+    string? Error);
 
 public sealed record CharacterGenerationResponse(
     string Id,

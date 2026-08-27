@@ -80,7 +80,7 @@ sequenceDiagram
     API-->>Web: Status and images
 ```
 
-The worker processes one message per execution. Failed messages are retried and removed after the configured maximum dequeue count; the generation document records the failure state.
+The worker processes one message per execution. Technical failures are retried and removed after the configured maximum dequeue count. An image content-safety rejection is recorded on the affected panel instead: the worker continues with later panels, leaves a placeholder in the composed board, and completes the job with panel-level error details available to the UI.
 
 The projects view reads generations through an owner-partition-scoped API query. Opening a project retrieves the same owner-scoped generation details and private artifacts used by the editor.
 

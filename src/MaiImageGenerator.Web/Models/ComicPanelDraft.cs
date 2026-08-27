@@ -7,6 +7,7 @@ public sealed class ComicPanelDraft
     public IEnumerable<string> CharacterIds { get; set; } = [];
     public string? EffectivePrompt { get; set; }
     public string? ImageDataUrl { get; set; }
+    public string? Error { get; set; }
     public PanelUiStatus Status { get; set; }
 }
 

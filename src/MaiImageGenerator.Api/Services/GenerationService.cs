@@ -171,7 +171,8 @@ public sealed class GenerationService(
                 .ToArray(),
             panel.Status,
             panel.EffectivePrompt,
-            panel.ImageBlobName is null ? null : new Uri($"api/generations/{document.Id}/panels/{panel.Number}", UriKind.Relative))).ToArray(),
+            panel.ImageBlobName is null ? null : new Uri($"api/generations/{document.Id}/panels/{panel.Number}", UriKind.Relative),
+            panel.Error)).ToArray(),
         document.BoardBlobName is null ? null : new Uri($"api/generations/{document.Id}/board", UriKind.Relative),
         document.Error);
 
