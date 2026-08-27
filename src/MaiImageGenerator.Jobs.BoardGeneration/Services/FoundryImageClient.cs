@@ -103,6 +103,14 @@ public sealed class FoundryImageClient(
 
             throw new FoundryGenerationException("The image model returned no image.");
         }
+        catch (ClientResultException exception) when (
+            exception.Status == 400 &&
+            exception.Message.Contains("content_safety_violation", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new FoundryContentSafetyException(
+                "The image was not generated because its prompt or references were blocked by the content safety policy.",
+                exception);
+        }
         catch (ClientResultException exception)
         {
             throw new FoundryGenerationException(
@@ -113,7 +121,7 @@ public sealed class FoundryImageClient(
 
 }
 
-public sealed class FoundryGenerationException : Exception
+public class FoundryGenerationException : Exception
 {
     public FoundryGenerationException(string message) : base(message)
     {
@@ -123,4 +131,9 @@ public sealed class FoundryGenerationException : Exception
         : base(message, innerException)
     {
     }
+}
+
+public sealed class FoundryContentSafetyException(string message, Exception innerException)
+    : FoundryGenerationException(message, innerException)
+{
 }

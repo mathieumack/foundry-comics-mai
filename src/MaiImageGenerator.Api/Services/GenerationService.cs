@@ -35,6 +35,7 @@ public sealed class GenerationService(
             OwnerId = ownerId,
             SchemaVersion = 2,
             Title = request.Title.Trim(),
+            Description = request.Description?.Trim(),
             Context = request.Context?.Trim(),
             RewritePrompt = request.RewritePrompt,
             Characters = request.Characters.Select(character => new GenerationCharacter
@@ -149,6 +150,7 @@ public sealed class GenerationService(
     private static GenerationResponse ToResponse(GenerationDocument document) => new(
         Guid.Parse(document.Id),
         document.Title,
+        document.Description,
         document.Context,
         document.CreatedAt,
         document.RewritePrompt,
@@ -169,7 +171,8 @@ public sealed class GenerationService(
                 .ToArray(),
             panel.Status,
             panel.EffectivePrompt,
-            panel.ImageBlobName is null ? null : new Uri($"api/generations/{document.Id}/panels/{panel.Number}", UriKind.Relative))).ToArray(),
+            panel.ImageBlobName is null ? null : new Uri($"api/generations/{document.Id}/panels/{panel.Number}", UriKind.Relative),
+            panel.Error)).ToArray(),
         document.BoardBlobName is null ? null : new Uri($"api/generations/{document.Id}/board", UriKind.Relative),
         document.Error);
 

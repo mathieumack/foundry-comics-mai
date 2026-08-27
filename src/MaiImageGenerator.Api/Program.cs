@@ -81,6 +81,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddScoped<ReferenceService>();
 builder.Services.AddScoped<ImageComposer>();
 builder.Services.AddScoped<GenerationService>();
+builder.Services.AddScoped<ProjectScaffolder>();
 
 // Register classes on IoC
 builder.Services.AddHttpContextAccessor()

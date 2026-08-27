@@ -45,14 +45,20 @@ public sealed class ImageComposer(IOptions<FoundryOptions> options)
 
     public async Task<byte[]> BuildBoardAsync(
         string title,
-        IReadOnlyList<byte[]> panelBytes,
+        IReadOnlyList<byte[]?> panelBytes,
         CancellationToken cancellationToken)
     {
-        var panels = new List<Image<Rgba32>>(panelBytes.Count);
+        var panels = new List<Image<Rgba32>?>(panelBytes.Count);
         try
         {
             foreach (var bytes in panelBytes)
             {
+                if (bytes is null)
+                {
+                    panels.Add(null);
+                    continue;
+                }
+
                 var panel = Image.Load<Rgba32>(bytes);
                 panel.Mutate(context => context.Resize(_imageSize, _imageSize));
                 panels.Add(panel);
@@ -71,7 +77,20 @@ public sealed class ImageComposer(IOptions<FoundryOptions> options)
                 {
                     var x = Margin + index % columns * (_imageSize + Gutter);
                     var y = TitleHeight + Margin + index / columns * (_imageSize + Gutter);
-                    context.DrawImage(panels[index], new Point(x, y), 1f);
+                    var panel = panels[index];
+                    if (panel is null)
+                    {
+                        context.Fill(Color.LightGray, new RectangleF(x, y, _imageSize, _imageSize));
+                        context.DrawText(
+                            $"Panel {index + 1} was not generated",
+                            SystemFonts.Families.First().CreateFont(32),
+                            Color.DarkSlateGray,
+                            new PointF(x + Margin, y + Margin));
+                    }
+                    else
+                    {
+                        context.DrawImage(panel, new Point(x, y), 1f);
+                    }
                 }
             });
 
@@ -83,7 +102,7 @@ public sealed class ImageComposer(IOptions<FoundryOptions> options)
         {
             foreach (var panel in panels)
             {
-                panel.Dispose();
+                panel?.Dispose();
             }
         }
     }
