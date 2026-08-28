@@ -214,11 +214,8 @@ public sealed class GenerationService(
             {
                 BoardId = document.Id,
                 OwnerId = document.OwnerId,
-                RewritePrompt = document.RewritePrompt,
-                Characters = project.Characters.Select(character => new BoardGenerationCharacter(
-                    character.Id,
-                    character.Name,
-                    character.References.Select(reference => reference.Id).ToArray())).ToArray()
+                ProjectId = project.Id,
+                RewritePrompt = document.RewritePrompt
             };
             await jobsQueue.SendMessageAsync(BinaryData.FromObjectAsJson(message).ToString(), cancellationToken);
         }

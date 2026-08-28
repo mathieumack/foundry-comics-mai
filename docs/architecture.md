@@ -66,8 +66,9 @@ sequenceDiagram
     User->>Web: Define board and panels using project character IDs
     Web->>API: Create board within project
     API->>DB: Create pending generation
-    API->>Queue: Send versioned job message
+    API->>Queue: Send versioned job message with project ID
     Queue->>Job: Deliver message
+    Job->>DB: Resolve panel characters and references from the owner-scoped project
     Job->>DB: Mark generation processing
     loop Each panel
         Job->>MAI: Optionally rewrite prompt
