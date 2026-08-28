@@ -1,6 +1,6 @@
 ﻿@page "/"
 @page "/projects/{ProjectId:guid}"
-@page "/projects/{ProjectId:guid}/boards/{GenerationId:guid}"
+@page "/projects/{ProjectId:guid}/boards/{BoardId:guid}"
 @attribute [Authorize]
 @implements IDisposable
 @inject GenerationApiClient GenerationClient
@@ -10,6 +10,9 @@
 @code {
 	[Parameter]
 	public Guid? ProjectId { get; set; }
+
+	[Parameter]
+	public Guid? BoardId { get; set; }
 
 	[Parameter]
 	[SupplyParameterFromQuery(Name = "generationId")]
@@ -455,14 +458,15 @@
 			}
 		}
 
-		if (GenerationId is not Guid generationId)
+		var requestedGenerationId = BoardId ?? GenerationId;
+		if (requestedGenerationId is not Guid generationId)
 		{
 			if (loadedGenerationId is not null || projectChanged)
 			{
 				ResetBoard();
+				ApplyProjectDefaults();
 			}
 
-			ApplyProjectDefaults();
 			return;
 		}
 
@@ -538,6 +542,7 @@
 		}
 		catch (GenerationApiException exception)
 		{
+			project = null;
 			projectError = exception.Message;
 		}
 		finally
