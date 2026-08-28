@@ -33,4 +33,27 @@ public static class GenerationRequestValidator
 
         return errors;
     }
+
+    public static IReadOnlyDictionary<string, string[]> Validate(
+        CreateBoardRequest request,
+        IReadOnlyCollection<string> projectCharacterIds)
+    {
+        var errors = new Dictionary<string, string[]>();
+        if (string.IsNullOrWhiteSpace(request.Title))
+        {
+            errors[nameof(request.Title)] = ["A board title is required."];
+        }
+
+        if (request.Panels.Count is < 1 or > 8 || request.Panels.Any(panel => string.IsNullOrWhiteSpace(panel.Prompt)))
+        {
+            errors[nameof(request.Panels)] = ["A board requires between 1 and 8 panels with non-empty prompts."];
+        }
+        else if (request.Panels.SelectMany(panel => panel.CharacterIds)
+                 .Any(characterId => !projectCharacterIds.Contains(characterId)))
+        {
+            errors[nameof(request.Panels)] = ["Panel characters must exist in the project."];
+        }
+
+        return errors;
+    }
 }

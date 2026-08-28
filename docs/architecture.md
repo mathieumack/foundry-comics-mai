@@ -57,11 +57,14 @@ sequenceDiagram
         API->>MAI: Generate title, description, style, and panel prompts
         MAI-->>Web: Return editable project scaffold
     end
-    User->>Web: Define board, panels, and references
-    Web->>API: Upload references with Entra token
+    User->>Web: Define a project and its shared characters
+    Web->>API: Create or update the owner-scoped project
+    API->>DB: Store project and character metadata
+    Web->>API: Upload character references within the project
     API->>Blob: Store private reference images
-    API->>DB: Store reference metadata by ownerId
-    Web->>API: Create generation
+    API->>DB: Associate reference metadata with the project character
+    User->>Web: Define board and panels using project character IDs
+    Web->>API: Create board within project
     API->>DB: Create pending generation
     API->>Queue: Send versioned job message
     Queue->>Job: Deliver message
@@ -82,7 +85,7 @@ sequenceDiagram
 
 The worker processes one message per execution. Technical failures are retried and removed after the configured maximum dequeue count. An image content-safety rejection is recorded on the affected panel instead: the worker continues with later panels, leaves a placeholder in the composed board, and completes the job with panel-level error details available to the UI.
 
-The projects view reads generations through an owner-partition-scoped API query. Opening a project retrieves the same owner-scoped generation details and private artifacts used by the editor.
+The projects API creates, lists, retrieves, and updates projects through owner-partition-scoped queries. Character CRUD and reference uploads are nested under a project, and board creation accepts only panel character IDs that resolve within that project. Opening a project lists its boards and retrieves the same owner-scoped generation details and private artifacts used by the editor.
 
 ## Data ownership
 

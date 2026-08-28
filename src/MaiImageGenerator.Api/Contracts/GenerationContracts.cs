@@ -10,6 +10,12 @@ public sealed record CreateGenerationRequest(
     IReadOnlyList<PanelRequest> Panels,
     IReadOnlyList<CharacterRequest> Characters);
 
+public sealed record CreateBoardRequest(
+    string Title,
+    string? Description,
+    bool RewritePrompt,
+    IReadOnlyList<PanelRequest> Panels);
+
 public sealed record CreateProjectScaffoldRequest(string StoryDescription, int PanelCount);
 
 public sealed record ProjectScaffoldResponse(
