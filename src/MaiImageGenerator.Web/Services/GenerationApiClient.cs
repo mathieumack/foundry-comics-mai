@@ -6,6 +6,70 @@ namespace MaiImageGenerator.Web.Services;
 
 public sealed class GenerationApiClient(HttpClient httpClient)
 {
+    public async Task<ProjectResponse> CreateProjectAsync(
+        CreateProjectRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.PostAsJsonAsync("api/projects", request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ProjectResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no project.");
+    }
+
+    public async Task<IReadOnlyList<ProjectResponse>> ListProjectsAsync(CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.GetAsync("api/projects", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ProjectResponse[]>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no projects list.");
+    }
+
+    public async Task<ProjectResponse> GetProjectAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.GetAsync($"api/projects/{projectId:D}", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ProjectResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no project.");
+    }
+
+    public async Task<ProjectResponse> UpdateProjectAsync(
+        Guid projectId,
+        CreateProjectRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.PutAsJsonAsync(
+            $"api/projects/{projectId:D}",
+            request,
+            cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ProjectResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no project.");
+    }
+
+    public async Task<IReadOnlyList<GenerationSummaryResponse>> ListBoardsAsync(
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.GetAsync($"api/projects/{projectId:D}/boards", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<GenerationSummaryResponse[]>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no boards list.");
+    }
+
+    public async Task<GenerationResponse> CreateBoardAsync(
+        Guid projectId,
+        CreateBoardRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            $"api/projects/{projectId:D}/boards",
+            request,
+            cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<GenerationResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no generation result.");
+    }
+
     public async Task<ReferenceUploadResponse> UploadReferenceAsync(
         IBrowserFile file,
         CancellationToken cancellationToken)
