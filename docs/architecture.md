@@ -57,14 +57,18 @@ sequenceDiagram
         API->>MAI: Generate title, description, style, and panel prompts
         MAI-->>Web: Return editable project scaffold
     end
-    User->>Web: Define board, panels, and references
-    Web->>API: Upload references with Entra token
+    User->>Web: Define a project and its shared characters
+    Web->>API: Create or update the owner-scoped project
+    API->>DB: Store project and character metadata
+    Web->>API: Upload character references within the project
     API->>Blob: Store private reference images
-    API->>DB: Store reference metadata by ownerId
-    Web->>API: Create generation
+    API->>DB: Associate reference metadata with the project character
+    User->>Web: Define board and panels using project character IDs
+    Web->>API: Create board within project
     API->>DB: Create pending generation
-    API->>Queue: Send versioned job message
+    API->>Queue: Send versioned job message with project ID
     Queue->>Job: Deliver message
+    Job->>DB: Resolve panel characters and references from the owner-scoped project
     Job->>DB: Mark generation processing
     loop Each panel
         Job->>MAI: Optionally rewrite prompt
@@ -82,11 +86,11 @@ sequenceDiagram
 
 The worker processes one message per execution. Technical failures are retried and removed after the configured maximum dequeue count. An image content-safety rejection is recorded on the affected panel instead: the worker continues with later panels, leaves a placeholder in the composed board, and completes the job with panel-level error details available to the UI.
 
-The projects view reads generations through an owner-partition-scoped API query. Opening a project retrieves the same owner-scoped generation details and private artifacts used by the editor.
+The projects API creates, lists, retrieves, and updates projects through owner-partition-scoped queries. Character CRUD and reference uploads are nested under a project, and board creation accepts only panel character IDs that resolve within that project. The Web project landing page opens a workspace where a side menu lists the project's boards, highlights the active board, and starts new boards while the existing single-board editor remains visible. Opening a board retrieves the same owner-scoped generation details and private artifacts used by the editor.
 
 ## Data ownership
 
-Cosmos documents use `/ownerId` as their partition key. Controllers derive the owner from the authenticated principal instead of accepting it from request payloads. Blob paths also include the owner and generation identifiers. Preserve these boundaries whenever adding queries, endpoints, or background messages.
+The `core` Cosmos database contains the `projects`, `documents`, and `references` containers. All three use `/ownerId` as their partition key. Projects own the shared character library, while generation documents in `documents` identify their parent project with `ProjectId` and panels reference project characters by ID. Controllers derive the owner from the authenticated principal instead of accepting it from request payloads. Blob paths also include the owner and generation identifiers. Preserve these boundaries whenever adding queries, endpoints, or background messages.
 
 The queue contract contains a schema version. Make backward compatibility explicit before changing it because deployed API and worker revisions may overlap.
 

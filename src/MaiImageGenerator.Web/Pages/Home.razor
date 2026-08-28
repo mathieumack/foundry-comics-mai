@@ -1,16 +1,67 @@
 ﻿@page "/"
+@page "/projects/{ProjectId:guid}"
+@page "/projects/{ProjectId:guid}/boards/{BoardId:guid}"
 @attribute [Authorize]
 @implements IDisposable
 @inject GenerationApiClient GenerationClient
+@inject NavigationManager Navigation
 @inject NotificationService NotificationService
 
 @code {
+	[Parameter]
+	public Guid? ProjectId { get; set; }
+
+	[Parameter]
+	public Guid? BoardId { get; set; }
+
 	[Parameter]
 	[SupplyParameterFromQuery(Name = "generationId")]
 	public Guid? GenerationId { get; set; }
 }
 
 <PageTitle>MAI Studio</PageTitle>
+
+<div class="project-workspace @(ProjectId is null ? null : "has-project-menu")">
+	@if (ProjectId is Guid projectId)
+	{
+		<aside class="project-menu" aria-label="Project boards">
+			<a class="back-to-projects" href="/projects">
+				<RadzenIcon Icon="arrow_back" />
+				All projects
+			</a>
+			@if (isProjectLoading)
+			{
+				<div class="project-menu-state" role="status">Loading project…</div>
+			}
+			else if (projectError is not null)
+			{
+				<div class="project-menu-state error" role="alert">@projectError</div>
+			}
+			else if (project is not null)
+			{
+				<h2>@project.Title</h2>
+				<NavLink class="new-project-board" href="@($"/projects/{projectId:D}")" Match="NavLinkMatch.All">
+					<RadzenIcon Icon="add" />
+					New board
+				</NavLink>
+				<nav aria-label="Boards">
+					@foreach (var board in projectBoards)
+					{
+						<NavLink class="project-board-link"
+								 href="@($"/projects/{projectId:D}/boards/{board.GenerationId:D}")"
+								 Match="NavLinkMatch.All">
+							<span>@board.Title</span>
+							<small>@board.Status</small>
+						</NavLink>
+					}
+					@if (projectBoards.Count == 0)
+					{
+						<p>No boards yet.</p>
+					}
+				</nav>
+			}
+		</aside>
+	}
 
 <div class="studio-shell">
 	<main class="workspace">
@@ -159,31 +210,47 @@
 						<div class="panel-editor" @key="character.Id">
 							<div class="panel-editor-toolbar">
 								<strong>Character</strong>
-								<RadzenButton Icon="delete_outline"
-												  title="Remove character"
-												  ButtonStyle="ButtonStyle.Danger"
-												  Variant="Variant.Flat"
-												  Size="ButtonSize.Small"
-												  Disabled="EditingLocked"
-												  Click="@(() => RemoveCharacter(character))" />
-							</div>
-							<RadzenTextBox @bind-Value="character.Name" Placeholder="Character name" Disabled="EditingLocked" Style="width: 100%" />
-							<InputFile OnChange="@(args => UploadReferencesAsync(character, args))"
-									   accept="image/png,image/jpeg"
-									   multiple />
+								@if (ProjectId is null)
+								{
+									<RadzenButton Icon="delete_outline"
+													  title="Remove character"
+													  ButtonStyle="ButtonStyle.Danger"
+													  Variant="Variant.Flat"
+													  Size="ButtonSize.Small"
+													  Disabled="EditingLocked"
+													  Click="@(() => RemoveCharacter(character))" />
+								}
+								</div>
+								<RadzenTextBox @bind-Value="character.Name"
+											   Placeholder="Character name"
+											   Disabled="@(EditingLocked || ProjectId is not null)"
+											   Style="width: 100%" />
+								@if (ProjectId is null)
+								{
+									<InputFile OnChange="@(args => UploadReferencesAsync(character, args))"
+										   accept="image/png,image/jpeg"
+										   multiple />
+								}
 							@if (character.References.Count > 0)
 							{
 								<small>@string.Join(", ", character.References.Select(reference => reference.FileName))</small>
 							}
 						</div>
 					}
-					<RadzenButton Icon="person_add"
+					@if (ProjectId is null)
+					{
+						<RadzenButton Icon="person_add"
 								  Text="Add character"
 								  ButtonStyle="ButtonStyle.Light"
 								  Variant="Variant.Flat"
 								  Disabled="EditingLocked"
 								  Click="AddCharacter" />
-					<p class="security-note">References are uploaded through the authenticated API and remain in private storage.</p>
+						<p class="security-note">References are uploaded through the authenticated API and remain in private storage.</p>
+					}
+					else
+					{
+						<p class="security-note">Characters and references are shared by every board in this project.</p>
+					}
 				</div>
 			</details>
 
@@ -306,25 +373,31 @@
 		</section>
 	</main>
 </div>
+</div>
 
 @code {
 	private readonly List<ComicPanelDraft> panels = [new(), new(), new(), new()];
 	private readonly List<CharacterDraft> characters = [];
+	private readonly List<GenerationSummaryResponse> projectBoards = [];
 	private CancellationTokenSource? generationCancellation;
 	private Guid? activeGenerationId;
+	private Guid? loadedProjectId;
 	private string? storyDescription;
 	private Guid? loadedGenerationId;
+	private ProjectResponse? project;
 	private string boardTitle = "New comic board";
 	private string? projectDescription;
 	private string? context;
 	private string? boardDataUrl;
 	private string? progressMessage;
+	private string? projectError;
 	private int generatedPanelCount;
 	private bool rewritePrompt = true;
 	private bool isGenerating;
 	private bool isRefreshing;
 	private bool isSubmitting;
 	private bool isScaffolding;
+	private bool isProjectLoading;
 
 	private double GenerationProgress => panels.Count == 0 ? 0 : generatedPanelCount * 100d / panels.Count;
 	private bool EditingLocked => isSubmitting || isGenerating || isScaffolding;
@@ -368,13 +441,38 @@
 
 	protected override async Task OnParametersSetAsync()
 	{
-		if (GenerationId is not Guid generationId)
+		var projectChanged = loadedProjectId != ProjectId;
+		if (projectChanged)
 		{
-			if (loadedGenerationId is not null)
+			loadedProjectId = ProjectId;
+			project = null;
+			projectBoards.Clear();
+			projectError = null;
+			if (ProjectId is Guid projectId)
+			{
+				await LoadProjectAsync(projectId);
+				if (project is null)
+				{
+					return;
+				}
+			}
+		}
+
+		var requestedGenerationId = BoardId ?? GenerationId;
+		if (requestedGenerationId is not Guid generationId)
+		{
+			if (loadedGenerationId is not null || projectChanged)
 			{
 				ResetBoard();
+				ApplyProjectDefaults();
 			}
 
+			return;
+		}
+
+		if (ProjectId is not null && projectBoards.All(board => board.GenerationId != generationId))
+		{
+			projectError = "This board does not belong to the selected project.";
 			return;
 		}
 
@@ -430,6 +528,47 @@
 		}
 	}
 
+	private async Task LoadProjectAsync(Guid projectId)
+	{
+		isProjectLoading = true;
+		try
+		{
+			project = await GenerationClient.GetProjectAsync(projectId, CancellationToken.None);
+			projectBoards.AddRange(await GenerationClient.ListBoardsAsync(projectId, CancellationToken.None));
+		}
+		catch (AccessTokenNotAvailableException exception)
+		{
+			exception.Redirect();
+		}
+		catch (GenerationApiException exception)
+		{
+			project = null;
+			projectError = exception.Message;
+		}
+		finally
+		{
+			isProjectLoading = false;
+		}
+	}
+
+	private void ApplyProjectDefaults()
+	{
+		if (project is null)
+		{
+			return;
+		}
+
+		context = project.Context;
+		characters.Clear();
+		foreach (var character in project.Characters)
+		{
+			var draft = new CharacterDraft { Id = character.CharacterId, Name = character.Name };
+			draft.References.AddRange(character.References.Select(reference =>
+				new UploadedReference(reference.ReferenceId, reference.FileName)));
+			characters.Add(draft);
+		}
+	}
+
 	private void ResetBoard()
 	{
 		generationCancellation?.Cancel();
@@ -479,22 +618,58 @@
 			}
 
 			progressMessage = "Submitting generation";
-			var request = new CreateGenerationRequest(
-				boardTitle.Trim(),
-				projectDescription?.Trim(),
-				context?.Trim(),
-				rewritePrompt,
-				panels.Select(panel => new PanelRequest(
-					panel.Prompt.Trim(),
-					panel.CharacterIds.ToArray())).ToArray(),
-				characters.Select(character => new CharacterRequest(
-					character.Id,
-					character.Name.Trim(),
-					character.References.Select(reference => reference.ReferenceId).ToArray())).ToArray());
-			var generation = await GenerationClient.CreateAsync(request, generationCancellation.Token);
+			var panelRequests = panels.Select(panel => new PanelRequest(
+				panel.Prompt.Trim(),
+				panel.CharacterIds.ToArray())).ToArray();
+			GenerationResponse generation;
+			if (ProjectId is Guid projectId && project is not null)
+			{
+				if (!string.Equals(project.Context, context?.Trim(), StringComparison.Ordinal))
+				{
+					project = await GenerationClient.UpdateProjectAsync(
+						projectId,
+						new CreateProjectRequest(project.Title, context?.Trim()),
+						generationCancellation.Token);
+				}
+
+				generation = await GenerationClient.CreateBoardAsync(
+					projectId,
+					new CreateBoardRequest(
+						boardTitle.Trim(),
+						projectDescription?.Trim(),
+						rewritePrompt,
+						panelRequests),
+					generationCancellation.Token);
+				projectBoards.Insert(0, new GenerationSummaryResponse(
+					generation.GenerationId,
+					generation.Title,
+					generation.CreatedAt,
+					generation.Status,
+					null));
+				loadedGenerationId = generation.GenerationId;
+			}
+			else
+			{
+				var request = new CreateGenerationRequest(
+					boardTitle.Trim(),
+					projectDescription?.Trim(),
+					context?.Trim(),
+					rewritePrompt,
+					panelRequests,
+					characters.Select(character => new CharacterRequest(
+						character.Id,
+						character.Name.Trim(),
+						character.References.Select(reference => reference.ReferenceId).ToArray())).ToArray());
+				generation = await GenerationClient.CreateAsync(request, generationCancellation.Token);
+			}
+
 			activeGenerationId = generation.GenerationId;
 			await ApplyGenerationAsync(generation, generationCancellation.Token);
 			await HandleGenerationStatusAsync(generation, generationCancellation.Token);
+			if (ProjectId is Guid activeProjectId)
+			{
+				Navigation.NavigateTo($"/projects/{activeProjectId:D}/boards/{generation.GenerationId:D}");
+			}
 			if (generation.Status is GenerationStatus.Pending or GenerationStatus.Processing)
 			{
 				Notify(NotificationSeverity.Info, "Generation queued", "Use Refresh board to retrieve the latest panels and status.");
@@ -598,8 +773,10 @@
 			return false;
 		}
 
-		var invalidCharacter = characters.FirstOrDefault(character =>
-			string.IsNullOrWhiteSpace(character.Name) || character.References.Count == 0);
+		var invalidCharacter = ProjectId is null
+			? characters.FirstOrDefault(character =>
+				string.IsNullOrWhiteSpace(character.Name) || character.References.Count == 0)
+			: null;
 		if (invalidCharacter is not null)
 		{
 			Notify(NotificationSeverity.Warning, "Character incomplete", "Every character needs a name and at least one reference image.");

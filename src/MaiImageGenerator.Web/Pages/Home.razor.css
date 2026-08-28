@@ -1,3 +1,104 @@
+.project-workspace.has-project-menu {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    width: min(1820px, 100%);
+    margin: 0 auto;
+}
+
+.project-menu {
+    min-height: calc(100vh - 102px);
+    padding: 28px 20px;
+    border-right: 1px solid #adb3a8;
+}
+
+.project-menu h2 {
+    margin: 24px 0 18px;
+    overflow-wrap: anywhere;
+    font-size: 1.25rem;
+}
+
+.back-to-projects,
+.new-project-board,
+.project-board-link {
+    display: flex;
+    color: #334039;
+    text-decoration: none;
+}
+
+.back-to-projects {
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.new-project-board {
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 18px;
+    padding: 10px 12px;
+    color: #fff;
+    background: #356f8c;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.new-project-board:hover,
+.new-project-board.active {
+    color: #fff;
+    background: #285d76;
+}
+
+.project-menu nav {
+    display: grid;
+    gap: 5px;
+}
+
+.project-menu nav p,
+.project-menu-state {
+    color: #667169;
+    font-size: 0.75rem;
+}
+
+.project-menu-state {
+    margin-top: 24px;
+}
+
+.project-menu-state.error {
+    color: #9c3327;
+}
+
+.project-board-link {
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px 12px;
+    border-left: 3px solid transparent;
+}
+
+.project-board-link:hover,
+.project-board-link.active {
+    color: #17201a;
+    background: rgba(53, 111, 140, 0.1);
+    border-left-color: #356f8c;
+}
+
+.project-board-link span {
+    overflow: hidden;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-board-link small {
+    color: #667169;
+    font-size: 0.65rem;
+}
+
+.has-project-menu .studio-shell {
+    width: 100%;
+}
+
 .studio-shell {
     width: min(1580px, 100%);
     margin: 0 auto;
@@ -477,9 +578,40 @@ label span {
         color: #536058;
         background: rgba(213, 219, 211, 0.94);
     }
+
+    .project-menu {
+        border-color: #566059;
+    }
+
+    .back-to-projects,
+    .project-board-link {
+        color: #edf2ea;
+    }
+
+    .project-board-link:hover,
+    .project-board-link.active {
+        color: #edf2ea;
+        background: rgba(111, 178, 207, 0.12);
+    }
+
+    .project-menu nav p,
+    .project-menu-state,
+    .project-board-link small {
+        color: #b8c2ba;
+    }
+}
+
+@media (max-width: 1100px) {
+    .project-workspace.has-project-menu {
+        grid-template-columns: 200px minmax(0, 1fr);
+    }
 }
 
 @media (max-width: 860px) {
+    .project-workspace.has-project-menu { display: block; }
+    .project-menu { min-height: 0; padding: 20px 16px; border-right: 0; border-bottom: 1px solid #adb3a8; }
+    .project-menu h2 { margin: 16px 0 12px; }
+    .project-menu nav { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
     .studio-shell { padding: 0 16px 34px; }
     .workspace { grid-template-columns: 1fr; }
     .control-rail { padding: 28px 0 34px; border-right: 0; border-bottom: 1px solid #adb3a8; }

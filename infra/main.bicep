@@ -172,7 +172,7 @@ module aiSearch 'modules/cognitives/aisearch.bicep' = {
 
 // =============================================================================
 // DATABASE
-// Cosmos DB stores generation and reference metadata.
+// Cosmos DB stores project, generation, and reference metadata.
 // =============================================================================
 
 module cosmosDb 'modules/database/cosmosdb.bicep' = {
@@ -183,6 +183,7 @@ module cosmosDb 'modules/database/cosmosdb.bicep' = {
     tags: apiTags
     containerNames: [
       'documents'
+      'projects'
       'references'
     ]
     partitionKeyPath: '/ownerId'

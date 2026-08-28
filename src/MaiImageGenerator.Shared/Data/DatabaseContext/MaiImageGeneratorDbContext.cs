@@ -7,6 +7,7 @@ public sealed class MaiImageGeneratorDbContext(
     DbContextOptions<MaiImageGeneratorDbContext> options) : DbContext(options)
 {
     public DbSet<GenerationDocument> Generations => Set<GenerationDocument>();
+    public DbSet<ProjectDocument> Projects => Set<ProjectDocument>();
     public DbSet<ReferenceDocument> References => Set<ReferenceDocument>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -18,6 +19,7 @@ public sealed class MaiImageGeneratorDbContext(
         generation.HasNoDiscriminator();
         generation.Property(item => item.Id).ToJsonProperty("id");
         generation.Property(item => item.OwnerId).ToJsonProperty("ownerId");
+        generation.Property(item => item.ProjectId).ToJsonProperty("projectId");
         generation.Property(item => item.SchemaVersion).ToJsonProperty("schemaVersion");
         generation.Property(item => item.Title).ToJsonProperty("title");
         generation.Property(item => item.Description).ToJsonProperty("description");
@@ -34,7 +36,20 @@ public sealed class MaiImageGeneratorDbContext(
             panel.ToJsonProperty("panels");
             panel.Property(item => item.Status).HasConversion<string>();
         });
-        generation.OwnsMany(item => item.Characters, character =>
+        var project = modelBuilder.Entity<ProjectDocument>();
+        project.ToContainer("projects");
+        project.HasKey(item => item.Id);
+        project.HasPartitionKey(item => item.OwnerId);
+        project.HasNoDiscriminator();
+        project.Property(item => item.Id).ToJsonProperty("id");
+        project.Property(item => item.OwnerId).ToJsonProperty("ownerId");
+        project.Property(item => item.SchemaVersion).ToJsonProperty("schemaVersion");
+        project.Property(item => item.Title).ToJsonProperty("title");
+        project.Property(item => item.Context).ToJsonProperty("context");
+        project.Property(item => item.CreatedAt).ToJsonProperty("createdAt");
+        project.Property(item => item.UpdatedAt).ToJsonProperty("updatedAt");
+        project.Property(item => item.ETag).ToJsonProperty("_etag").IsETagConcurrency();
+        project.OwnsMany(item => item.Characters, character =>
         {
             character.ToJsonProperty("characters");
             character.OwnsMany(item => item.References, reference =>

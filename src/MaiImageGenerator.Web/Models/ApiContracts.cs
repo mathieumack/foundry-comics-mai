@@ -1,5 +1,26 @@
 namespace MaiImageGenerator.Web.Models;
 
+public sealed record CreateProjectRequest(string Title, string? Context);
+
+public sealed record ProjectResponse(
+    Guid ProjectId,
+    string Title,
+    string? Context,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    IReadOnlyList<ProjectCharacterResponse> Characters);
+
+public sealed record ProjectCharacterResponse(
+    string CharacterId,
+    string Name,
+    IReadOnlyList<CharacterReferenceResponse> References);
+
+public sealed record CreateBoardRequest(
+    string Title,
+    string? Description,
+    bool RewritePrompt,
+    IReadOnlyList<PanelRequest> Panels);
+
 public sealed record CreateGenerationRequest(
     string Title,
     string? Description,
