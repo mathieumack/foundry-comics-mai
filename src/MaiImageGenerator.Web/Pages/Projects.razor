@@ -2,21 +2,50 @@
 @attribute [Authorize]
 @implements IDisposable
 @inject GenerationApiClient GenerationClient
+@inject NavigationManager Navigation
 
 <PageTitle>My projects</PageTitle>
 
 <main class="projects-shell">
     <header class="projects-header">
         <div>
-            <span class="eyebrow">Comic boards</span>
+            <span class="eyebrow">Comic projects</span>
             <h1>My projects</h1>
-            <p>Open a previous board or begin a new story.</p>
+            <p>Open a project to create and edit its boards.</p>
         </div>
-        <a class="new-board" href="">
+        <button class="new-board" type="button" @onclick="ShowCreateProject">
             <RadzenIcon Icon="add" />
-            New board
-        </a>
+            New project
+        </button>
     </header>
+
+    @if (isCreating)
+    {
+        <section class="create-project" aria-label="Create project">
+            <RadzenTextBox @bind-Value="newProjectTitle"
+                           Name="project-title"
+                           Placeholder="Project title"
+                           Disabled="isSaving"
+                           Style="width: 100%" />
+            <RadzenTextArea @bind-Value="newProjectContext"
+                            Name="project-context"
+                            Placeholder="Art direction (optional)"
+                            Rows="3"
+                            Disabled="isSaving"
+                            Style="width: 100%" />
+            <div class="create-project-actions">
+                <RadzenButton Text="Cancel"
+                              ButtonStyle="ButtonStyle.Light"
+                              Variant="Variant.Outlined"
+                              Disabled="isSaving"
+                              Click="@CancelCreateProject" />
+                <RadzenButton Text="Create project"
+                              Icon="add"
+                              IsBusy="isSaving"
+                              Click="@CreateProjectAsync" />
+            </div>
+        </section>
+    }
 
     @if (isLoading)
     {
@@ -33,31 +62,24 @@
     {
         <section class="empty-projects">
             <RadzenIcon Icon="auto_stories" />
-            <h2>Create your first comic board</h2>
-            <p>Your generated boards will appear here.</p>
-            <a class="new-board" href="">New board</a>
+            <h2>Create your first comic project</h2>
+            <p>Your projects and their boards will appear here.</p>
+            <button class="new-board" type="button" @onclick="ShowCreateProject">New project</button>
         </section>
     }
     else
     {
-        <section class="projects-grid" aria-label="Your comic boards">
+        <section class="projects-grid" aria-label="Your comic projects">
             @foreach (var project in projects)
             {
-                <a class="project-card" href="@($"/?generationId={project.GenerationId:D}")">
+                <a class="project-card" href="@($"/projects/{project.ProjectId:D}")">
                     <div class="project-thumbnail">
-                        @if (project.ThumbnailDataUrl is not null)
-                        {
-                            <img src="@project.ThumbnailDataUrl" alt="" />
-                        }
-                        else
-                        {
-                            <RadzenIcon Icon="image" />
-                        }
+                        <RadzenIcon Icon="auto_stories" />
                     </div>
                     <div class="project-details">
-                        <span class="status @project.Status.ToString().ToLowerInvariant()">@project.Status</span>
+                        <span class="status">Project</span>
                         <h2>@project.Title</h2>
-                        <time datetime="@project.CreatedAt.ToString("O")">@project.CreatedAt.ToLocalTime().ToString("d MMM yyyy")</time>
+                        <time datetime="@project.UpdatedAt.ToString("O")">Updated @project.UpdatedAt.ToLocalTime().ToString("d MMM yyyy")</time>
                     </div>
                 </a>
             }
@@ -67,31 +89,19 @@
 
 @code {
     private readonly CancellationTokenSource cancellation = new();
-    private readonly List<ProjectViewModel> projects = [];
+    private readonly List<ProjectResponse> projects = [];
     private bool isLoading = true;
+    private bool isCreating;
+    private bool isSaving;
+    private string newProjectTitle = string.Empty;
+    private string? newProjectContext;
     private string? error;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            var summaries = await GenerationClient.ListAsync(cancellation.Token);
-            foreach (var summary in summaries)
-            {
-                string? thumbnailDataUrl = null;
-                if (summary.ThumbnailUri is not null)
-                {
-                    try
-                    {
-                        thumbnailDataUrl = await GenerationClient.DownloadDataUrlAsync(summary.ThumbnailUri, cancellation.Token);
-                    }
-                    catch (GenerationApiException)
-                    {
-                    }
-                }
-
-                projects.Add(new(summary.GenerationId, summary.Title, summary.CreatedAt, summary.Status, thumbnailDataUrl));
-            }
+            projects.AddRange(await GenerationClient.ListProjectsAsync(cancellation.Token));
         }
         catch (AccessTokenNotAvailableException exception)
         {
@@ -110,16 +120,56 @@
         }
     }
 
+    private void ShowCreateProject()
+    {
+        error = null;
+        isCreating = true;
+    }
+
+    private void CancelCreateProject()
+    {
+        isCreating = false;
+        newProjectTitle = string.Empty;
+        newProjectContext = null;
+    }
+
+    private async Task CreateProjectAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newProjectTitle))
+        {
+            error = "Enter a project title.";
+            return;
+        }
+
+        isSaving = true;
+        error = null;
+        try
+        {
+            var project = await GenerationClient.CreateProjectAsync(
+                new CreateProjectRequest(newProjectTitle.Trim(), newProjectContext?.Trim()),
+                cancellation.Token);
+            Navigation.NavigateTo($"/projects/{project.ProjectId:D}");
+        }
+        catch (AccessTokenNotAvailableException exception)
+        {
+            exception.Redirect();
+        }
+        catch (GenerationApiException exception)
+        {
+            error = exception.Message;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
     public void Dispose()
     {
         cancellation.Cancel();
         cancellation.Dispose();
     }
-
-    private sealed record ProjectViewModel(
-        Guid GenerationId,
-        string Title,
-        DateTimeOffset CreatedAt,
-        GenerationStatus Status,
-        string? ThumbnailDataUrl);
 }
