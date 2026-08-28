@@ -84,6 +84,10 @@ Run `azd env refresh`, confirm the Entra outputs exist, and redeploy the `web` s
 
 Check Container Apps VNet integration, private endpoint state, private DNS links, and the managed identity's data-plane roles.
 
+### Projects API returns HTTP 500
+
+Confirm that the configured Cosmos database is `core` and contains the `projects`, `documents`, and `references` containers, each partitioned by `/ownerId`. Re-run `azd provision` after an infrastructure update if a required container is missing.
+
 ## Remove an environment
 
 ```powershell

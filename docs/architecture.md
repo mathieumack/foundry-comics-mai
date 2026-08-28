@@ -90,7 +90,7 @@ The projects API creates, lists, retrieves, and updates projects through owner-p
 
 ## Data ownership
 
-Cosmos documents use `/ownerId` as their partition key. Projects own the shared character library, while generation documents identify their parent project with `ProjectId` and panels reference project characters by ID. Controllers derive the owner from the authenticated principal instead of accepting it from request payloads. Blob paths also include the owner and generation identifiers. Preserve these boundaries whenever adding queries, endpoints, or background messages.
+The `core` Cosmos database contains the `projects`, `documents`, and `references` containers. All three use `/ownerId` as their partition key. Projects own the shared character library, while generation documents in `documents` identify their parent project with `ProjectId` and panels reference project characters by ID. Controllers derive the owner from the authenticated principal instead of accepting it from request payloads. Blob paths also include the owner and generation identifiers. Preserve these boundaries whenever adding queries, endpoints, or background messages.
 
 The queue contract contains a schema version. Make backward compatibility explicit before changing it because deployed API and worker revisions may overlap.
 
