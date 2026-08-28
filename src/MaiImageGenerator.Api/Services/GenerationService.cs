@@ -16,6 +16,49 @@ public sealed class GenerationService(
 {
     private readonly BlobContainerClient _container = blobServiceClient.GetBlobContainerClient("generations");
 
+    public async Task<GenerationResponse> CreateBoardAsync(
+        string ownerId,
+        ProjectDocument project,
+        CreateBoardRequest request,
+        CancellationToken cancellationToken)
+    {
+        var validationErrors = GenerationRequestValidator.Validate(
+            request,
+            project.Characters.Select(character => character.Id).ToHashSet(StringComparer.Ordinal));
+        if (validationErrors.Count > 0)
+        {
+            throw new ArgumentException(string.Join(" ", validationErrors.SelectMany(item => item.Value)));
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var document = new GenerationDocument
+        {
+            Id = Guid.NewGuid().ToString("D"),
+            OwnerId = ownerId,
+            ProjectId = project.Id,
+            SchemaVersion = 2,
+            Title = request.Title.Trim(),
+            Description = request.Description?.Trim(),
+            Context = project.Context,
+            RewritePrompt = request.RewritePrompt,
+            Status = GenerationStatus.Pending,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Panels = request.Panels.Select((panel, index) => new GenerationPanel
+            {
+                Number = index + 1,
+                Prompt = panel.Prompt.Trim(),
+                CharacterIds = panel.CharacterIds.Distinct().ToList(),
+                Status = PanelGenerationStatus.Pending
+            }).ToList()
+        };
+
+        dbContext.Generations.Add(document);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await QueueAsync(document, project, cancellationToken);
+        return ToResponse(document, project);
+    }
+
     public async Task<GenerationResponse> GenerateAsync(
         string ownerId,
         CreateGenerationRequest request,
@@ -74,28 +117,7 @@ public sealed class GenerationService(
         dbContext.Generations.Add(document);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        try
-        {
-            var message = new BoardGenerationRequestMessage
-            {
-                BoardId = document.Id,
-                OwnerId = ownerId,
-                RewritePrompt = request.RewritePrompt,
-                Characters = request.Characters.Select(character => new BoardGenerationCharacter(
-                    character.Id,
-                    character.Name,
-                    character.ReferenceIds)).ToArray()
-            };
-            await jobsQueue.SendMessageAsync(BinaryData.FromObjectAsJson(message).ToString(), cancellationToken);
-        }
-        catch
-        {
-            document.Status = GenerationStatus.Failed;
-            document.Error = "The generation could not be queued.";
-            document.UpdatedAt = DateTimeOffset.UtcNow;
-            await dbContext.SaveChangesAsync(CancellationToken.None);
-            throw;
-        }
+        await QueueAsync(document, project, cancellationToken);
 
         return ToResponse(document, project);
     }
@@ -134,6 +156,19 @@ public sealed class GenerationService(
         return documents.Select(ToSummaryResponse).ToArray();
     }
 
+    public async Task<IReadOnlyList<GenerationSummaryResponse>> ListAsync(
+        string ownerId,
+        string projectId,
+        CancellationToken cancellationToken)
+    {
+        var documents = await dbContext.Generations
+            .WithPartitionKey(ownerId)
+            .Where(item => item.OwnerId == ownerId && item.ProjectId == projectId)
+            .OrderByDescending(item => item.CreatedAt)
+            .ToListAsync(cancellationToken);
+        return documents.Select(ToSummaryResponse).ToArray();
+    }
+
     public async Task<(Stream Content, string ContentType)?> OpenArtifactAsync(
         string ownerId,
         Guid generationId,
@@ -166,6 +201,35 @@ public sealed class GenerationService(
         }
 
         return references;
+    }
+
+    private async Task QueueAsync(
+        GenerationDocument document,
+        ProjectDocument project,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var message = new BoardGenerationRequestMessage
+            {
+                BoardId = document.Id,
+                OwnerId = document.OwnerId,
+                RewritePrompt = document.RewritePrompt,
+                Characters = project.Characters.Select(character => new BoardGenerationCharacter(
+                    character.Id,
+                    character.Name,
+                    character.References.Select(reference => reference.Id).ToArray())).ToArray()
+            };
+            await jobsQueue.SendMessageAsync(BinaryData.FromObjectAsJson(message).ToString(), cancellationToken);
+        }
+        catch
+        {
+            document.Status = GenerationStatus.Failed;
+            document.Error = "The generation could not be queued.";
+            document.UpdatedAt = DateTimeOffset.UtcNow;
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            throw;
+        }
     }
 
     private static GenerationResponse ToResponse(GenerationDocument document, ProjectDocument project) => new(
