@@ -17,7 +17,8 @@ public static class GenerationRequestValidator
         {
             errors[nameof(request.Panels)] = ["A generation requires between 1 and 8 panels with non-empty prompts."];
         }
-        else if (!TemplateMatchesPanelCount(request.Template, request.Panels.Count))
+        else if (request.Template is BoardTemplate template &&
+                 !TemplateMatchesPanelCount(template, request.Panels.Count))
         {
             errors[nameof(request.Panels)] = ["The panel count must match the selected board template."];
         }
@@ -53,7 +54,8 @@ public static class GenerationRequestValidator
         {
             errors[nameof(request.Panels)] = ["A board requires between 1 and 8 panels with non-empty prompts."];
         }
-        else if (!TemplateMatchesPanelCount(request.Template, request.Panels.Count))
+        else if (request.Template is BoardTemplate template &&
+                 !TemplateMatchesPanelCount(template, request.Panels.Count))
         {
             errors[nameof(request.Panels)] = ["The panel count must match the selected board template."];
         }

@@ -7,7 +7,7 @@ public sealed record CreateGenerationRequest(
     string? Description,
     string? Context,
     bool RewritePrompt,
-    BoardTemplate Template,
+    BoardTemplate? Template,
     IReadOnlyList<PanelRequest> Panels,
     IReadOnlyList<CharacterRequest> Characters);
 
@@ -15,7 +15,7 @@ public sealed record CreateBoardRequest(
     string Title,
     string? Description,
     bool RewritePrompt,
-    BoardTemplate Template,
+    BoardTemplate? Template,
     IReadOnlyList<PanelRequest> Panels);
 
 public sealed record CreateProjectScaffoldRequest(string StoryDescription, int PanelCount);
