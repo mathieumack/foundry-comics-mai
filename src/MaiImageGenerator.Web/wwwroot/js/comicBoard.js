@@ -3,10 +3,12 @@ export async function composeComicBoard(title, imageDataUrls, layout) {
         throw new Error("The comic board must contain at least one panel.");
     }
 
-    const columns = Math.min(imageDataUrls.length, 2);
-    const rows = Math.ceil(imageDataUrls.length / columns);
-    const width = columns * layout.panelSize + (columns - 1) * layout.gutter + 2 * layout.margin;
-    const height = layout.titleHeight + rows * layout.panelSize + (rows - 1) * layout.gutter + 2 * layout.margin;
+    if (!Array.isArray(layout.slots) || layout.slots.length !== imageDataUrls.length) {
+        throw new Error("The panel count must match the selected board template.");
+    }
+
+    const width = layout.columns * layout.panelSize + (layout.columns - 1) * layout.gutter + 2 * layout.margin;
+    const height = layout.titleHeight + layout.rows * layout.panelSize + (layout.rows - 1) * layout.gutter + 2 * layout.margin;
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d");
 
@@ -21,11 +23,12 @@ export async function composeComicBoard(title, imageDataUrls, layout) {
 
     const images = await Promise.all(imageDataUrls.map(loadImage));
     images.forEach((image, index) => {
-        const column = index % columns;
-        const row = Math.floor(index / columns);
-        const x = layout.margin + column * (layout.panelSize + layout.gutter);
-        const y = layout.titleHeight + layout.margin + row * (layout.panelSize + layout.gutter);
-        context.drawImage(image, x, y, layout.panelSize, layout.panelSize);
+        const slot = layout.slots[index];
+        const panelWidth = slot.columnSpan * layout.panelSize + (slot.columnSpan - 1) * layout.gutter;
+        const panelHeight = slot.rowSpan * layout.panelSize + (slot.rowSpan - 1) * layout.gutter;
+        const x = layout.margin + slot.column * (layout.panelSize + layout.gutter);
+        const y = layout.titleHeight + layout.margin + slot.row * (layout.panelSize + layout.gutter);
+        context.drawImage(image, x, y, panelWidth, panelHeight);
     });
 
     return canvas.toDataURL("image/png");

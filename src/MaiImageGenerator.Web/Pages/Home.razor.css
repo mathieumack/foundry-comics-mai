@@ -379,7 +379,6 @@ label span {
 
 .board-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: clamp(7px, 1.4vw, 16px);
 }
 
@@ -392,6 +391,10 @@ label span {
     color: #6b766e;
     background: rgba(225, 229, 220, 0.88);
     border: 1px solid #aeb5ad;
+}
+
+.panel-preview[style*="span 2"] {
+    aspect-ratio: 2 / 1;
 }
 
 .panel-preview img,

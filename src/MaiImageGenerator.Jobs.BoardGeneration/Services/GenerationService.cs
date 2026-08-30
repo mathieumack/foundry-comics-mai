@@ -140,7 +140,11 @@ public sealed class GenerationService(
                 }
             }
 
-            var board = await imageComposer.BuildBoardAsync(document.Title, panelImages, cancellationToken);
+            var board = await imageComposer.BuildBoardAsync(
+                document.Title,
+                panelImages,
+                document.Template,
+                cancellationToken);
             document.BoardBlobName = ArtifactPathBuilder.GetGenerationBlobName(
                 request.OwnerId,
                 Guid.Parse(document.Id),

@@ -19,6 +19,7 @@ public sealed record CreateBoardRequest(
     string Title,
     string? Description,
     bool RewritePrompt,
+    BoardTemplate Template,
     IReadOnlyList<PanelRequest> Panels);
 
 public sealed record CreateGenerationRequest(
@@ -26,6 +27,7 @@ public sealed record CreateGenerationRequest(
     string? Description,
     string? Context,
     bool RewritePrompt,
+    BoardTemplate Template,
     IReadOnlyList<PanelRequest> Panels,
     IReadOnlyList<CharacterRequest> Characters);
 
@@ -53,6 +55,7 @@ public sealed record GenerationResponse(
     string? Context,
     DateTimeOffset CreatedAt,
     bool RewritePrompt,
+    BoardTemplate Template,
     IReadOnlyList<CharacterGenerationResponse> Characters,
     GenerationStatus Status,
     int PanelCount,
