@@ -21,7 +21,7 @@ public sealed class FoundryImageClient(
         """;
 
     private readonly FoundryOptions _options = options.Value;
-    private readonly GeneratedImageSize _imageSize = options.Value.ImageSize switch
+    private readonly GeneratedImageSize _squareImageSize = options.Value.ImageSize switch
     {
         1024 => GeneratedImageSize.W1024xH1024,
         _ => throw new InvalidOperationException("The image SDK supports ImageSize=1024 for square images.")
@@ -53,16 +53,22 @@ public sealed class FoundryImageClient(
     public async Task<byte[]> GenerateAsync(
         string prompt,
         byte[]? referenceSheet,
+        bool landscape,
         CancellationToken cancellationToken)
     {
         try
         {
+#pragma warning disable OPENAI001
+            var imageSize = landscape
+                ? GeneratedImageSize.W1536xH1024
+                : _squareImageSize;
+#pragma warning restore OPENAI001
             GeneratedImage image;
             if (referenceSheet is null)
             {
                 var result = await imageClient.GenerateImageAsync(
                     prompt,
-                    new ImageGenerationOptions { Size = _imageSize },
+                    new ImageGenerationOptions { Size = imageSize },
                     cancellationToken);
                 image = result.Value;
             }
@@ -75,7 +81,7 @@ public sealed class FoundryImageClient(
                 multipart.Add(imageContent, "image", "character-references.png");
                 multipart.Add(new StringContent(prompt), "prompt");
                 multipart.Add(new StringContent(_options.ImageModel), "model");
-                multipart.Add(new StringContent(_imageSize.ToString()), "size");
+                multipart.Add(new StringContent(imageSize.ToString()), "size");
 
                 await using var requestStream = new MemoryStream();
                 await multipart.CopyToAsync(requestStream, cancellationToken);

@@ -92,7 +92,11 @@ public sealed class ImageComposer(IOptions<FoundryOptions> options)
                     }
                     else
                     {
-                        panel.Mutate(panelContext => panelContext.Resize(panelWidth, panelHeight));
+                        panel.Mutate(panelContext => panelContext.Resize(new ResizeOptions
+                        {
+                            Size = new Size(panelWidth, panelHeight),
+                            Mode = ResizeMode.Crop
+                        }));
                         context.DrawImage(panel, new Point(x, y), 1f);
                     }
                 }

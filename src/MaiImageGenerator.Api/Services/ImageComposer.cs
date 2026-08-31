@@ -72,7 +72,11 @@ public sealed class ImageComposer(IOptions<FoundryOptions> options)
                     var slot = definition.Slots[index];
                     var panelWidth = slot.ColumnSpan * _imageSize + (slot.ColumnSpan - 1) * Gutter;
                     var panelHeight = slot.RowSpan * _imageSize + (slot.RowSpan - 1) * Gutter;
-                    panels[index].Mutate(panelContext => panelContext.Resize(panelWidth, panelHeight));
+                    panels[index].Mutate(panelContext => panelContext.Resize(new ResizeOptions
+                    {
+                        Size = new Size(panelWidth, panelHeight),
+                        Mode = ResizeMode.Crop
+                    }));
                     var x = Margin + slot.Column * (_imageSize + Gutter);
                     var y = TitleHeight + Margin + slot.Row * (_imageSize + Gutter);
                     context.DrawImage(panels[index], new Point(x, y), 1f);

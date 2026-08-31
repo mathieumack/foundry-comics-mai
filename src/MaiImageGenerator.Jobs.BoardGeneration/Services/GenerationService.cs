@@ -59,8 +59,10 @@ public sealed class GenerationService(
         try
         {
             var panelImages = new List<byte[]?>(document.Panels.Count);
-            foreach (var panel in document.Panels)
+            var layout = BoardTemplateDefinitions.Resolve(document.Template, document.Panels.Count);
+            for (var panelIndex = 0; panelIndex < document.Panels.Count; panelIndex++)
             {
+                var panel = document.Panels[panelIndex];
                 if (panel.Status == PanelGenerationStatus.Completed && panel.ImageBlobName is not null)
                 {
                     try
@@ -111,7 +113,12 @@ public sealed class GenerationService(
                     var prompt = selectedCharacters.Length == 0
                         ? panel.EffectivePrompt
                         : $"Use the reference sheet only as identity guidance for {string.Join(", ", selectedCharacters.Select(item => item.Name))}. Preserve their identity and create this new scene: {panel.EffectivePrompt}";
-                    var image = await foundryClient.GenerateAsync(prompt!, referenceSheet, cancellationToken);
+                    var slot = layout.Slots[panelIndex];
+                    var image = await foundryClient.GenerateAsync(
+                        prompt!,
+                        referenceSheet,
+                        slot.ColumnSpan > slot.RowSpan,
+                        cancellationToken);
                     panelImages.Add(image);
                     panel.ImageBlobName = ArtifactPathBuilder.GetGenerationBlobName(
                         request.OwnerId,
