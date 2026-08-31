@@ -11,10 +11,33 @@ namespace MaiImageGenerator.Jobs.BoardGeneration.Services;
 
 public sealed class ImageComposer(IOptions<FoundryOptions> options)
 {
+    private const int LandscapeWidth = 1536;
     private const int Gutter = 24;
     private const int Margin = 24;
     private const int TitleHeight = 104;
     private readonly int _imageSize = options.Value.ImageSize;
+
+    public async Task<byte[]> NormalizePanelAsync(
+        byte[] panelBytes,
+        bool landscape,
+        CancellationToken cancellationToken)
+    {
+        var width = landscape ? LandscapeWidth : _imageSize;
+        using var panel = Image.Load<Rgba32>(panelBytes);
+        if (panel.Width == width && panel.Height == _imageSize)
+        {
+            return panelBytes;
+        }
+
+        panel.Mutate(context => context.Resize(new ResizeOptions
+        {
+            Size = new Size(width, _imageSize),
+            Mode = ResizeMode.Crop
+        }));
+        await using var output = new MemoryStream();
+        await panel.SaveAsPngAsync(output, cancellationToken);
+        return output.ToArray();
+    }
 
     public async Task<byte[]> BuildReferenceSheetAsync(
         IReadOnlyList<Stream> references,

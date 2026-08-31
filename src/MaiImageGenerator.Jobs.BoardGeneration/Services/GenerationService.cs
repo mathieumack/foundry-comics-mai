@@ -114,11 +114,13 @@ public sealed class GenerationService(
                         ? panel.EffectivePrompt
                         : $"Use the reference sheet only as identity guidance for {string.Join(", ", selectedCharacters.Select(item => item.Name))}. Preserve their identity and create this new scene: {panel.EffectivePrompt}";
                     var slot = layout.Slots[panelIndex];
+                    var landscape = slot.ColumnSpan > slot.RowSpan;
                     var image = await foundryClient.GenerateAsync(
                         prompt!,
                         referenceSheet,
-                        slot.ColumnSpan > slot.RowSpan,
+                        landscape,
                         cancellationToken);
+                    image = await imageComposer.NormalizePanelAsync(image, landscape, cancellationToken);
                     panelImages.Add(image);
                     panel.ImageBlobName = ArtifactPathBuilder.GetGenerationBlobName(
                         request.OwnerId,
