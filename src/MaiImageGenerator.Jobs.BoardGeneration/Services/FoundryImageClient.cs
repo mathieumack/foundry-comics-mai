@@ -1,10 +1,13 @@
 using MaiImageGenerator.Api.Configuration;
+using Azure.Core;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Options;
 using OpenAI.Images;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace MaiImageGenerator.Jobs.BoardGeneration.Services;
 
@@ -12,8 +15,12 @@ public sealed class FoundryImageClient(
     AIAgent promptAgent,
     ImageClient imageClient,
     HttpClient httpClient,
+    TokenCredential credential,
     IOptions<FoundryOptions> options)
 {
+    private const int LandscapeWidth = 1365;
+    private const int LandscapeHeight = 768;
+    private static readonly string[] CognitiveServicesScopes = ["https://cognitiveservices.azure.com/.default"];
     internal const string RewriteInstructions = """
         You are an art director specializing in image-generation prompts. Rewrite the supplied context and panel
         description into one autonomous prompt. Preserve the requested characters, action, framing, visual style,
@@ -21,11 +28,10 @@ public sealed class FoundryImageClient(
         """;
 
     private readonly FoundryOptions _options = options.Value;
-    private readonly GeneratedImageSize _squareImageSize = options.Value.ImageSize switch
-    {
-        1024 => GeneratedImageSize.W1024xH1024,
-        _ => throw new InvalidOperationException("The image SDK supports ImageSize=1024 for square images.")
-    };
+    private readonly Uri _generationsEndpoint = GetGenerationsEndpoint(options.Value.Endpoint);
+    private readonly int _squareImageSize = options.Value.ImageSize == 1024
+        ? options.Value.ImageSize
+        : throw new InvalidOperationException("MAI image generation supports ImageSize=1024 for square panels.");
 
     public async Task<string> RewritePromptAsync(
         string? context,
@@ -58,19 +64,11 @@ public sealed class FoundryImageClient(
     {
         try
         {
-#pragma warning disable OPENAI001
-            var imageSize = landscape
-                ? GeneratedImageSize.W1536xH1024
-                : _squareImageSize;
-#pragma warning restore OPENAI001
+            var (width, height) = GetImageDimensions(landscape);
             GeneratedImage image;
             if (referenceSheet is null)
             {
-                var result = await imageClient.GenerateImageAsync(
-                    prompt,
-                    new ImageGenerationOptions { Size = imageSize },
-                    cancellationToken);
-                image = result.Value;
+                return await GenerateFromPromptAsync(prompt, width, height, cancellationToken);
             }
             else
             {
@@ -81,7 +79,7 @@ public sealed class FoundryImageClient(
                 multipart.Add(imageContent, "image", "character-references.png");
                 multipart.Add(new StringContent(prompt), "prompt");
                 multipart.Add(new StringContent(_options.ImageModel), "model");
-                multipart.Add(new StringContent(imageSize.ToString()), "size");
+                multipart.Add(new StringContent($"{width}x{height}"), "size");
 
                 await using var requestStream = new MemoryStream();
                 await multipart.CopyToAsync(requestStream, cancellationToken);
@@ -109,6 +107,10 @@ public sealed class FoundryImageClient(
 
             throw new FoundryGenerationException("The image model returned no image.");
         }
+        catch (HttpRequestException exception)
+        {
+            throw new FoundryGenerationException("Image generation request failed.", exception);
+        }
         catch (ClientResultException exception) when (
             exception.Status == 400 &&
             exception.Message.Contains("content_safety_violation", StringComparison.OrdinalIgnoreCase))
@@ -125,6 +127,67 @@ public sealed class FoundryImageClient(
         }
     }
 
+    private async Task<byte[]> GenerateFromPromptAsync(
+        string prompt,
+        int width,
+        int height,
+        CancellationToken cancellationToken)
+    {
+        var token = await credential.GetTokenAsync(
+            new TokenRequestContext(CognitiveServicesScopes),
+            cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Post, _generationsEndpoint);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+        request.Content = JsonContent.Create(new
+        {
+            model = _options.ImageModel,
+            prompt,
+            width,
+            height
+        });
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            if ((int)response.StatusCode == 400 &&
+                responseBody.Contains("content_safety_violation", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new FoundryContentSafetyException(
+                    "The image was not generated because its prompt was blocked by the content safety policy.");
+            }
+
+            throw new FoundryGenerationException(
+                $"Image generation failed with HTTP status {(int)response.StatusCode}.");
+        }
+
+        using var document = JsonDocument.Parse(responseBody);
+        var imageBase64 = document.RootElement.GetProperty("data")
+            .EnumerateArray()
+            .Select(item => item.TryGetProperty("b64_json", out var value) ? value.GetString() : null)
+            .FirstOrDefault(value => value is not null)
+            ?? throw new FoundryGenerationException("The image model returned no image.");
+        return Convert.FromBase64String(imageBase64);
+    }
+
+    private (int Width, int Height) GetImageDimensions(bool landscape) =>
+        landscape
+            ? (LandscapeWidth, LandscapeHeight)
+            : (_squareImageSize, _squareImageSize);
+
+    private static Uri GetGenerationsEndpoint(string endpoint)
+    {
+        var builder = new UriBuilder(endpoint);
+        const string cognitiveServicesSuffix = ".cognitiveservices.azure.com";
+        if (builder.Host.EndsWith(cognitiveServicesSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            builder.Host = $"{builder.Host[..^cognitiveServicesSuffix.Length]}.services.ai.azure.com";
+        }
+
+        builder.Path = "/mai/v1/images/generations";
+        builder.Query = string.Empty;
+        return builder.Uri;
+    }
+
 }
 
 public class FoundryGenerationException : Exception
@@ -139,7 +202,15 @@ public class FoundryGenerationException : Exception
     }
 }
 
-public sealed class FoundryContentSafetyException(string message, Exception innerException)
-    : FoundryGenerationException(message, innerException)
+public sealed class FoundryContentSafetyException : FoundryGenerationException
 {
+    public FoundryContentSafetyException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+
+    public FoundryContentSafetyException(string message)
+        : base(message)
+    {
+    }
 }

@@ -120,7 +120,6 @@ public sealed class GenerationService(
                         referenceSheet,
                         landscape,
                         cancellationToken);
-                    image = await imageComposer.NormalizePanelAsync(image, landscape, cancellationToken);
                     panelImages.Add(image);
                     panel.ImageBlobName = ArtifactPathBuilder.GetGenerationBlobName(
                         request.OwnerId,
