@@ -69,6 +69,7 @@ For redeployment behavior, validation, outputs, and teardown, follow [Deploy wit
 | `src/MaiImageGenerator.Api` | Authenticated API, persistence, uploads, and job submission |
 | `src/MaiImageGenerator.Jobs.BoardGeneration` | Queue-driven panel and board generation worker |
 | `src/MaiImageGenerator.Shared` | Shared configuration, data entities, and queue contracts |
+| `src/MaiImageGenerator.Console` | API-key console for testing MAI image models and resolutions |
 | `infra` | Bicep entry point and reusable Azure resource modules |
 | `scripts` | `azd` lifecycle and frontend packaging scripts |
 | `docs` | Architecture, requirements, and deployment documentation |
@@ -79,6 +80,8 @@ For redeployment behavior, validation, outputs, and teardown, follow [Deploy wit
 dotnet restore .\src\MaiImageGenerator.slnx
 dotnet build .\src\MaiImageGenerator.slnx
 ```
+
+To call a deployed MAI image model directly with an API key and compare output resolutions, see the [MAI image console](src/MaiImageGenerator.Console/README.md).
 
 Checked-in configuration contains only local placeholders. Azure values are supplied as environment variables by Bicep and `azd`; do not commit connection strings, tokens, tenant-specific endpoints, or generated `.azure` state.
 

@@ -6,7 +6,6 @@ using OpenAI.Images;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
 
 namespace MaiImageGenerator.Jobs.BoardGeneration.Services;
@@ -138,13 +137,16 @@ public sealed class FoundryImageClient(
             cancellationToken);
         using var request = new HttpRequestMessage(HttpMethod.Post, _generationsEndpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
-        request.Content = JsonContent.Create(new
+        var requestBody = JsonSerializer.SerializeToUtf8Bytes(new
         {
             model = _options.ImageModel,
             prompt,
             width,
             height
         });
+        request.Content = new ByteArrayContent(requestBody);
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        request.Content.Headers.ContentLength = requestBody.Length;
         using var response = await httpClient.SendAsync(request, cancellationToken);
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
