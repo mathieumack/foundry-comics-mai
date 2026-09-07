@@ -232,7 +232,7 @@ resource containerApp 'Microsoft.App/containerApps@2025-07-01' = {
                 value: azureContentUnderstandingEndpoint
               }
               {
-                name: 'Azure__SignalR__ConnectionString'
+                name: 'SignalR__ConnectionString'
                 value: 'Endpoint=${signalREndpoint};AuthType=azure.msi;ClientId=${managedIdentityClientId};Version=1.0;'
               }
             ]
