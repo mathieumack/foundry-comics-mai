@@ -15,6 +15,7 @@
     <PackageReference Include="Azure.Storage.Blobs" Version="12.29.2" />
     <PackageReference Include="Azure.Storage.Queues" Version="12.27.1" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Azure.SignalR" Version="1.33.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Cosmos" Version="10.0.11" />
   	<PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.19.0" />
     <PackageReference Include="OpenAI" Version="2.13.0" />

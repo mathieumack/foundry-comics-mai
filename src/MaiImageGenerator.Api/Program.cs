@@ -2,19 +2,23 @@ using Azure.Core;
 using Azure.Identity;
 using Azure.Storage.Queues;
 using MaiImageGenerator.Api.Configuration;
+using MaiImageGenerator.Api.Hubs;
 using MaiImageGenerator.Api.Services;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MDev.Dotnet.AspNetCore.Apis.Extensions;
 using MDev.Dotnet.AspNetCore.OpenTelemetry.Apis.Extensions;
 using MDev.Dotnet.Azure.CosmosDb.Startup;
+using MDev.Dotnet.Azure.ContainerApps.Authentication.Extensions;
 using MDev.Dotnet.Azure.StorageAccount.Settings;
 using MDev.Dotnet.Azure.StorageAccount.Startup;
 using Microsoft.Agents.AI;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenAI.Chat;
 using ServiceCollectionHelpers.AssemblyFinder;
 using System.ClientModel.Primitives;
+using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
@@ -83,6 +87,23 @@ builder.Services.AddScoped<ImageComposer>();
 builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ProjectService>();
 builder.Services.AddScoped<ProjectScaffolder>();
+builder.Services.AddSingleton<AuthenticatedUserIdProvider>();
+builder.Services.AddSingleton<IUserIdProvider>(
+    serviceProvider => serviceProvider.GetRequiredService<AuthenticatedUserIdProvider>());
+builder.Services.AddSignalR()
+    .AddAzureSignalR(options =>
+    {
+        options.ConnectionString = builder.Configuration["SignalR:ConnectionString"]
+            ?? throw new InvalidOperationException("Configuration 'SignalR:ConnectionString' is required.");
+        options.ClaimsProvider = context =>
+        [
+            new Claim(
+                ClaimTypes.NameIdentifier,
+                context.RequestServices
+                    .GetRequiredService<AuthenticatedUserIdProvider>()
+                    .GetRequiredUserId())
+        ];
+    });
 
 // Register classes on IoC
 builder.Services.AddHttpContextAccessor()
@@ -116,6 +137,6 @@ app.MapControllers();
 //app.MapSubscribeHandler();
 
 // Map SignalR hub
-//app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();
