@@ -10,6 +10,7 @@ public sealed class GenerationDocument
     public string? Description { get; set; }
     public string? Context { get; set; }
     public bool RewritePrompt { get; set; } = true;
+    public BoardTemplate Template { get; set; }
     public GenerationStatus Status { get; set; }
     public List<GenerationPanel> Panels { get; set; } = [];
     public string? BoardBlobName { get; set; }

@@ -1,4 +1,5 @@
 using MaiImageGenerator.Api.Configuration;
+using MaiImageGenerator.Shared.Data.Entities;
 using Microsoft.Extensions.Options;
 using SixLabors.Fonts;
 using SixLabors.ImageSharp;
@@ -46,6 +47,7 @@ public sealed class ImageComposer(IOptions<FoundryOptions> options)
     public async Task<byte[]> BuildBoardAsync(
         string title,
         IReadOnlyList<byte[]> panelBytes,
+        BoardTemplate template,
         CancellationToken cancellationToken)
     {
         var panels = new List<Image<Rgba32>>(panelBytes.Count);
@@ -54,14 +56,12 @@ public sealed class ImageComposer(IOptions<FoundryOptions> options)
             foreach (var bytes in panelBytes)
             {
                 var panel = Image.Load<Rgba32>(bytes);
-                panel.Mutate(context => context.Resize(_imageSize, _imageSize));
                 panels.Add(panel);
             }
 
-            var columns = Math.Min(panels.Count, 2);
-            var rows = (int)Math.Ceiling((double)panels.Count / columns);
-            var width = columns * _imageSize + (columns - 1) * Gutter + 2 * Margin;
-            var height = TitleHeight + rows * _imageSize + (rows - 1) * Gutter + 2 * Margin;
+            var definition = BoardTemplateDefinitions.Resolve(template, panels.Count);
+            var width = definition.Columns * _imageSize + (definition.Columns - 1) * Gutter + 2 * Margin;
+            var height = TitleHeight + definition.Rows * _imageSize + (definition.Rows - 1) * Gutter + 2 * Margin;
             using var board = new Image<Rgba32>(width, height, Color.White);
             var font = SystemFonts.Families.First().CreateFont(52, FontStyle.Bold);
             board.Mutate(context =>
@@ -69,8 +69,16 @@ public sealed class ImageComposer(IOptions<FoundryOptions> options)
                 context.DrawText(title, font, Color.Black, new PointF(Margin, Margin));
                 for (var index = 0; index < panels.Count; index++)
                 {
-                    var x = Margin + index % columns * (_imageSize + Gutter);
-                    var y = TitleHeight + Margin + index / columns * (_imageSize + Gutter);
+                    var slot = definition.Slots[index];
+                    var panelWidth = slot.ColumnSpan * _imageSize + (slot.ColumnSpan - 1) * Gutter;
+                    var panelHeight = slot.RowSpan * _imageSize + (slot.RowSpan - 1) * Gutter;
+                    panels[index].Mutate(panelContext => panelContext.Resize(new ResizeOptions
+                    {
+                        Size = new Size(panelWidth, panelHeight),
+                        Mode = ResizeMode.Crop
+                    }));
+                    var x = Margin + slot.Column * (_imageSize + Gutter);
+                    var y = TitleHeight + Margin + slot.Row * (_imageSize + Gutter);
                     context.DrawImage(panels[index], new Point(x, y), 1f);
                 }
             });

@@ -1,4 +1,5 @@
 using Microsoft.JSInterop;
+using MaiImageGenerator.Web.Models;
 
 namespace MaiImageGenerator.Web.Services;
 
@@ -27,7 +28,7 @@ public sealed class ComicBoardComposer(IJSRuntime jsRuntime) : IAsyncDisposable
             cancellationToken,
             title.Trim(),
             imageDataUrls,
-            layout ?? new ComicBoardLayout());
+            layout ?? ComicBoardLayout.ForTemplate(BoardTemplate.Standard));
     }
 
     public async ValueTask DisposeAsync()
@@ -40,7 +41,17 @@ public sealed class ComicBoardComposer(IJSRuntime jsRuntime) : IAsyncDisposable
 }
 
 public sealed record ComicBoardLayout(
+    int Rows,
+    int Columns,
+    IReadOnlyList<BoardTemplateSlot> Slots,
     int PanelSize = 1024,
     int Gutter = 24,
     int Margin = 24,
-    int TitleHeight = 104);
+    int TitleHeight = 104)
+{
+    public static ComicBoardLayout ForTemplate(BoardTemplate template)
+    {
+        var definition = BoardTemplateDefinitions.Get(template);
+        return new(definition.Rows, definition.Columns, definition.Slots);
+    }
+}

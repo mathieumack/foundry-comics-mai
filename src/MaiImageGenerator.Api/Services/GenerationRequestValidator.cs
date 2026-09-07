@@ -1,4 +1,5 @@
 using MaiImageGenerator.Api.Contracts;
+using MaiImageGenerator.Shared.Data.Entities;
 
 namespace MaiImageGenerator.Api.Services;
 
@@ -15,6 +16,11 @@ public static class GenerationRequestValidator
         if (request.Panels.Count is < 1 or > 8 || request.Panels.Any(panel => string.IsNullOrWhiteSpace(panel.Prompt)))
         {
             errors[nameof(request.Panels)] = ["A generation requires between 1 and 8 panels with non-empty prompts."];
+        }
+        else if (request.Template is BoardTemplate template &&
+                 !TemplateMatchesPanelCount(template, request.Panels.Count))
+        {
+            errors[nameof(request.Panels)] = ["The panel count must match the selected board template."];
         }
 
         var characterIds = request.Characters.Select(character => character.Id).ToHashSet(StringComparer.Ordinal);
@@ -48,6 +54,11 @@ public static class GenerationRequestValidator
         {
             errors[nameof(request.Panels)] = ["A board requires between 1 and 8 panels with non-empty prompts."];
         }
+        else if (request.Template is BoardTemplate template &&
+                 !TemplateMatchesPanelCount(template, request.Panels.Count))
+        {
+            errors[nameof(request.Panels)] = ["The panel count must match the selected board template."];
+        }
         else if (request.Panels.SelectMany(panel => panel.CharacterIds)
                  .Any(characterId => !projectCharacterIds.Contains(characterId)))
         {
@@ -56,4 +67,7 @@ public static class GenerationRequestValidator
 
         return errors;
     }
+
+    private static bool TemplateMatchesPanelCount(BoardTemplate template, int panelCount) =>
+        Enum.IsDefined(template) && BoardTemplateDefinitions.Get(template).Slots.Count == panelCount;
 }

@@ -120,18 +120,22 @@
 							Disabled="EditingLocked"
 							Style="width: 100%" />
 
+			<label for="board-template">Board template</label>
+			<RadzenDropDown TValue="BoardTemplate"
+							Name="board-template"
+							Value="selectedTemplate"
+							Data="templateOptions"
+							TextProperty="Name"
+							ValueProperty="Template"
+							Change="@ChangeTemplate"
+							Disabled="EditingLocked"
+							Style="width: 100%" />
+
 			<div class="panel-list-heading">
 				<div>
 					<strong>Panels</strong>
-					<small>@panels.Count / 8</small>
+					<small>@panels.Count slots</small>
 				</div>
-				<RadzenButton Icon="add"
-							  Text="Add panel"
-							  ButtonStyle="ButtonStyle.Light"
-							  Variant="Variant.Flat"
-							  Size="ButtonSize.Small"
-							  Disabled="@(EditingLocked || panels.Count >= 8)"
-							  Click="@AddPanel" />
 			</div>
 
 			<div class="panel-editor-list">
@@ -159,14 +163,6 @@
 												  Size="ButtonSize.Small"
 												  Disabled="@(EditingLocked || panelIndex == panels.Count - 1)"
 												  Click="@(() => MovePanel(panelIndex, 1))" />
-								<RadzenButton Icon="delete_outline"
-												  title="Delete panel"
-												  aria-label="@($"Delete panel {panelIndex + 1}")"
-												  ButtonStyle="ButtonStyle.Danger"
-												  Variant="Variant.Flat"
-												  Size="ButtonSize.Small"
-												  Disabled="@(EditingLocked || panels.Count == 1)"
-												  Click="@(() => RemovePanel(panel))" />
 							</div>
 						</div>
 						<RadzenTextArea @bind-Value="panel.Prompt"
@@ -313,11 +309,13 @@
 			{
 				<div class="board-draft @(panels.All(panel => panel.ImageDataUrl is null) ? "is-empty" : null)">
 					<div class="board-title-preview">@(string.IsNullOrWhiteSpace(boardTitle) ? "Board title" : boardTitle)</div>
-					<div class="board-grid">
+					<div class="board-grid" style="@BoardGridStyle">
 						@for (var index = 0; index < panels.Count; index++)
 						{
 							var panel = panels[index];
-							<div class="panel-preview @PanelStatusClass(panel.Status)" @key="panel.Id">
+							<div class="panel-preview @PanelStatusClass(panel.Status)"
+								 style="@PanelSlotStyle(index)"
+								 @key="panel.Id">
 								@if (panel.ImageDataUrl is not null)
 								{
 									<img src="@panel.ImageDataUrl" alt="Generated panel @(index + 1)" />
@@ -376,9 +374,16 @@
 </div>
 
 @code {
-	private readonly List<ComicPanelDraft> panels = [new(), new(), new(), new()];
+	private readonly List<ComicPanelDraft> panels = [new(), new(), new(), new(), new(), new()];
 	private readonly List<CharacterDraft> characters = [];
 	private readonly List<GenerationSummaryResponse> projectBoards = [];
+	private readonly TemplateOption[] templateOptions =
+	[
+		new("Standard", BoardTemplate.Standard),
+		new("Storyline", BoardTemplate.Storyline),
+		new("Dynamic 1", BoardTemplate.Dynamic1),
+		new("Dynamic 2", BoardTemplate.Dynamic2)
+	];
 	private CancellationTokenSource? generationCancellation;
 	private Guid? activeGenerationId;
 	private Guid? loadedProjectId;
@@ -392,6 +397,7 @@
 	private string? progressMessage;
 	private string? projectError;
 	private int generatedPanelCount;
+	private BoardTemplate selectedTemplate;
 	private bool rewritePrompt = true;
 	private bool isGenerating;
 	private bool isRefreshing;
@@ -401,6 +407,10 @@
 
 	private double GenerationProgress => panels.Count == 0 ? 0 : generatedPanelCount * 100d / panels.Count;
 	private bool EditingLocked => isSubmitting || isGenerating || isScaffolding;
+	private BoardTemplateDefinition SelectedTemplateDefinition => BoardTemplateDefinitions.Get(selectedTemplate);
+	private BoardTemplateDefinition DisplayTemplateDefinition =>
+		BoardTemplateDefinitions.Resolve(selectedTemplate, panels.Count);
+	private string BoardGridStyle => $"grid-template-columns: repeat({DisplayTemplateDefinition.Columns}, minmax(0, 1fr));";
 
 	private async Task CreateScaffoldAsync()
 	{
@@ -493,6 +503,7 @@
 			projectDescription = generation.Description;
 			context = generation.Context;
 			rewritePrompt = generation.RewritePrompt;
+			selectedTemplate = generation.Template;
 			activeGenerationId = generation.GenerationId;
 			boardDataUrl = null;
 			characters.Clear();
@@ -583,12 +594,13 @@
 		progressMessage = null;
 		generatedPanelCount = 0;
 		rewritePrompt = true;
+		selectedTemplate = BoardTemplate.Standard;
 		isGenerating = false;
 		isRefreshing = false;
 		isSubmitting = false;
 		characters.Clear();
 		panels.Clear();
-		panels.AddRange([new(), new(), new(), new()]);
+		ResetPanelsForTemplate();
 	}
 
 	private async Task GenerateBoardAsync()
@@ -638,6 +650,7 @@
 						boardTitle.Trim(),
 						projectDescription?.Trim(),
 						rewritePrompt,
+						selectedTemplate,
 						panelRequests),
 					generationCancellation.Token);
 				projectBoards.Insert(0, new GenerationSummaryResponse(
@@ -655,6 +668,7 @@
 					projectDescription?.Trim(),
 					context?.Trim(),
 					rewritePrompt,
+					selectedTemplate,
 					panelRequests,
 					characters.Select(character => new CharacterRequest(
 						character.Id,
@@ -786,22 +800,33 @@
 		return true;
 	}
 
-	private void AddPanel()
+	private void ChangeTemplate(object value)
 	{
-		if (panels.Count < 8)
+		if (value is not BoardTemplate template || template == selectedTemplate)
 		{
-			panels.Add(new ComicPanelDraft());
-			boardDataUrl = null;
+			return;
 		}
+
+		selectedTemplate = template;
+		generationCancellation?.Cancel();
+		activeGenerationId = null;
+		boardDataUrl = null;
+		generatedPanelCount = 0;
+		progressMessage = null;
+		ResetPanelsForTemplate();
 	}
 
-	private void RemovePanel(ComicPanelDraft panel)
+	private void ResetPanelsForTemplate()
 	{
-		if (panels.Count > 1)
-		{
-			panels.Remove(panel);
-			boardDataUrl = null;
-		}
+		panels.Clear();
+		panels.AddRange(Enumerable.Range(0, SelectedTemplateDefinition.Slots.Count)
+			.Select(_ => new ComicPanelDraft()));
+	}
+
+	private string PanelSlotStyle(int index)
+	{
+		var slot = DisplayTemplateDefinition.Slots[index];
+		return $"grid-column: {slot.Column + 1} / span {slot.ColumnSpan}; grid-row: {slot.Row + 1} / span {slot.RowSpan};";
 	}
 
 	private void MovePanel(int index, int offset)
@@ -826,6 +851,8 @@
 			panel.CharacterIds = panel.CharacterIds.Where(id => id != character.Id).ToArray();
 		}
 	}
+
+	private sealed record TemplateOption(string Name, BoardTemplate Template);
 
 	private async Task UploadReferencesAsync(CharacterDraft character, InputFileChangeEventArgs args)
 	{

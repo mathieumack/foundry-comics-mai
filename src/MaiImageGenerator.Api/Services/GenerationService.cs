@@ -41,6 +41,7 @@ public sealed class GenerationService(
             Description = request.Description?.Trim(),
             Context = project.Context,
             RewritePrompt = request.RewritePrompt,
+            Template = request.Template ?? BoardTemplate.Standard,
             Status = GenerationStatus.Pending,
             CreatedAt = now,
             UpdatedAt = now,
@@ -101,6 +102,7 @@ public sealed class GenerationService(
             Description = request.Description?.Trim(),
             Context = request.Context?.Trim(),
             RewritePrompt = request.RewritePrompt,
+            Template = request.Template ?? BoardTemplate.Standard,
             Status = GenerationStatus.Pending,
             CreatedAt = now,
             UpdatedAt = now,
@@ -236,6 +238,7 @@ public sealed class GenerationService(
         document.Context,
         document.CreatedAt,
         document.RewritePrompt,
+        document.Template,
         project.Characters.Select(character => new CharacterGenerationResponse(
             character.Id,
             character.Name,
