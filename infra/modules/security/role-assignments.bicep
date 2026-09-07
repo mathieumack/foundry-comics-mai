@@ -36,6 +36,9 @@ param storageAccountName string
 @description('Container Registry name hosting the hosted-agent image (for Foundry project AcrPull)')
 param containerRegistryName string = ''
 
+@description('Azure SignalR Service name')
+param signalRName string = ''
+
 // Role definition IDs for built-in Azure RBAC roles
 var cosmosDbAccountReaderRoleId = 'fbdf93bf-df7d-467e-a4d2-9458aa1360c8' // Cosmos DB Account Reader Role
 var cognitiveServicesUserRoleId = 'a97b65f3-24c7-4388-baec-2e87135dc908' // Cognitive Services User
@@ -45,6 +48,7 @@ var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3' /
 var storageFileDataSMBShareContributorRoleId = '0c867c2a-1d8c-454a-a3db-ab2ea1bdc8bb' // Storage File Data SMB Share Contributor
 var azureAIUserRoleId = '53ca6127-db72-4b80-b1b0-d745d6d5456d' // Azure AI User
 var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d' // AcrPull
+var signalRAppServerRoleId = '420fcaa2-552c-430f-98ca-3264be4806c7' // SignalR App Server
 
 resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' existing = if (!empty(cosmosDbAccountName)) {
   name: cosmosDbAccountName
@@ -326,6 +330,20 @@ resource acrPullRoleAssignmentApplication 'Microsoft.Authorization/roleAssignmen
   scope: containerRegistryForFoundryProject
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+    principalId: principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource signalRService 'Microsoft.SignalRService/signalR@2024-03-01' existing = if (!empty(signalRName)) {
+  name: signalRName
+}
+
+resource signalRAppServerRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(signalRName)) {
+  name: guid(signalRService.id, principalId, signalRAppServerRoleId)
+  scope: signalRService
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', signalRAppServerRoleId)
     principalId: principalId
     principalType: 'ServicePrincipal'
   }

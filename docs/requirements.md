@@ -29,7 +29,7 @@ The default location is `swedencentral`. Before provisioning, confirm that the t
 
 - `MAI-Thinking-1`, version `2026-06-01`, with `GlobalStandard` capacity 500.
 - `MAI-Image-2.5-Pro`, version `2026-06-19`, with `GlobalStandard` capacity 2.
-- Azure AI Search Standard, Cosmos DB, Container Apps, Container Registry Premium, and the required private endpoint types.
+- Azure AI Search Standard, Azure SignalR Service Standard, Cosmos DB, Container Apps, Container Registry Premium, and the required private endpoint types.
 
 Catalog availability does not reserve capacity. Confirm model quota separately in Microsoft Foundry or through your Azure quota process. If a model version or capacity is unavailable, update and validate the Bicep model definitions before provisioning.
 
@@ -46,6 +46,6 @@ For automation, use the object ID of the deployment service principal or workloa
 
 ## Cost and production readiness
 
-The environment creates billable AI model deployments, AI Search Standard, Container Registry Premium, networking, storage, Cosmos DB, monitoring, and compute resources. Review current Azure pricing and quotas before deployment.
+The environment creates billable AI model deployments, AI Search Standard, SignalR Service Standard, Container Registry Premium, networking, storage, Cosmos DB, monitoring, and compute resources. Review current Azure pricing and quotas before deployment.
 
 This repository is a reference implementation. A production adoption should additionally assess content safety, private ingress requirements, CORS restrictions, availability targets, backup and retention, alerting, rate limits, image moderation, and lifecycle policies.

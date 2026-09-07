@@ -61,6 +61,9 @@ param azureAISearchEndpoint string
 @description('Content Understanding AIServices endpoint (dedicated account in a CU-compatible region)')
 param azureContentUnderstandingEndpoint string = ''
 
+@description('Azure SignalR Service endpoint')
+param signalREndpoint string
+
 @description('Chat model deployment name used by the service for LLM calls')
 param chatDeploymentName string = 'gpt-5.2'
 
@@ -227,6 +230,10 @@ resource containerApp 'Microsoft.App/containerApps@2025-07-01' = {
               {
                 name: 'ContentUnderstanding__Endpoint'
                 value: azureContentUnderstandingEndpoint
+              }
+              {
+                name: 'SignalR__ConnectionString'
+                value: 'Endpoint=${signalREndpoint};AuthType=azure.msi;ClientId=${managedIdentityClientId};Version=1.0;'
               }
             ]
           )
