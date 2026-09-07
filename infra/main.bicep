@@ -94,6 +94,19 @@ module managedIdentity 'modules/security/managed-identity.bicep' = {
 }
 
 // =============================================================================
+// REAL-TIME MESSAGING
+// =============================================================================
+
+module signalR 'modules/signalr.bicep' = {
+  name: 'signalr'
+  params: {
+    name: take('${abbrs.signalR}${environmentName}-${regionalSuffix}', 63)
+    location: location
+    tags: apiTags
+  }
+}
+
+// =============================================================================
 // VNET & PRIVATE DNS ZONES
 // Must be deployed before any services that use private endpoints.
 // =============================================================================
@@ -397,6 +410,7 @@ module apiContainerApp 'modules/hosting/container-app.bicep' = {
     azureFoundryEndpoint: foundry.outputs.foundryEndpoint
     azureAISearchEndpoint: aiSearch.outputs.searchServiceEndpoint
     azureContentUnderstandingEndpoint: 'https://${foundry.outputs.foundryName}.services.ai.azure.com'
+    signalREndpoint: signalR.outputs.endpoint
     minReplicas: 0
     maxReplicas: 3
     serviceName: 'api'
@@ -452,6 +466,7 @@ module roleAssignments 'modules/security/role-assignments.bicep' = {
     aiSearchIdentityPrincipalId: aiSearch.outputs.searchServicePrincipalId
     aiSearchName: aiSearch.outputs.searchServiceName
     containerRegistryName: containerRegistry.outputs.name
+    signalRName: signalR.outputs.name
   }
 }
 
@@ -477,6 +492,9 @@ output AZURE_CONTENT_UNDERSTANDING_NAME string = foundry.outputs.foundryName
 // Database
 output AZURE_COSMOS_ENDPOINT string = cosmosDb.outputs.cosmosDbEndpoint
 output AZURE_COSMOS_DATABASE_NAME string = cosmosDb.outputs.databaseName
+
+// Real-time messaging
+output AZURE_SIGNALR_ENDPOINT string = signalR.outputs.endpoint
 
 // Foundry
 output AZURE_FOUNDRY_ENDPOINT string = foundry.outputs.foundryEndpoint

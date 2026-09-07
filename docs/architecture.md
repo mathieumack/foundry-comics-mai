@@ -31,13 +31,14 @@ flowchart TB
     PE --> Cosmos[Cosmos DB]
     PE --> Foundry[Microsoft Foundry project]
     PE --> Search[Azure AI Search]
+    ACA -->|managed identity| SignalR[Azure SignalR Service]
     ACR[Azure Container Registry] --> ACA
     ACR --> Job
     Monitor[Application Insights and Log Analytics] -. telemetry .-> ACA
     Monitor -. telemetry .-> Job
 ```
 
-The Container Apps environment has external ingress for the API and VNet integration for private service access. Storage, Cosmos DB, AI Search, and Foundry use private endpoints. Static Web Apps and the authenticated API remain public entry points. Container Registry is public in the reference deployment and also has a private endpoint.
+The Container Apps environment has external ingress for the API and VNet integration for private service access. Storage, Cosmos DB, AI Search, and Foundry use private endpoints. Azure SignalR Service runs in Default mode so the API hosts hubs while the service handles client connection scale-out. Static Web Apps, the authenticated API, and SignalR remain public entry points. Container Registry is public in the reference deployment and also has a private endpoint.
 
 ## Generation sequence
 
@@ -99,6 +100,7 @@ The queue contract contains a schema version. Make backward compatibility explic
 - The browser obtains an Entra access token for the generated API scope.
 - Container Apps authentication validates the API audience.
 - The API and worker use a user-assigned managed identity through `DefaultAzureCredential`.
+- The API authenticates to Azure SignalR Service with that identity and the SignalR App Server role; no SignalR access key is injected.
 - Azure service access is granted with RBAC; application code does not require storage keys, database keys, or model API keys.
 - Application Insights receives its connection string from the deployment environment, not source-controlled appsettings.
 
