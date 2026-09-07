@@ -128,13 +128,7 @@ if (app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
-// Enable Cloud Events for Dapr pub/sub
-//app.UseCloudEvents();
-
 app.MapControllers();
-
-// Subscribe to Dapr pub/sub (if needed in future)
-//app.MapSubscribeHandler();
 
 // Map SignalR hub
 app.MapHub<NotificationHub>("/hubs/notifications");

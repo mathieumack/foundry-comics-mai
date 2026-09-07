@@ -13,7 +13,8 @@ public sealed class GenerationService(
     ReferenceService referenceService,
     BlobServiceClient blobServiceClient,
     FoundryImageClient foundryClient,
-    ImageComposer imageComposer)
+    ImageComposer imageComposer,
+    PanelGenerationNotifier notifier)
 {
     private readonly BlobContainerClient _container = blobServiceClient.GetBlobContainerClient("generations");
 
@@ -69,6 +70,11 @@ public sealed class GenerationService(
                     {
                         panelImages.Add((await _container.GetBlobClient(panel.ImageBlobName)
                             .DownloadContentAsync(cancellationToken)).Value.Content.ToArray());
+                        await notifier.NotifyCompletedAsync(
+                            request.OwnerId,
+                            request.BoardId,
+                            panel.Number,
+                            cancellationToken);
                         continue;
                     }
                     catch (RequestFailedException exception) when (exception.Status == 404)
@@ -95,6 +101,7 @@ public sealed class GenerationService(
                         $"Character '{missingCharacterId}' was not found in project '{project.Id}'.");
                 }
                 var referenceStreams = new List<Stream>();
+                var generationStarted = false;
                 try
                 {
                     foreach (var referenceId in selectedCharacters
@@ -115,6 +122,12 @@ public sealed class GenerationService(
                         : $"Use the reference sheet only as identity guidance for {string.Join(", ", selectedCharacters.Select(item => item.Name))}. Preserve their identity and create this new scene: {panel.EffectivePrompt}";
                     var slot = layout.Slots[panelIndex];
                     var landscape = slot.ColumnSpan > slot.RowSpan;
+                    await notifier.NotifyStartedAsync(
+                        request.OwnerId,
+                        request.BoardId,
+                        panel.Number,
+                        cancellationToken);
+                    generationStarted = true;
                     var image = await foundryClient.GenerateAsync(
                         prompt!,
                         referenceSheet,
@@ -144,6 +157,15 @@ public sealed class GenerationService(
                     foreach (var stream in referenceStreams)
                     {
                         await stream.DisposeAsync();
+                    }
+
+                    if (generationStarted)
+                    {
+                        await notifier.NotifyCompletedAsync(
+                            request.OwnerId,
+                            request.BoardId,
+                            panel.Number,
+                            CancellationToken.None);
                     }
                 }
             }
