@@ -442,7 +442,14 @@
 		notificationConnection.On<PanelNotification>(
 			"PanelGenerationCompleted",
 			notification => InvokeAsync(() => HandlePanelCompletedAsync(notification)));
-		await notificationConnection.StartAsync();
+		try
+		{
+			await notificationConnection.StartAsync();
+		}
+		catch (HttpRequestException exception)
+		{
+			Notify(NotificationSeverity.Warning, "Live updates unavailable", exception.Message);
+		}
 	}
 
 	private async Task CreateScaffoldAsync()
@@ -793,6 +800,7 @@
 		panel.Status = PanelUiStatus.Generating;
 		isGenerating = true;
 		progressMessage = $"Generating panel {notification.PanelNumber} of {panels.Count}";
+		StateHasChanged();
 	}
 
 	private async Task HandlePanelCompletedAsync(PanelNotification notification)
@@ -803,6 +811,7 @@
 		}
 
 		panel.Status = PanelUiStatus.Ready;
+		StateHasChanged();
 		await RefreshGenerationAsync();
 	}
 
