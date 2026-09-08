@@ -82,7 +82,9 @@ sequenceDiagram
         Queue->>Dapr: Deliver notification binding event
         Dapr->>API: Invoke notification endpoint
         API->>Dapr: Invoke SignalR output binding with owner ID
-        Dapr-->>Web: Push event through SignalR to owning user
+        Dapr-->>Web: Push event through authenticated SignalR to owning user
+        Web->>Web: Show the active panel loader
+        Web->>API: Refresh generation after panel completion
     end
     Job->>Blob: Store composed board PNG
     Job->>DB: Mark generation completed
@@ -94,7 +96,7 @@ sequenceDiagram
 
 The worker processes one message per execution. It requests regular slots at 1024 × 1024 and full-row slots at 1365 × 768, the widest 16:9-like dimensions within MAI's 1,048,576-pixel limit. It uses the MAI-native integer `width` and `height` parameters for text-to-image generation and the multipart `size` parameter for reference-guided image edits. The composer crops without distortion to the exact board slot. Technical failures are retried and removed after the configured maximum dequeue count. An image content-safety rejection is recorded on the affected panel instead: the worker continues with later panels, leaves a placeholder in the composed board, and completes the job with panel-level error details available to the UI.
 
-The job writes panel-started and panel-completed contracts to dedicated owner-scoped notification queues. Azure Container Apps Jobs do not host managed Dapr sidecars, so the API's Dapr sidecar consumes those queues through managed-identity Storage Queue input bindings. The API invokes Dapr's Azure SignalR output binding with the owner ID in the `user` metadata field; the binding sends directly to that SignalR user without broadcasting or using groups.
+The job writes panel-started and panel-completed contracts to dedicated owner-scoped notification queues. Azure Container Apps Jobs do not host managed Dapr sidecars, so the API's Dapr sidecar consumes those queues through managed-identity Storage Queue input bindings. The API invokes Dapr's Azure SignalR output binding with the owner ID in the `user` metadata field; the binding sends directly to that SignalR user without broadcasting or using groups. The Web client negotiates the notification hub with its API-scoped Entra access token, shows the loader for the panel named by each start event, and refreshes the active board after each completion event.
 
 The projects API creates, lists, retrieves, and updates projects through owner-partition-scoped queries. Character CRUD and reference uploads are nested under a project, and board creation accepts only panel character IDs that resolve within that project. Each board generation persists its selected layout template (Standard, Storyline, Dynamic 1, or Dynamic 2), and the worker uses that template's ordered row, column, and span slots when composing the final artifact. The Web project landing page opens a workspace where a side menu lists the project's boards, highlights the active board, and starts new boards while the existing single-board editor remains visible. Opening a board retrieves the same owner-scoped generation details and private artifacts used by the editor.
 

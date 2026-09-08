@@ -2,8 +2,11 @@
 @page "/projects/{ProjectId:guid}"
 @page "/projects/{ProjectId:guid}/boards/{BoardId:guid}"
 @attribute [Authorize]
-@implements IDisposable
+@implements IAsyncDisposable
+@using Microsoft.AspNetCore.SignalR.Client
 @inject GenerationApiClient GenerationClient
+@inject IAccessTokenProvider TokenProvider
+@inject IConfiguration Configuration
 @inject NavigationManager Navigation
 @inject NotificationService NotificationService
 
@@ -384,6 +387,7 @@
 		new("Dynamic 1", BoardTemplate.Dynamic1),
 		new("Dynamic 2", BoardTemplate.Dynamic2)
 	];
+	private HubConnection? notificationConnection;
 	private CancellationTokenSource? generationCancellation;
 	private Guid? activeGenerationId;
 	private Guid? loadedProjectId;
@@ -404,6 +408,7 @@
 	private bool isSubmitting;
 	private bool isScaffolding;
 	private bool isProjectLoading;
+	private bool refreshRequested;
 
 	private double GenerationProgress => panels.Count == 0 ? 0 : generatedPanelCount * 100d / panels.Count;
 	private bool EditingLocked => isSubmitting || isGenerating || isScaffolding;
@@ -411,6 +416,34 @@
 	private BoardTemplateDefinition DisplayTemplateDefinition =>
 		BoardTemplateDefinitions.Resolve(selectedTemplate, panels.Count);
 	private string BoardGridStyle => $"grid-template-columns: repeat({DisplayTemplateDefinition.Columns}, minmax(0, 1fr));";
+
+	protected override async Task OnInitializedAsync()
+	{
+		var apiBaseUrl = Configuration["ApiBaseUrl"]
+			?? throw new InvalidOperationException("ApiBaseUrl is required.");
+		var apiScope = Configuration["AzureAd:DefaultAccessTokenScopes:0"]
+			?? throw new InvalidOperationException("The API access scope is required.");
+
+		notificationConnection = new HubConnectionBuilder()
+			.WithUrl(new Uri(new Uri(apiBaseUrl), "hubs/notifications"), options =>
+			{
+				options.AccessTokenProvider = async () =>
+				{
+					var result = await TokenProvider.RequestAccessToken(
+						new AccessTokenRequestOptions { Scopes = [apiScope] });
+					return result.TryGetToken(out var token) ? token.Value : null;
+				};
+			})
+			.WithAutomaticReconnect()
+			.Build();
+		notificationConnection.On<PanelNotification>(
+			"PanelGenerationStarted",
+			notification => InvokeAsync(() => HandlePanelStarted(notification)));
+		notificationConnection.On<PanelNotification>(
+			"PanelGenerationCompleted",
+			notification => InvokeAsync(() => HandlePanelCompletedAsync(notification)));
+		await notificationConnection.StartAsync();
+	}
 
 	private async Task CreateScaffoldAsync()
 	{
@@ -710,8 +743,14 @@
 
 	private async Task RefreshGenerationAsync()
 	{
-		if (activeGenerationId is not Guid generationId || isRefreshing)
+		if (activeGenerationId is not Guid generationId)
 		{
+			return;
+		}
+
+		if (isRefreshing)
+		{
+			refreshRequested = true;
 			return;
 		}
 
@@ -736,7 +775,50 @@
 		finally
 		{
 			isRefreshing = false;
+			if (refreshRequested)
+			{
+				refreshRequested = false;
+				await RefreshGenerationAsync();
+			}
 		}
+	}
+
+	private void HandlePanelStarted(PanelNotification notification)
+	{
+		if (!TryGetNotifiedPanel(notification, out var panel))
+		{
+			return;
+		}
+
+		panel.Status = PanelUiStatus.Generating;
+		isGenerating = true;
+		progressMessage = $"Generating panel {notification.PanelNumber} of {panels.Count}";
+	}
+
+	private async Task HandlePanelCompletedAsync(PanelNotification notification)
+	{
+		if (!TryGetNotifiedPanel(notification, out var panel))
+		{
+			return;
+		}
+
+		panel.Status = PanelUiStatus.Ready;
+		await RefreshGenerationAsync();
+	}
+
+	private bool TryGetNotifiedPanel(PanelNotification notification, out ComicPanelDraft panel)
+	{
+		if (Guid.TryParse(notification.BoardId, out var boardId) &&
+			boardId == activeGenerationId &&
+			notification.PanelNumber > 0 &&
+			notification.PanelNumber <= panels.Count)
+		{
+			panel = panels[notification.PanelNumber - 1];
+			return true;
+		}
+
+		panel = null!;
+		return false;
 	}
 
 	private async Task HandleGenerationStatusAsync(GenerationResponse generation, CancellationToken cancellationToken)
@@ -853,6 +935,7 @@
 	}
 
 	private sealed record TemplateOption(string Name, BoardTemplate Template);
+	private sealed record PanelNotification(string BoardId, int PanelNumber);
 
 	private async Task UploadReferencesAsync(CharacterDraft character, InputFileChangeEventArgs args)
 	{
@@ -934,9 +1017,13 @@
 		_ => "Pending"
 	};
 
-	public void Dispose()
+	public async ValueTask DisposeAsync()
 	{
 		generationCancellation?.Cancel();
 		generationCancellation?.Dispose();
+		if (notificationConnection is not null)
+		{
+			await notificationConnection.DisposeAsync();
+		}
 	}
 }
