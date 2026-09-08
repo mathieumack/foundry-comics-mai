@@ -76,6 +76,21 @@ builder.Services.AddSingleton<ImageClient>(serviceProvider =>
 });
 builder.Services.AddHttpClient<FoundryImageClient>(client => client.Timeout = TimeSpan.FromMinutes(10));
 
+var notificationQueueOptions = new QueueClientOptions
+{
+    MessageEncoding = storageSettings.QueueMessagesEncodeBase64
+        ? QueueMessageEncoding.Base64
+        : QueueMessageEncoding.None
+};
+builder.Services.AddSingleton(new PanelGenerationNotifier(
+    new QueueClient(
+        new Uri($"{storageSettings.QueuesEndpoint.TrimEnd('/')}/{PanelGenerationNotifications.Started}"),
+        credential,
+        notificationQueueOptions),
+    new QueueClient(
+        new Uri($"{storageSettings.QueuesEndpoint.TrimEnd('/')}/{PanelGenerationNotifications.Completed}"),
+        credential,
+        notificationQueueOptions)));
 builder.Services.AddScoped<ReferenceService>();
 builder.Services.AddScoped<ImageComposer>();
 builder.Services.AddScoped<GenerationService>();

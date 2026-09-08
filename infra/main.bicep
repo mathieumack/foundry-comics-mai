@@ -56,6 +56,8 @@ var entraApiDisplayName = 'Comics API (${environmentName})'
 var entraApiAudience = 'api://comics-${environmentName}'
 var generationJobsQueueName = 'generation-jobs'
 var generationJobsPoisonQueueName = 'generation-jobs-poison'
+var panelGenerationStartedQueueName = 'panel-generation-started'
+var panelGenerationCompletedQueueName = 'panel-generation-completed'
 
 //=============================================================================
 // MONITORING
@@ -156,6 +158,8 @@ module storage 'modules/storage/storage-account.bicep' = {
     queues: [
       generationJobsQueueName
       generationJobsPoisonQueueName
+      panelGenerationStartedQueueName
+      panelGenerationCompletedQueueName
     ]
     fileShares: []
     principalId: ''
@@ -445,6 +449,56 @@ module boardGenerationJob 'modules/hosting/container-app-job.bicep' = {
     serviceName: 'generationjob'
   }
   dependsOn: [
+    roleAssignments
+  ]
+}
+
+module panelGenerationStartedBinding 'modules/hosting/dapr-storage-queue-binding.bicep' = {
+  name: 'panel-generation-started-binding'
+  params: {
+    environmentName: containerAppEnv.outputs.name
+    name: panelGenerationStartedQueueName
+    storageAccountName: storage.outputs.name
+    managedIdentityClientId: managedIdentity.outputs.clientId
+    scopes: [
+      'api'
+    ]
+  }
+  dependsOn: [
+    apiContainerApp
+    roleAssignments
+  ]
+}
+
+module panelGenerationCompletedBinding 'modules/hosting/dapr-storage-queue-binding.bicep' = {
+  name: 'panel-generation-completed-binding'
+  params: {
+    environmentName: containerAppEnv.outputs.name
+    name: panelGenerationCompletedQueueName
+    storageAccountName: storage.outputs.name
+    managedIdentityClientId: managedIdentity.outputs.clientId
+    scopes: [
+      'api'
+    ]
+  }
+  dependsOn: [
+    apiContainerApp
+    roleAssignments
+  ]
+}
+
+module signalRBinding 'modules/hosting/dapr-signalr-binding.bicep' = {
+  name: 'signalr-dapr-binding'
+  params: {
+    environmentName: containerAppEnv.outputs.name
+    signalREndpoint: signalR.outputs.endpoint
+    managedIdentityClientId: managedIdentity.outputs.clientId
+    scopes: [
+      'api'
+    ]
+  }
+  dependsOn: [
+    apiContainerApp
     roleAssignments
   ]
 }

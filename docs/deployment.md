@@ -52,7 +52,7 @@ The checked-in production appsettings is only a neutral template. Never replace 
 
 ## 5. Verify
 
-Use `azd env get-values` locally to inspect deployment outputs. Open `SERVICE_WEB_URI`, sign in, submit a small board, and confirm that generation progresses from pending to completed. Verify that the browser acquires the API scope, the API accepts the token, the API identity has the SignalR App Server role, the queue receives a message, the job completes, artifacts are downloadable, and telemetry reaches Application Insights.
+Use `azd env get-values` locally to inspect deployment outputs. Open `SERVICE_WEB_URI`, sign in, submit a small board, and confirm that generation progresses from pending to completed. Verify that the browser acquires the API scope, the API accepts the token, the API identity has the SignalR App Server role, the generation queue receives a message, the job emits panel-started and panel-completed messages, the API Dapr bindings consume them, the Dapr SignalR output binding targets the owning user, the job completes, artifacts are downloadable, and telemetry reaches Application Insights.
 
 Avoid sharing the complete environment output in issues because it contains deployment-specific identifiers and endpoints.
 
