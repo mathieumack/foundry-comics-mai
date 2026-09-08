@@ -487,6 +487,22 @@ module panelGenerationCompletedBinding 'modules/hosting/dapr-storage-queue-bindi
   ]
 }
 
+module signalRBinding 'modules/hosting/dapr-signalr-binding.bicep' = {
+  name: 'signalr-dapr-binding'
+  params: {
+    environmentName: containerAppEnv.outputs.name
+    signalREndpoint: signalR.outputs.endpoint
+    managedIdentityClientId: managedIdentity.outputs.clientId
+    scopes: [
+      'api'
+    ]
+  }
+  dependsOn: [
+    apiContainerApp
+    roleAssignments
+  ]
+}
+
 // =============================================================================
 // RBAC ROLE ASSIGNMENTS
 // =============================================================================

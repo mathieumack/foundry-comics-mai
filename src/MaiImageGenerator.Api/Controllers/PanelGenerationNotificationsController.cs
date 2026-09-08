@@ -1,14 +1,15 @@
-using MaiImageGenerator.Api.Hubs;
+using Dapr.Client;
 using MaiImageGenerator.Shared.Messages;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR;
 
 namespace MaiImageGenerator.Api.Controllers;
 
 [ApiController]
 public sealed class PanelGenerationNotificationsController(
-    IHubContext<NotificationHub> hubContext) : ControllerBase
+    DaprClient daprClient) : ControllerBase
 {
+    private const string SignalRBindingName = "signalr";
+
     [HttpPost(PanelGenerationNotifications.Started)]
     public async Task<IActionResult> Started(
         PanelGenerationStarted notification,
@@ -19,7 +20,8 @@ public sealed class PanelGenerationNotificationsController(
             return BadRequest();
         }
 
-        await hubContext.Clients.User(notification.OwnerId).SendAsync(
+        await SendToUserAsync(
+            notification.OwnerId,
             nameof(PanelGenerationStarted),
             notification,
             cancellationToken);
@@ -36,7 +38,8 @@ public sealed class PanelGenerationNotificationsController(
             return BadRequest();
         }
 
-        await hubContext.Clients.User(notification.OwnerId).SendAsync(
+        await SendToUserAsync(
+            notification.OwnerId,
             nameof(PanelGenerationCompleted),
             notification,
             cancellationToken);
@@ -47,4 +50,24 @@ public sealed class PanelGenerationNotificationsController(
         !string.IsNullOrWhiteSpace(ownerId) &&
         Guid.TryParse(boardId, out _) &&
         panelNumber > 0;
+
+    private Task SendToUserAsync(
+        string ownerId,
+        string target,
+        object notification,
+        CancellationToken cancellationToken)
+    {
+        var message = new
+        {
+            Target = target,
+            Arguments = new[] { notification }
+        };
+
+        return daprClient.InvokeBindingAsync(
+            SignalRBindingName,
+            "create",
+            message,
+            new Dictionary<string, string> { ["user"] = ownerId },
+            cancellationToken);
+    }
 }

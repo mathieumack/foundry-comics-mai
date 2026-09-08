@@ -82,6 +82,7 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddScoped<IPromptRewriter, MafPromptRewriter>();
 builder.Services.AddScoped<IImageGenerator, FoundryImageGenerator>();
 builder.Services.AddHttpClient();
+builder.Services.AddDaprClient();
 builder.Services.AddScoped<ReferenceService>();
 builder.Services.AddScoped<ImageComposer>();
 builder.Services.AddScoped<GenerationService>();
