@@ -3,6 +3,7 @@
 @page "/projects/{ProjectId:guid}/boards/{BoardId:guid}"
 @attribute [Authorize]
 @implements IAsyncDisposable
+@using Microsoft.AspNetCore.SignalR
 @using Microsoft.AspNetCore.SignalR.Client
 @inject GenerationApiClient GenerationClient
 @inject IAccessTokenProvider TokenProvider
@@ -409,6 +410,8 @@
 	private bool isScaffolding;
 	private bool isProjectLoading;
 	private bool refreshRequested;
+	private static readonly TimeSpan PanelRefreshRetryDelay = TimeSpan.FromMilliseconds(500);
+	private const int PanelRefreshAttemptCount = 8;
 
 	private double GenerationProgress => panels.Count == 0 ? 0 : generatedPanelCount * 100d / panels.Count;
 	private bool EditingLocked => isSubmitting || isGenerating || isScaffolding;
@@ -431,7 +434,9 @@
 				{
 					var result = await TokenProvider.RequestAccessToken(
 						new AccessTokenRequestOptions { Scopes = [apiScope] });
-					return result.TryGetToken(out var token) ? token.Value : null;
+					return result.TryGetToken(out var token)
+						? token.Value
+						: throw new AccessTokenNotAvailableException(Navigation, result, [apiScope]);
 				};
 			})
 			.WithAutomaticReconnect()
@@ -446,7 +451,11 @@
 		{
 			await notificationConnection.StartAsync();
 		}
-		catch (HttpRequestException exception)
+		catch (AccessTokenNotAvailableException exception)
+		{
+			exception.Redirect();
+		}
+		catch (Exception exception) when (exception is HttpRequestException or HubException)
 		{
 			Notify(NotificationSeverity.Warning, "Live updates unavailable", exception.Message);
 		}
@@ -812,7 +821,35 @@
 
 		panel.Status = PanelUiStatus.Ready;
 		StateHasChanged();
-		await RefreshGenerationAsync();
+
+		var cancellationToken = generationCancellation?.Token ?? CancellationToken.None;
+		for (var attempt = 0; attempt < PanelRefreshAttemptCount; attempt++)
+		{
+			await RefreshGenerationAsync();
+			if (!TryGetNotifiedPanel(notification, out panel) ||
+				panel.ImageDataUrl is not null ||
+				panel.Status == PanelUiStatus.Error)
+			{
+				return;
+			}
+
+			if (attempt < PanelRefreshAttemptCount - 1)
+			{
+				try
+				{
+					await Task.Delay(PanelRefreshRetryDelay, cancellationToken);
+				}
+				catch (OperationCanceledException)
+				{
+					return;
+				}
+			}
+		}
+
+		Notify(
+			NotificationSeverity.Warning,
+			"Panel image delayed",
+			$"Panel {notification.PanelNumber} is ready, but its image is not available yet. Use Refresh board to retry.");
 	}
 
 	private bool TryGetNotifiedPanel(PanelNotification notification, out ComicPanelDraft panel)

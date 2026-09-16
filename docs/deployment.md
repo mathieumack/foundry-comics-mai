@@ -52,7 +52,7 @@ The checked-in production appsettings is only a neutral template. Never replace 
 
 ## 5. Verify
 
-Use `azd env get-values` locally to inspect deployment outputs. Open `SERVICE_WEB_URI`, sign in, submit a small board, and confirm that generation progresses from pending to completed. Verify that the browser acquires the API scope, the API accepts the token, the API identity has the SignalR App Server role, the generation queue receives a message, the job emits panel-started and panel-completed messages, the API Dapr bindings consume them, the Dapr SignalR output binding targets the owning user, the job completes, artifacts are downloadable, and telemetry reaches Application Insights.
+Use `azd env get-values` locally to inspect deployment outputs. Open `SERVICE_WEB_URI`, sign in, submit a small board, and confirm that generation progresses from pending to completed. Verify that the browser acquires the API scope, the API accepts the token, the API identity has the SignalR App Server and SignalR REST API Owner roles, the generation queue receives a message, the job emits panel-started and panel-completed messages, the API Dapr bindings consume them, the Dapr SignalR output binding targets the owning user on `notificationhub`, the job completes, artifacts are downloadable, and telemetry reaches Application Insights.
 
 Avoid sharing the complete environment output in issues because it contains deployment-specific identifiers and endpoints.
 
@@ -87,6 +87,10 @@ Check Container Apps VNet integration, private endpoint state, private DNS links
 ### Projects API returns HTTP 500
 
 Confirm that the configured Cosmos database is `core` and contains the `projects`, `documents`, and `references` containers, each partitioned by `/ownerId`. Re-run `azd provision` after an infrastructure update if a required container is missing.
+
+### SignalR live updates fail
+
+Confirm that the API identity has both SignalR App Server and SignalR REST API Owner on the SignalR resource. The first role supports hub negotiation and server connections; the second permits the Dapr output binding to send owner-targeted events. Re-run `azd provision` after changing either assignment.
 
 ## Remove an environment
 

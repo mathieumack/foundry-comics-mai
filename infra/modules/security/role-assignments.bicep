@@ -49,6 +49,7 @@ var storageFileDataSMBShareContributorRoleId = '0c867c2a-1d8c-454a-a3db-ab2ea1bd
 var azureAIUserRoleId = '53ca6127-db72-4b80-b1b0-d745d6d5456d' // Azure AI User
 var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d' // AcrPull
 var signalRAppServerRoleId = '420fcaa2-552c-430f-98ca-3264be4806c7' // SignalR App Server
+var signalRRestApiOwnerRoleId = 'fd53cd77-2268-407a-8f46-7e7863d0f521' // SignalR REST API Owner
 
 resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' existing = if (!empty(cosmosDbAccountName)) {
   name: cosmosDbAccountName
@@ -344,6 +345,16 @@ resource signalRAppServerRoleAssignment 'Microsoft.Authorization/roleAssignments
   scope: signalRService
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', signalRAppServerRoleId)
+    principalId: principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource signalRRestApiOwnerRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(signalRName)) {
+  name: guid(signalRService.id, principalId, signalRRestApiOwnerRoleId)
+  scope: signalRService
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', signalRRestApiOwnerRoleId)
     principalId: principalId
     principalType: 'ServicePrincipal'
   }
