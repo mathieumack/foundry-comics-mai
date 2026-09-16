@@ -28,7 +28,7 @@ resource binding 'Microsoft.App/managedEnvironments/daprComponents@2025-07-01' =
       }
       {
         name: 'hub'
-        value: 'notifications'
+        value: 'notificationhub'
       }
     ]
     scopes: scopes
