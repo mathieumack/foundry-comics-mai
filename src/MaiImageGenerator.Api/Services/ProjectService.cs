@@ -18,8 +18,11 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         {
             Id = Guid.NewGuid().ToString("D"),
             OwnerId = ownerId,
+            SchemaVersion = 2,
+            Type = request.Type,
             Title = request.Title.Trim(),
             Context = request.Context?.Trim(),
+            SourceIdea = request.SourceIdea?.Trim(),
             CreatedAt = now,
             UpdatedAt = now
         };
@@ -56,6 +59,7 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         Validate(request);
         project.Title = request.Title.Trim();
         project.Context = request.Context?.Trim();
+        project.SourceIdea = request.SourceIdea?.Trim();
         project.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToResponse(project);
@@ -142,6 +146,8 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         Guid.Parse(project.Id),
         project.Title,
         project.Context,
+        project.Type,
+        project.SourceIdea,
         project.CreatedAt,
         project.UpdatedAt,
         project.Characters.Select(ToResponse).ToArray());
@@ -157,6 +163,11 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         if (string.IsNullOrWhiteSpace(request.Title))
         {
             throw new ArgumentException("A project title is required.");
+        }
+
+        if (request.Type == ProjectType.Book && string.IsNullOrWhiteSpace(request.SourceIdea))
+        {
+            throw new ArgumentException("A source idea is required for a book.");
         }
     }
 

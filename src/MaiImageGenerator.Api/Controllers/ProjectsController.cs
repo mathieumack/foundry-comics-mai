@@ -11,7 +11,8 @@ public sealed class ProjectsController(
     IHttpContextAccessor httpContextAccessor,
     ProjectService projectService,
     GenerationService generationService,
-    ReferenceService referenceService) : ControllerBase
+    ReferenceService referenceService,
+    BookService bookService) : ControllerBase
 {
     [HttpPost]
     public async Task<ActionResult<ProjectResponse>> Create(
@@ -248,6 +249,11 @@ public sealed class ProjectsController(
             return result.Result;
         }
 
+        if (result.Project!.Type != MaiImageGenerator.Shared.Data.Entities.ProjectType.Comic)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid board request", Detail = "Books do not contain comic boards." });
+        }
+
         try
         {
             var board = await generationService.CreateBoardAsync(
@@ -263,6 +269,150 @@ public sealed class ProjectsController(
             return BadRequest(new ProblemDetails { Title = "Invalid board request", Detail = exception.Message });
         }
     }
+
+    [HttpGet("{projectId:guid}/book/plan")]
+        public async Task<ActionResult<BookPlanResponse>> GetBookPlan(
+            Guid projectId,
+            CancellationToken cancellationToken)
+        {
+            var result = await GetProjectAsync(projectId, cancellationToken);
+            if (result.Result is not null)
+            {
+                return result.Result;
+            }
+
+            try
+            {
+                return Ok(bookService.GetPlan(result.Project!));
+            }
+            catch (ArgumentException exception)
+            {
+                return InvalidBook(exception);
+            }
+        }
+
+        [HttpPost("{projectId:guid}/book/plan/generate")]
+        public async Task<ActionResult<BookPlanResponse>> GenerateBookPlan(
+            Guid projectId,
+            GenerateBookPlanRequest request,
+            CancellationToken cancellationToken)
+        {
+            var result = await GetProjectAsync(projectId, cancellationToken);
+            if (result.Result is not null)
+            {
+                return result.Result;
+            }
+
+            try
+            {
+                return Ok(await bookService.GeneratePlanAsync(result.Project!, request.ChapterCount, cancellationToken));
+            }
+            catch (ArgumentException exception)
+            {
+                return InvalidBook(exception);
+            }
+        }
+
+        [HttpPut("{projectId:guid}/book/plan")]
+        public async Task<ActionResult<BookPlanResponse>> UpdateBookPlan(
+            Guid projectId,
+            UpdateBookPlanRequest request,
+            CancellationToken cancellationToken)
+        {
+            var result = await GetProjectAsync(projectId, cancellationToken);
+            if (result.Result is not null)
+            {
+                return result.Result;
+            }
+
+            try
+            {
+                return Ok(await bookService.UpdatePlanAsync(result.Project!, request, cancellationToken));
+            }
+            catch (ArgumentException exception)
+            {
+                return InvalidBook(exception);
+            }
+        }
+
+        [HttpPost("{projectId:guid}/book/chapters/{chapterId}/prose/generate")]
+        public async Task<ActionResult<BookPlanResponse>> GenerateChapterProse(
+            Guid projectId,
+            string chapterId,
+            CancellationToken cancellationToken)
+        {
+            var result = await GetProjectAsync(projectId, cancellationToken);
+            if (result.Result is not null)
+            {
+                return result.Result;
+            }
+
+            try
+            {
+                return Ok(await bookService.GenerateProseAsync(result.Project!, chapterId, cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (ArgumentException exception)
+            {
+                return InvalidBook(exception);
+            }
+        }
+
+        [HttpPost("{projectId:guid}/book/chapters/{chapterId}/image/generate")]
+        public async Task<ActionResult<BookPlanResponse>> GenerateChapterImage(
+            Guid projectId,
+            string chapterId,
+            CancellationToken cancellationToken)
+        {
+            var result = await GetProjectAsync(projectId, cancellationToken);
+            if (result.Result is not null)
+            {
+                return result.Result;
+            }
+
+            try
+            {
+                return Ok(await bookService.GenerateImageAsync(result.Project!, chapterId, cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (ArgumentException exception)
+            {
+                return InvalidBook(exception);
+            }
+        }
+
+        [HttpGet("{projectId:guid}/book/chapters/{chapterId}/image")]
+        public async Task<IActionResult> GetChapterImage(
+            Guid projectId,
+            string chapterId,
+            CancellationToken cancellationToken)
+        {
+            var result = await GetProjectAsync(projectId, cancellationToken);
+            if (result.Result is not null)
+            {
+                return result.Result;
+            }
+
+            try
+            {
+                var content = await bookService.OpenImageAsync(result.Project!, chapterId, cancellationToken);
+                return content is null ? NotFound() : File(content, "image/png");
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (ArgumentException exception)
+            {
+                return InvalidBook(exception);
+            }
+        }
 
     private string? GetOwnerId() => httpContextAccessor.GetUserId();
 
@@ -285,6 +435,9 @@ public sealed class ProjectsController(
 
     private BadRequestObjectResult InvalidCharacter(ArgumentException exception) =>
         BadRequest(new ProblemDetails { Title = "Invalid character request", Detail = exception.Message });
+
+    private BadRequestObjectResult InvalidBook(ArgumentException exception) =>
+        BadRequest(new ProblemDetails { Title = "Invalid book request", Detail = exception.Message });
 
     private sealed record ProjectLookup(
         string? OwnerId,

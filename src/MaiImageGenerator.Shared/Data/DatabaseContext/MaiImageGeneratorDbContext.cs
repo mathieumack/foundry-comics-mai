@@ -44,8 +44,10 @@ public sealed class MaiImageGeneratorDbContext(
         project.Property(item => item.Id).ToJsonProperty("id");
         project.Property(item => item.OwnerId).ToJsonProperty("ownerId");
         project.Property(item => item.SchemaVersion).ToJsonProperty("schemaVersion");
+        project.Property(item => item.Type).HasConversion<string>().ToJsonProperty("type");
         project.Property(item => item.Title).ToJsonProperty("title");
         project.Property(item => item.Context).ToJsonProperty("context");
+        project.Property(item => item.SourceIdea).ToJsonProperty("sourceIdea");
         project.Property(item => item.CreatedAt).ToJsonProperty("createdAt");
         project.Property(item => item.UpdatedAt).ToJsonProperty("updatedAt");
         project.Property(item => item.ETag).ToJsonProperty("_etag").IsETagConcurrency();
@@ -55,6 +57,17 @@ public sealed class MaiImageGeneratorDbContext(
             character.OwnsMany(item => item.References, reference =>
             {
                 reference.ToJsonProperty("references");
+            });
+        });
+        project.OwnsOne(item => item.BookPlan, plan =>
+        {
+            plan.ToJsonProperty("bookPlan");
+            plan.Property(item => item.Status).HasConversion<string>();
+            plan.OwnsMany(item => item.Chapters, chapter =>
+            {
+                chapter.ToJsonProperty("chapters");
+                chapter.Property(item => item.ProseStatus).HasConversion<string>();
+                chapter.Property(item => item.ImageStatus).HasConversion<string>();
             });
         });
 

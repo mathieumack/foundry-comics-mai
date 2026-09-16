@@ -88,6 +88,7 @@ builder.Services.AddScoped<ImageComposer>();
 builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ProjectService>();
 builder.Services.AddScoped<ProjectScaffolder>();
+builder.Services.AddScoped<BookService>();
 builder.Services.AddSingleton<AuthenticatedUserIdProvider>();
 builder.Services.AddSingleton<IUserIdProvider>(
     serviceProvider => serviceProvider.GetRequiredService<AuthenticatedUserIdProvider>());
