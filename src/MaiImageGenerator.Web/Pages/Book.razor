@@ -12,7 +12,7 @@
     {
         <div class="book-state" role="status">Loading book…</div>
     }
-    else if (error is not null)
+    else if (error is not null && project is null)
     {
         <div class="book-state error" role="alert">@error</div>
     }
@@ -33,6 +33,11 @@
                               Click="@GeneratePlanAsync" />
             </div>
         </header>
+
+        @if (error is not null)
+        {
+            <div class="book-state error" role="alert">@error</div>
+        }
 
         @if (planError is not null)
         {
@@ -245,6 +250,7 @@
     private async Task GenerateProseAsync(string chapterId)
     {
         isGenerating = true;
+        error = null;
         try
         {
             ApplyPlan(await GenerationClient.UpdateBookPlanAsync(ProjectId, CreateUpdateRequest(), cancellation.Token));
@@ -263,6 +269,7 @@
     private async Task GenerateImageAsync(string chapterId)
     {
         isGenerating = true;
+        error = null;
         try
         {
             ApplyPlan(await GenerationClient.UpdateBookPlanAsync(ProjectId, CreateUpdateRequest(), cancellation.Token));

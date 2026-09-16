@@ -56,10 +56,10 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         CreateProjectRequest request,
         CancellationToken cancellationToken)
     {
-        Validate(request);
+        Validate(request, project.Type, project.SourceIdea);
         project.Title = request.Title.Trim();
         project.Context = request.Context?.Trim();
-        project.SourceIdea = request.SourceIdea?.Trim();
+        project.SourceIdea = request.SourceIdea?.Trim() ?? project.SourceIdea;
         project.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToResponse(project);
@@ -158,14 +158,22 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         character.References.Select(reference =>
             new CharacterReferenceResponse(reference.Id, reference.FileName)).ToArray());
 
-    private static void Validate(CreateProjectRequest request)
+    private static void Validate(CreateProjectRequest request) =>
+        Validate(request, request.Type, null);
+
+    private static void Validate(
+        CreateProjectRequest request,
+        ProjectType projectType,
+        string? existingSourceIdea)
     {
         if (string.IsNullOrWhiteSpace(request.Title))
         {
             throw new ArgumentException("A project title is required.");
         }
 
-        if (request.Type == ProjectType.Book && string.IsNullOrWhiteSpace(request.SourceIdea))
+        if (projectType == ProjectType.Book &&
+            string.IsNullOrWhiteSpace(request.SourceIdea) &&
+            string.IsNullOrWhiteSpace(existingSourceIdea))
         {
             throw new ArgumentException("A source idea is required for a book.");
         }
