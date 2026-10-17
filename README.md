@@ -2,7 +2,7 @@
 
 # MAI Comic Studio
 
-Generate illustrated comic boards with Microsoft Foundry, MAI models, and an asynchronous .NET workflow on Azure.
+Generate illustrated comic boards and long-form books with Microsoft Foundry and MAI models on Azure.
 
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com/)
 [![Azure Developer CLI](https://img.shields.io/badge/Azure%20Developer%20CLI-azd-0078D4)](https://learn.microsoft.com/azure/developer/azure-developer-cli/)
@@ -15,12 +15,13 @@ Generate illustrated comic boards with Microsoft Foundry, MAI models, and an asy
 
 ## What it does
 
-MAI Comic Studio provides an authenticated Blazor workspace for defining a comic board, writing panel prompts, and optionally uploading character reference images. The API persists the request and queues a background job. The worker rewrites prompts with `MAI-Thinking-1`, generates panels with `MAI-Image-2.5-Pro`, and assembles the final board.
+MAI Comic Studio provides authenticated Blazor workspaces for comic boards and books. Comic generation uses a queued background job. Book projects retain their source idea and editable chapter plan, then use explicit, independently retryable API stages to write each chapter with `MAI-Thinking-1` and generate one illustration with `MAI-Image-2.5-Pro`.
 
 - Create and reorder up to eight comic panels.
 - Keep character identity consistent with private reference images.
 - Track asynchronous generation progress per panel.
 - Download individual panels and the composed board.
+- Scaffold, edit, resume, and selectively regenerate illustrated book chapters.
 - Deploy the application and its Azure dependencies with `azd` and Bicep.
 - Use managed identities and RBAC instead of application secrets.
 
@@ -31,11 +32,15 @@ flowchart LR
     User[Authenticated user] --> Web[Blazor WebAssembly<br/>Static Web Apps]
     Web -->|Entra access token| API[.NET API<br/>Container Apps]
     API --> Cosmos[(Cosmos DB)]
-    API --> Queue[Azure Queue Storage]
-    Queue --> Job[Board generation job<br/>Container Apps Job]
-    Job --> Foundry[Microsoft Foundry<br/>MAI models]
-    Job --> Blob[(Azure Blob Storage)]
-    Job --> Cosmos
+    API --> BoardQueue[Board queue]
+    API --> PlanQueue[Book plan queue]
+    BoardQueue --> BoardJob[Board generation job<br/>Container Apps Job]
+    PlanQueue --> BookPlanJob[Book plan generation job<br/>Container Apps Job]
+    BoardJob --> Foundry[Microsoft Foundry<br/>MAI models]
+    BookPlanJob --> Foundry
+    BoardJob --> Blob[(Azure Blob Storage)]
+    BoardJob --> Cosmos
+    BookPlanJob --> Cosmos
     API --> Blob
 ```
 

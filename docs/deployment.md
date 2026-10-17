@@ -44,7 +44,7 @@ The command performs these operations:
 
 1. The `preprovision` hook checks for an existing Foundry capability host and sets `DEPLOY_FOUNDRY_CAPABILITY_HOST`.
 2. Bicep creates the resources, private networking, identities, application registration, and RBAC assignments, including Azure SignalR Service in Default mode.
-3. `azd` remotely builds and deploys the API and board-generation containers.
+3. `azd` remotely builds and deploys the API, board-generation job, and book-plan-generation job containers.
 4. The web `prepackage` hook writes `appsettings.Production.json` from Bicep outputs and publishes the Blazor application.
 5. `azd` deploys the frontend to Static Web Apps.
 
@@ -52,7 +52,7 @@ The checked-in production appsettings is only a neutral template. Never replace 
 
 ## 5. Verify
 
-Use `azd env get-values` locally to inspect deployment outputs. Open `SERVICE_WEB_URI`, sign in, submit a small board, and confirm that generation progresses from pending to completed. Verify that the browser acquires the API scope, the API accepts the token, the API identity has the SignalR App Server and SignalR REST API Owner roles, the generation queue receives a message, the job emits panel-started and panel-completed messages, the API Dapr bindings consume them, the Dapr SignalR output binding targets the owning user on `notificationhub`, the job completes, artifacts are downloadable, and telemetry reaches Application Insights.
+Use `azd env get-values` locally to inspect deployment outputs. Open `SERVICE_WEB_URI` and sign in. Submit a small board and confirm that `generation-jobs` triggers only the board-generation job, panel notifications arrive, the job completes, and artifacts are downloadable. Then generate a book plan and confirm that `book-plan-jobs` triggers only the book-plan-generation job and that the page progresses from pending to completed. Verify that the browser acquires the API scope, the API accepts the token, both jobs use the managed identity, and telemetry reaches Application Insights.
 
 Avoid sharing the complete environment output in issues because it contains deployment-specific identifiers and endpoints.
 

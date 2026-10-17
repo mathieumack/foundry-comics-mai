@@ -40,7 +40,7 @@ param storageQueueEndpoint string
 @description('Storage account name used by the Queue scaler')
 param storageAccountName string
 
-@description('Queue that triggers board generation jobs')
+@description('Queue that triggers this generation job')
 param jobsQueueName string
 
 @description('Queue that receives messages after the maximum dequeue count')

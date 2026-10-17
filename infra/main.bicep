@@ -27,6 +27,9 @@ param apiContainerImage string
 @description('Container image for the board generation job')
 param generationJobContainerImage string
 
+@description('Container image for the book plan generation job')
+param bookPlanGenerationJobContainerImage string
+
 // Generate unique suffix based on resource group
 var suffix = substring(uniqueString(resourceGroup().id, environmentName), 0, 3)
 
@@ -56,6 +59,8 @@ var entraApiDisplayName = 'Comics API (${environmentName})'
 var entraApiAudience = 'api://comics-${environmentName}'
 var generationJobsQueueName = 'generation-jobs'
 var generationJobsPoisonQueueName = 'generation-jobs-poison'
+var bookPlanJobsQueueName = 'book-plan-jobs'
+var bookPlanJobsPoisonQueueName = 'book-plan-jobs-poison'
 var panelGenerationStartedQueueName = 'panel-generation-started'
 var panelGenerationCompletedQueueName = 'panel-generation-completed'
 
@@ -158,6 +163,8 @@ module storage 'modules/storage/storage-account.bicep' = {
     queues: [
       generationJobsQueueName
       generationJobsPoisonQueueName
+      bookPlanJobsQueueName
+      bookPlanJobsPoisonQueueName
       panelGenerationStartedQueueName
       panelGenerationCompletedQueueName
     ]
@@ -411,6 +418,7 @@ module apiContainerApp 'modules/hosting/container-app.bicep' = {
     storageAccountBlobEndpoint: storage.outputs.blobEndpoint
     storageAccountQueueEndpoint: storage.outputs.queueEndpoint
     jobsQueueName: generationJobsQueueName
+    bookPlanJobsQueueName: bookPlanJobsQueueName
     azureFoundryEndpoint: foundry.outputs.foundryEndpoint
     azureAISearchEndpoint: aiSearch.outputs.searchServiceEndpoint
     azureContentUnderstandingEndpoint: 'https://${foundry.outputs.foundryName}.services.ai.azure.com'
@@ -447,6 +455,33 @@ module boardGenerationJob 'modules/hosting/container-app-job.bicep' = {
     poisonQueueName: generationJobsPoisonQueueName
     foundryEndpoint: foundry.outputs.foundryEndpoint
     serviceName: 'generationjob'
+  }
+  dependsOn: [
+    roleAssignments
+  ]
+}
+
+module bookPlanGenerationJob 'modules/hosting/container-app-job.bicep' = {
+  name: 'comics-book-plan-generation-job'
+  params: {
+    name: '${abbrs.containerApp}book-plan-${environmentName}-${regionalSuffix}'
+    location: location
+    tags: apiTags
+    environmentId: containerAppEnv.outputs.id
+    managedIdentityId: managedIdentity.outputs.id
+    managedIdentityClientId: managedIdentity.outputs.clientId
+    containerRegistryServer: containerRegistry.outputs.loginServer
+    containerImage: bookPlanGenerationJobContainerImage
+    appInsightsConnectionString: appInsights.outputs.connectionString
+    cosmosDbEndpoint: cosmosDb.outputs.cosmosDbEndpoint
+    cosmosDbDatabaseName: cosmosDb.outputs.databaseName
+    storageBlobEndpoint: storage.outputs.blobEndpoint
+    storageQueueEndpoint: storage.outputs.queueEndpoint
+    storageAccountName: storage.outputs.name
+    jobsQueueName: bookPlanJobsQueueName
+    poisonQueueName: bookPlanJobsPoisonQueueName
+    foundryEndpoint: foundry.outputs.foundryEndpoint
+    serviceName: 'bookplanjob'
   }
   dependsOn: [
     roleAssignments

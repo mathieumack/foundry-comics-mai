@@ -42,6 +42,8 @@ builder.RegisterConfiguration()
 
 var jobsQueueName = builder.Configuration["Storage:JobsQueueName"]
     ?? throw new InvalidOperationException("Configuration 'Storage:JobsQueueName' is required.");
+var bookPlanJobsQueueName = builder.Configuration["Storage:BookPlanJobsQueueName"]
+    ?? throw new InvalidOperationException("Configuration 'Storage:BookPlanJobsQueueName' is required.");
 var queueClientOptions = new QueueClientOptions
 {
     MessageEncoding = storageSettings.QueueMessagesEncodeBase64
@@ -54,6 +56,10 @@ builder.Services.AddSingleton(new QueueClient(
     new Uri($"{storageSettings.QueuesEndpoint.TrimEnd('/')}/{jobsQueueName}"),
     credential,
     queueClientOptions));
+builder.Services.AddSingleton(new BookPlanGenerationQueue(new QueueClient(
+    new Uri($"{storageSettings.QueuesEndpoint.TrimEnd('/')}/{bookPlanJobsQueueName}"),
+    credential,
+    queueClientOptions)));
 builder.Services.AddSingleton(serviceProvider =>
 {
     var options = serviceProvider.GetRequiredService<IOptions<FoundryOptions>>().Value;
@@ -88,6 +94,7 @@ builder.Services.AddScoped<ImageComposer>();
 builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ProjectService>();
 builder.Services.AddScoped<ProjectScaffolder>();
+builder.Services.AddScoped<BookService>();
 builder.Services.AddSingleton<AuthenticatedUserIdProvider>();
 builder.Services.AddSingleton<IUserIdProvider>(
     serviceProvider => serviceProvider.GetRequiredService<AuthenticatedUserIdProvider>());

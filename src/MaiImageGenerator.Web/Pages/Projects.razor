@@ -9,7 +9,7 @@
 <main class="projects-shell">
     <header class="projects-header">
         <div>
-            <span class="eyebrow">Comic projects</span>
+            <span class="eyebrow">Creative projects</span>
             <h1>My projects</h1>
             <p>Open a project to create and edit its boards.</p>
         </div>
@@ -22,11 +22,25 @@
     @if (isCreating)
     {
         <section class="create-project" aria-label="Create project">
+            <RadzenDropDown @bind-Value="newProjectType"
+                            TValue="ProjectType"
+                            Data="projectTypes"
+                            Disabled="isSaving"
+                            Style="width: 100%" />
             <RadzenTextBox @bind-Value="newProjectTitle"
                            Name="project-title"
                            Placeholder="Project title"
                            Disabled="isSaving"
                            Style="width: 100%" />
+            @if (newProjectType == ProjectType.Book)
+            {
+                <RadzenTextArea @bind-Value="newProjectIdea"
+                               Name="book-idea"
+                               Placeholder="Summarize the book idea, characters, setting, tone, and key events..."
+                               Rows="5"
+                               Disabled="isSaving"
+                               Style="width: 100%" />
+            }
             <RadzenTextArea @bind-Value="newProjectContext"
                             Name="project-context"
                             Placeholder="Art direction (optional)"
@@ -69,15 +83,15 @@
     }
     else
     {
-        <section class="projects-grid" aria-label="Your comic projects">
+        <section class="projects-grid" aria-label="Your projects">
             @foreach (var project in projects)
             {
-                <a class="project-card" href="@($"/projects/{project.ProjectId:D}")">
+                <a class="project-card" href="@ProjectUri(project)">
                     <div class="project-thumbnail">
                         <RadzenIcon Icon="auto_stories" />
                     </div>
                     <div class="project-details">
-                        <span class="status">Project</span>
+                        <span class="status">@project.Type</span>
                         <h2>@project.Title</h2>
                         <time datetime="@project.UpdatedAt.ToString("O")">Updated @project.UpdatedAt.ToLocalTime().ToString("d MMM yyyy")</time>
                     </div>
@@ -90,11 +104,14 @@
 @code {
     private readonly CancellationTokenSource cancellation = new();
     private readonly List<ProjectResponse> projects = [];
+    private readonly ProjectType[] projectTypes = Enum.GetValues<ProjectType>();
     private bool isLoading = true;
     private bool isCreating;
     private bool isSaving;
     private string newProjectTitle = string.Empty;
     private string? newProjectContext;
+    private string? newProjectIdea;
+    private ProjectType newProjectType;
     private string? error;
 
     protected override async Task OnInitializedAsync()
@@ -131,6 +148,8 @@
         isCreating = false;
         newProjectTitle = string.Empty;
         newProjectContext = null;
+        newProjectIdea = null;
+        newProjectType = ProjectType.Comic;
     }
 
     private async Task CreateProjectAsync()
@@ -141,15 +160,26 @@
             return;
         }
 
+        if (newProjectType == ProjectType.Book && string.IsNullOrWhiteSpace(newProjectIdea))
+        {
+            error = "Describe your book idea.";
+            return;
+        }
+
         isSaving = true;
         error = null;
         try
         {
             var project = await GenerationClient.CreateProjectAsync(
-                new CreateProjectRequest(newProjectTitle.Trim(), newProjectContext?.Trim()),
+                new CreateProjectRequest(
+                    newProjectTitle.Trim(),
+                    newProjectContext?.Trim(),
+                    newProjectType,
+                    newProjectIdea?.Trim()),
                 cancellation.Token);
-            Navigation.NavigateTo($"/projects/{project.ProjectId:D}");
+            Navigation.NavigateTo(ProjectUri(project));
         }
+
         catch (AccessTokenNotAvailableException exception)
         {
             exception.Redirect();
@@ -166,6 +196,10 @@
             isSaving = false;
         }
     }
+
+    private static string ProjectUri(ProjectResponse project) => project.Type == ProjectType.Book
+        ? $"/projects/{project.ProjectId:D}/book"
+        : $"/projects/{project.ProjectId:D}";
 
     public void Dispose()
     {

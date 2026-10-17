@@ -46,6 +46,6 @@ For automation, use the object ID of the deployment service principal or workloa
 
 ## Cost and production readiness
 
-The environment creates billable AI model deployments, AI Search Standard, SignalR Service Standard, Container Registry Premium, networking, storage, Cosmos DB, monitoring, and compute resources. Review current Azure pricing and quotas before deployment.
+The environment creates billable AI model deployments, AI Search Standard, SignalR Service Standard, Container Registry Premium, networking, storage, Cosmos DB, monitoring, and two event-driven Container Apps Jobs: one for board generation and one for book-plan generation. Review current Azure pricing and quotas before deployment.
 
 This repository is a reference implementation. A production adoption should additionally assess content safety, private ingress requirements, CORS restrictions, availability targets, backup and retention, alerting, rate limits, image moderation, and lifecycle policies.

@@ -1,0 +1,414 @@
+@page "/projects/{ProjectId:guid}/book"
+@attribute [Authorize]
+@implements IDisposable
+@inject GenerationApiClient GenerationClient
+
+<PageTitle>@(project?.Title ?? "Book")</PageTitle>
+
+<main class="book-shell">
+    <a class="back-link" href="/projects">← All projects</a>
+
+    @if (isLoading)
+    {
+        <div class="book-state" role="status">Loading book…</div>
+    }
+    else if (error is not null && project is null)
+    {
+        <div class="book-state error" role="alert">@error</div>
+    }
+    else if (project is not null)
+    {
+        <header class="book-header">
+            <div>
+                <span class="eyebrow">Book project</span>
+                <h1>@project.Title</h1>
+                <p>@project.SourceIdea</p>
+            </div>
+            <div class="header-actions">
+                <RadzenNumeric @bind-Value="chapterCount" Min="1" Max="30" ShowUpDown="true" />
+                <RadzenButton Text="@(chapters.Count == 0 ? "Generate plan" : "Regenerate plan")"
+                              Icon="auto_fix_high"
+                              IsBusy="isPlanning"
+                              Disabled="isBusy"
+                              Click="@GeneratePlanAsync" />
+            </div>
+        </header>
+
+        @if (error is not null)
+        {
+            <div class="book-state error" role="alert">@error</div>
+        }
+
+        @if (planError is not null)
+        {
+            <div class="book-state error" role="alert">@planError</div>
+        }
+
+        @if (isPlanning)
+        {
+            <div class="book-state" role="status">The chapter plan is being generated. You can leave this page and return later.</div>
+        }
+
+        @if (chapters.Count == 0)
+        {
+            <section class="empty-plan">
+                <RadzenIcon Icon="menu_book" />
+                <h2>Turn the idea into a complete chapter plan</h2>
+                <p>MAI-Thinking will draft titles, story summaries, character development, and continuity notes.</p>
+            </section>
+        }
+        else
+        {
+            <div class="book-actions">
+                <RadzenButton Text="Save edits"
+                              Icon="save"
+                              ButtonStyle="ButtonStyle.Light"
+                              Variant="Variant.Outlined"
+                              IsBusy="isSaving"
+                              Disabled="isBusy"
+                              Click="@SaveAsync" />
+                <RadzenButton Text="Generate remaining chapters"
+                              Icon="auto_awesome"
+                              Disabled="isBusy"
+                              Click="@GenerateRemainingAsync" />
+            </div>
+
+            <section class="chapters" aria-label="Book chapters">
+                @foreach (var chapter in chapters)
+                {
+                    <article class="chapter" @key="chapter.Id">
+                        <div class="chapter-heading">
+                            <span>Chapter @chapter.Number</span>
+                            <div>
+                                <span class="generation-status">@($"Prose: {chapter.ProseStatus}")</span>
+                                <span class="generation-status">@($"Image: {chapter.ImageStatus}")</span>
+                            </div>
+                        </div>
+                        <RadzenTextBox @bind-Value="chapter.Title"
+                                       Placeholder="Chapter title"
+                                       Disabled="isBusy"
+                                       Style="width: 100%" />
+                        <label>Story summary</label>
+                        <RadzenTextArea @bind-Value="chapter.Summary" Rows="4" Disabled="isBusy" Style="width: 100%" />
+                        <label>Character events and development</label>
+                        <RadzenTextArea @bind-Value="chapter.CharacterEvents" Rows="3" Disabled="isBusy" Style="width: 100%" />
+                        <label>Settings, plot points, and continuity</label>
+                        <RadzenTextArea @bind-Value="chapter.Continuity" Rows="3" Disabled="isBusy" Style="width: 100%" />
+                        <label>Chapter prose</label>
+                        <RadzenTextArea @bind-Value="chapter.Prose" Rows="14" Disabled="isBusy" Style="width: 100%" />
+                        @if (chapter.ProseError is not null)
+                        {
+                            <p class="chapter-error">@chapter.ProseError</p>
+                        }
+                        <div class="chapter-actions">
+                            <RadzenButton Text="@(chapter.ProseStatus == GenerationStatus.Completed ? "Regenerate prose" : "Generate prose")"
+                                          Icon="edit_note"
+                                          Disabled="isBusy"
+                                          Click="@(() => GenerateProseAsync(chapter.Id))" />
+                            <RadzenButton Text="@(chapter.ImageStatus == GenerationStatus.Completed ? "Regenerate image" : "Generate image")"
+                                          Icon="image"
+                                          ButtonStyle="ButtonStyle.Light"
+                                          Variant="Variant.Outlined"
+                                          Disabled="isBusy"
+                                          Click="@(() => GenerateImageAsync(chapter.Id))" />
+                        </div>
+                        <label>Illustration prompt</label>
+                        <RadzenTextArea @bind-Value="chapter.ImagePrompt"
+                                        Placeholder="Optional; generated from the plan when blank"
+                                        Rows="3"
+                                        Disabled="isBusy"
+                                        Style="width: 100%" />
+                        @if (chapter.ImageError is not null)
+                        {
+                            <p class="chapter-error">@chapter.ImageError</p>
+                        }
+                        @if (chapter.ImageDataUrl is not null)
+                        {
+                            <img class="chapter-image" src="@chapter.ImageDataUrl" alt="@($"Illustration for chapter {chapter.Number}")" />
+                        }
+                    </article>
+                }
+            </section>
+        }
+    }
+</main>
+
+@code {
+    [Parameter]
+    public Guid ProjectId { get; set; }
+
+    private readonly CancellationTokenSource cancellation = new();
+    private readonly List<ChapterDraft> chapters = [];
+    private ProjectResponse? project;
+    private string? error;
+    private string? planError;
+    private bool isPlanGenerationActive;
+    private int chapterCount = 8;
+    private bool isLoading = true;
+    private bool isPlanning;
+    private bool isSaving;
+    private bool isGenerating;
+    private bool isBusy => isPlanning || isSaving || isGenerating;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        error = null;
+        try
+        {
+            project = await GenerationClient.GetProjectAsync(ProjectId, cancellation.Token);
+            if (project.Type != ProjectType.Book)
+            {
+                error = "This project is not a book.";
+                return;
+            }
+
+            ApplyPlan(await GenerationClient.GetBookPlanAsync(ProjectId, cancellation.Token));
+            if (isPlanGenerationActive)
+            {
+                isPlanning = true;
+                _ = PollPlanAsync();
+            }
+        }
+        catch (AccessTokenNotAvailableException exception)
+        {
+            exception.Redirect();
+        }
+        catch (GenerationApiException exception)
+        {
+            error = exception.Message;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task GeneratePlanAsync()
+    {
+        isPlanning = true;
+        error = null;
+        try
+        {
+            ApplyPlan(await GenerationClient.GenerateBookPlanAsync(
+                ProjectId,
+                new GenerateBookPlanRequest(chapterCount),
+                cancellation.Token));
+            if (isPlanGenerationActive)
+            {
+                await PollPlanAsync();
+            }
+        }
+        catch (GenerationApiException exception)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            isPlanning = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        isSaving = true;
+        error = null;
+        try
+        {
+            ApplyPlan(await GenerationClient.UpdateBookPlanAsync(ProjectId, CreateUpdateRequest(), cancellation.Token));
+        }
+        catch (GenerationApiException exception)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task GenerateRemainingAsync()
+    {
+        isGenerating = true;
+        error = null;
+        try
+        {
+            ApplyPlan(await GenerationClient.UpdateBookPlanAsync(ProjectId, CreateUpdateRequest(), cancellation.Token));
+            foreach (var chapterId in chapters.Select(chapter => chapter.Id).ToArray())
+            {
+                var chapter = chapters.Single(item => item.Id == chapterId);
+                if (chapter.ProseStatus != GenerationStatus.Completed)
+                {
+                    ApplyPlan(await GenerationClient.GenerateChapterProseAsync(ProjectId, chapterId, cancellation.Token));
+                }
+
+                chapter = chapters.Single(item => item.Id == chapterId);
+                if (chapter.ImageStatus != GenerationStatus.Completed)
+                {
+                    ApplyPlan(await GenerationClient.GenerateChapterImageAsync(ProjectId, chapterId, cancellation.Token));
+                }
+            }
+        }
+        catch (GenerationApiException exception)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            isGenerating = false;
+        }
+    }
+
+    private async Task GenerateProseAsync(string chapterId)
+    {
+        isGenerating = true;
+        error = null;
+        try
+        {
+            ApplyPlan(await GenerationClient.UpdateBookPlanAsync(ProjectId, CreateUpdateRequest(), cancellation.Token));
+            ApplyPlan(await GenerationClient.GenerateChapterProseAsync(ProjectId, chapterId, cancellation.Token));
+        }
+        catch (GenerationApiException exception)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            isGenerating = false;
+        }
+    }
+
+    private async Task GenerateImageAsync(string chapterId)
+    {
+        isGenerating = true;
+        error = null;
+        try
+        {
+            ApplyPlan(await GenerationClient.UpdateBookPlanAsync(ProjectId, CreateUpdateRequest(), cancellation.Token));
+            ApplyPlan(await GenerationClient.GenerateChapterImageAsync(ProjectId, chapterId, cancellation.Token));
+        }
+        catch (GenerationApiException exception)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            isGenerating = false;
+        }
+    }
+
+    private UpdateBookPlanRequest CreateUpdateRequest() => new(chapters.Select(chapter => new BookChapterRequest(
+        chapter.Id,
+        chapter.Number,
+        chapter.Title,
+        chapter.Summary,
+        chapter.CharacterEvents,
+        chapter.Continuity,
+        chapter.Prose,
+        chapter.ImagePrompt)).ToArray());
+
+    private void ApplyPlan(BookPlanResponse plan)
+    {
+        isPlanGenerationActive = plan.IsGenerating;
+        planError = plan.Error;
+        var imageData = chapters
+            .Where(chapter => chapter.ImageDataUrl is not null)
+            .ToDictionary(chapter => chapter.Id, chapter => chapter.ImageDataUrl!, StringComparer.Ordinal);
+        chapters.Clear();
+        chapters.AddRange(plan.Chapters.Select(chapter => new ChapterDraft
+        {
+            Id = chapter.Id,
+            Number = chapter.Number,
+            Title = chapter.Title,
+            Summary = chapter.Summary,
+            CharacterEvents = chapter.CharacterEvents,
+            Continuity = chapter.Continuity,
+            Prose = chapter.Prose,
+            ProseStatus = chapter.ProseStatus,
+            ProseError = chapter.ProseError,
+            ImagePrompt = chapter.ImagePrompt,
+            ImageStatus = chapter.ImageStatus,
+            ImageError = chapter.ImageError,
+            ImageDataUrl = imageData.GetValueOrDefault(chapter.Id)
+        }));
+        if (chapters.Count > 0)
+        {
+            chapterCount = chapters.Count;
+        }
+        _ = LoadImagesAsync(plan);
+    }
+
+    private async Task PollPlanAsync()
+    {
+        try
+        {
+            while (isPlanGenerationActive)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), cancellation.Token);
+                ApplyPlan(await GenerationClient.GetBookPlanAsync(ProjectId, cancellation.Token));
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (AccessTokenNotAvailableException exception)
+        {
+            exception.Redirect();
+        }
+        catch (GenerationApiException exception)
+        {
+            error = exception.Message;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            isPlanning = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LoadImagesAsync(BookPlanResponse plan)
+    {
+        foreach (var chapter in plan.Chapters.Where(item => item.ImageUri is not null))
+        {
+            var draft = chapters.SingleOrDefault(item => item.Id == chapter.Id);
+            if (draft is not null && draft.ImageDataUrl is null)
+            {
+                try
+                {
+                    draft.ImageDataUrl = await GenerationClient.DownloadDataUrlAsync(chapter.ImageUri!, cancellation.Token);
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch (Exception exception) when (exception is GenerationApiException or OperationCanceledException)
+                {
+                }
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        cancellation.Cancel();
+        cancellation.Dispose();
+    }
+
+    private sealed class ChapterDraft
+    {
+        public string Id { get; init; } = string.Empty;
+        public int Number { get; init; }
+        public string Title { get; set; } = string.Empty;
+        public string Summary { get; set; } = string.Empty;
+        public string CharacterEvents { get; set; } = string.Empty;
+        public string Continuity { get; set; } = string.Empty;
+        public string? Prose { get; set; }
+        public GenerationStatus ProseStatus { get; init; }
+        public string? ProseError { get; init; }
+        public string? ImagePrompt { get; set; }
+        public GenerationStatus ImageStatus { get; init; }
+        public string? ImageError { get; init; }
+        public string? ImageDataUrl { get; set; }
+    }
+}

@@ -18,8 +18,11 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         {
             Id = Guid.NewGuid().ToString("D"),
             OwnerId = ownerId,
+            SchemaVersion = 2,
+            Type = request.Type,
             Title = request.Title.Trim(),
             Context = request.Context?.Trim(),
+            SourceIdea = request.SourceIdea?.Trim(),
             CreatedAt = now,
             UpdatedAt = now
         };
@@ -53,9 +56,10 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         CreateProjectRequest request,
         CancellationToken cancellationToken)
     {
-        Validate(request);
+        Validate(request, project.Type, project.SourceIdea);
         project.Title = request.Title.Trim();
         project.Context = request.Context?.Trim();
+        project.SourceIdea = request.SourceIdea?.Trim() ?? project.SourceIdea;
         project.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToResponse(project);
@@ -142,6 +146,8 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         Guid.Parse(project.Id),
         project.Title,
         project.Context,
+        project.Type,
+        project.SourceIdea,
         project.CreatedAt,
         project.UpdatedAt,
         project.Characters.Select(ToResponse).ToArray());
@@ -152,11 +158,24 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         character.References.Select(reference =>
             new CharacterReferenceResponse(reference.Id, reference.FileName)).ToArray());
 
-    private static void Validate(CreateProjectRequest request)
+    private static void Validate(CreateProjectRequest request) =>
+        Validate(request, request.Type, null);
+
+    private static void Validate(
+        CreateProjectRequest request,
+        ProjectType projectType,
+        string? existingSourceIdea)
     {
         if (string.IsNullOrWhiteSpace(request.Title))
         {
             throw new ArgumentException("A project title is required.");
+        }
+
+        if (projectType == ProjectType.Book &&
+            string.IsNullOrWhiteSpace(request.SourceIdea) &&
+            string.IsNullOrWhiteSpace(existingSourceIdea))
+        {
+            throw new ArgumentException("A source idea is required for a book.");
         }
     }
 

@@ -46,6 +46,58 @@ public sealed class GenerationApiClient(HttpClient httpClient)
             ?? throw new GenerationApiException("The API returned no project.");
     }
 
+    public async Task<BookPlanResponse> GetBookPlanAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.GetAsync($"api/projects/{projectId:D}/book/plan", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<BookPlanResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no book plan.");
+    }
+
+    public async Task<BookPlanResponse> GenerateBookPlanAsync(
+        Guid projectId,
+        GenerateBookPlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            $"api/projects/{projectId:D}/book/plan/generate",
+            request,
+            cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<BookPlanResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no book plan.");
+    }
+
+    public async Task<BookPlanResponse> UpdateBookPlanAsync(
+        Guid projectId,
+        UpdateBookPlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.PutAsJsonAsync(
+            $"api/projects/{projectId:D}/book/plan",
+            request,
+            cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<BookPlanResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no book plan.");
+    }
+
+    public Task<BookPlanResponse> GenerateChapterProseAsync(
+        Guid projectId,
+        string chapterId,
+        CancellationToken cancellationToken) =>
+        GenerateBookPartAsync(
+            $"api/projects/{projectId:D}/book/chapters/{Uri.EscapeDataString(chapterId)}/prose/generate",
+            cancellationToken);
+
+    public Task<BookPlanResponse> GenerateChapterImageAsync(
+        Guid projectId,
+        string chapterId,
+        CancellationToken cancellationToken) =>
+        GenerateBookPartAsync(
+            $"api/projects/{projectId:D}/book/chapters/{Uri.EscapeDataString(chapterId)}/image/generate",
+            cancellationToken);
+
     public async Task<IReadOnlyList<GenerationSummaryResponse>> ListBoardsAsync(
         Guid projectId,
         CancellationToken cancellationToken)
@@ -142,6 +194,16 @@ public sealed class GenerationApiClient(HttpClient httpClient)
         var details = await response.Content.ReadAsStringAsync(cancellationToken);
         throw new GenerationApiException(
             $"The API returned {(int)response.StatusCode} ({response.ReasonPhrase}). {details}");
+    }
+
+    private async Task<BookPlanResponse> GenerateBookPartAsync(
+        string relativeUri,
+        CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.PostAsync(relativeUri, null, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<BookPlanResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no book plan.");
     }
 }
 

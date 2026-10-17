@@ -11,6 +11,10 @@ param generationJobContainerImage = readEnvironmentVariable(
 	'SERVICE_GENERATIONJOB_IMAGE_NAME',
 	'mcr.microsoft.com/dotnet/samples:dotnetapp'
 )
+param bookPlanGenerationJobContainerImage = readEnvironmentVariable(
+	'SERVICE_BOOKPLANJOB_IMAGE_NAME',
+	'mcr.microsoft.com/dotnet/samples:dotnetapp'
+)
 
 // Deployer Principal ID: Object ID of the user deploying the resources
 // Auto-detected by predeploy scripts (predeploy.ps1/predeploy.sh)
