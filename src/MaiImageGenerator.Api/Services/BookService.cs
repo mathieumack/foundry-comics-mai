@@ -4,6 +4,7 @@ using MaiImageGenerator.Api.Configuration;
 using MaiImageGenerator.Api.Contracts;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Data.Entities;
+using MaiImageGenerator.Shared.Messages;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Options;
 using OpenAI;
@@ -18,13 +19,15 @@ public sealed class BookService
     private readonly MaiImageGeneratorDbContext _dbContext;
     private readonly IImageGenerator _imageGenerator;
     private readonly BlobContainerClient _container;
+    private readonly BookPlanGenerationQueue _generationQueue;
 
     public BookService(
         OpenAIClient client,
         IOptions<FoundryOptions> options,
         MaiImageGeneratorDbContext dbContext,
         IImageGenerator imageGenerator,
-        BlobServiceClient blobServiceClient)
+        BlobServiceClient blobServiceClient,
+        BookPlanGenerationQueue generationQueue)
     {
         _agent = client.GetChatClient(options.Value.PromptModel).AsAIAgent(
             instructions: """
@@ -35,6 +38,7 @@ public sealed class BookService
         _dbContext = dbContext;
         _imageGenerator = imageGenerator;
         _container = blobServiceClient.GetBlobContainerClient("generations");
+        _generationQueue = generationQueue;
     }
 
     public async Task<BookPlanResponse> GeneratePlanAsync(
@@ -48,51 +52,35 @@ public sealed class BookService
             throw new ArgumentException($"A book plan requires between 1 and {MaximumChapterCount} chapters.");
         }
 
+        var requestId = Guid.NewGuid().ToString("N");
         project.BookPlan ??= new BookPlan();
-        project.BookPlan.Status = GenerationStatus.Processing;
-        project.BookPlan.Prompt = BuildPlanPrompt(project, chapterCount);
+        project.BookPlan.GenerationRequestId = requestId;
+        project.BookPlan.Status = GenerationStatus.Pending;
+        project.BookPlan.Prompt = null;
         project.BookPlan.Error = null;
         project.UpdatedAt = DateTimeOffset.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         try
         {
-            var response = await _agent.RunAsync(project.BookPlan.Prompt, cancellationToken: cancellationToken);
-            var generatedChapters = ParsePlan(response.ToString(), chapterCount);
-            for (var index = 0; index < Math.Min(generatedChapters.Count, project.BookPlan.Chapters.Count); index++)
+            var message = new BookPlanGenerationRequestMessage
             {
-                var generated = generatedChapters[index];
-                var saved = project.BookPlan.Chapters[index];
-                generated.Id = saved.Id;
-                generated.ProsePrompt = saved.ProsePrompt;
-                generated.Prose = saved.Prose;
-                generated.ProseStatus = saved.ProseStatus;
-                generated.ProseError = saved.ProseError;
-                generated.ImagePrompt = saved.ImagePrompt;
-                generated.ImageBlobName = saved.ImageBlobName;
-                generated.ImageStatus = saved.ImageStatus;
-                generated.ImageError = saved.ImageError;
-            }
-
-            project.BookPlan.Chapters = generatedChapters;
-            project.BookPlan.Status = GenerationStatus.Completed;
-            project.BookPlan.Error = null;
-        }
-        catch (OperationCanceledException)
-        {
-            project.BookPlan.Status = GenerationStatus.Pending;
-            project.BookPlan.Error = "Book planning was interrupted and can be resumed by retrying.";
-            await _dbContext.SaveChangesAsync(CancellationToken.None);
-            throw;
+                RequestId = requestId,
+                ProjectId = project.Id,
+                OwnerId = project.OwnerId,
+                ChapterCount = chapterCount
+            };
+            await _generationQueue.EnqueueAsync(message, cancellationToken);
         }
         catch (Exception)
         {
             project.BookPlan.Status = GenerationStatus.Failed;
-            project.BookPlan.Error = "The book plan could not be generated. Retry planning to try again.";
+            project.BookPlan.Error = "The book plan could not be queued. Retry planning to try again.";
+            project.UpdatedAt = DateTimeOffset.UtcNow;
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
+            throw;
         }
 
-        project.UpdatedAt = DateTimeOffset.UtcNow;
-        await _dbContext.SaveChangesAsync(CancellationToken.None);
         return ToResponse(project);
     }
 
@@ -274,16 +262,6 @@ public sealed class BookService
             ?? throw new KeyNotFoundException("The chapter was not found.");
     }
 
-    private static string BuildPlanPrompt(ProjectDocument project, int chapterCount) => $$"""
-        Create a complete structured plan with exactly {{chapterCount}} chapters for this book.
-        Source idea: {{project.SourceIdea}}
-        Creative context: {{project.Context}}
-        Return only JSON with this shape:
-        {"chapters":[{"title":"...","summary":"...","characterEvents":"...","continuity":"..."}]}
-        Every field must be detailed enough to guide later prose and illustration generation. Continuity must include
-        relevant settings, plot points, character state, unresolved threads, and context needed to avoid contradictions.
-        """;
-
     private static string BuildProsePrompt(ProjectDocument project, BookChapter chapter)
     {
         var plan = project.BookPlan!;
@@ -314,45 +292,13 @@ public sealed class BookService
             """;
     }
 
-    private static List<BookChapter> ParsePlan(string content, int chapterCount)
-    {
-        var start = content.IndexOf('{');
-        var end = content.LastIndexOf('}');
-        if (start < 0 || end < start)
-        {
-            throw new JsonException("The response did not contain a JSON object.");
-        }
-
-        var result = JsonSerializer.Deserialize<PlanResult>(content[start..(end + 1)], JsonSerializerOptions.Web);
-        if (result?.Chapters is null ||
-            result.Chapters.Count != chapterCount ||
-            result.Chapters.Any(chapter =>
-                string.IsNullOrWhiteSpace(chapter.Title) ||
-                string.IsNullOrWhiteSpace(chapter.Summary) ||
-                string.IsNullOrWhiteSpace(chapter.CharacterEvents) ||
-                string.IsNullOrWhiteSpace(chapter.Continuity)))
-        {
-            throw new JsonException("The response did not contain a complete book plan.");
-        }
-
-        return result.Chapters.Select((chapter, index) => new BookChapter
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            Number = index + 1,
-            Title = chapter.Title.Trim(),
-            Summary = chapter.Summary.Trim(),
-            CharacterEvents = chapter.CharacterEvents.Trim(),
-            Continuity = chapter.Continuity.Trim(),
-            ProseStatus = GenerationStatus.Pending,
-            ImageStatus = GenerationStatus.Pending
-        }).ToList();
-    }
-
     private static BookPlanResponse ToResponse(ProjectDocument project)
     {
         var plan = project.BookPlan ?? new BookPlan { Status = GenerationStatus.Pending };
         return new(
             plan.Status,
+            project.BookPlan?.GenerationRequestId is not null &&
+                plan.Status is GenerationStatus.Pending or GenerationStatus.Processing,
             plan.Error,
             plan.Chapters.OrderBy(chapter => chapter.Number).Select(chapter => new BookChapterResponse(
                 chapter.Id,
@@ -373,6 +319,4 @@ public sealed class BookService
                 chapter.ImageError)).ToArray());
     }
 
-    private sealed record PlanResult(IReadOnlyList<PlanChapter>? Chapters);
-    private sealed record PlanChapter(string Title, string Summary, string CharacterEvents, string Continuity);
 }

@@ -5,8 +5,9 @@
 | Component | Responsibility |
 | --- | --- |
 | Blazor WebAssembly | Authenticates users with Microsoft Entra ID, lists comic and book projects, captures or scaffolds editable board, plan, chapter, and character inputs, uploads references, and displays generation progress. |
-| .NET API | Enforces user ownership, uses MAI-Thinking to scaffold stories and write book chapters, validates requests, stores metadata, generates chapter illustrations, submits comic queue messages, and streams generated artifacts. |
-| Board generation job | Receives one queue message, rewrites prompts, generates panels, composes the board, and updates durable status. |
+| .NET API | Enforces user ownership, uses MAI-Thinking to scaffold stories and write book chapters, validates requests, stores metadata, generates chapter illustrations, submits generation queue messages, and streams generated artifacts. |
+| Board generation job | Consumes only the board-generation queue, rewrites prompts, generates panels, composes the board, and updates durable status. |
+| Book plan generation job | Consumes only the book-plan queue, generates the structured chapter plan, and updates durable status. |
 | Shared library | Defines Cosmos entities, configuration types, database context, and the versioned queue message contract. |
 
 ## Azure topology
@@ -21,11 +22,13 @@ flowchart TB
     SWA -->|Bearer token| ACA
     subgraph VNet[Virtual network]
         CAE[Container Apps environment]
-        Job[Container Apps Job]
+        BoardJob[Board generation job]
+        BookPlanJob[Book plan generation job]
         PE[Private endpoints and private DNS]
     end
     ACA --- CAE
-    Job --- CAE
+    BoardJob --- CAE
+    BookPlanJob --- CAE
     CAE --> PE
     PE --> Storage[Storage: blobs and queues]
     PE --> Cosmos[Cosmos DB]
@@ -33,9 +36,11 @@ flowchart TB
     PE --> Search[Azure AI Search]
     ACA -->|managed identity| SignalR[Azure SignalR Service]
     ACR[Azure Container Registry] --> ACA
-    ACR --> Job
+    ACR --> BoardJob
+    ACR --> BookPlanJob
     Monitor[Application Insights and Log Analytics] -. telemetry .-> ACA
-    Monitor -. telemetry .-> Job
+    Monitor -. telemetry .-> BoardJob
+    Monitor -. telemetry .-> BookPlanJob
 ```
 
 The Container Apps environment has external ingress for the API and VNet integration for private service access. Storage, Cosmos DB, AI Search, and Foundry use private endpoints. Azure SignalR Service runs in Default mode so the API hosts the server-push-only notification hub while the service handles client connection scale-out. Negotiation requires the authenticated user's identifier claim and binds that identifier to the connection. Static Web Apps, the authenticated API, and SignalR remain public entry points. Container Registry is public in the reference deployment and also has a private endpoint.
@@ -48,8 +53,8 @@ sequenceDiagram
     participant Web as Blazor WebAssembly
     participant API as Generation API
     participant DB as Cosmos DB
-    participant Queue as Queue Storage
-    participant Job as Generation Job
+    participant Queue as Board queue
+    participant Job as Board generation job
     participant Dapr as API Dapr sidecar
     participant MAI as Foundry MAI models
     participant Blob as Blob Storage
@@ -104,6 +109,8 @@ sequenceDiagram
     participant Web as Blazor WebAssembly
     participant API as Book API
     participant DB as Cosmos DB
+    participant Queue as Book plan queue
+    participant Job as Book plan generation job
     participant Text as MAI-Thinking-1
     participant Image as MAI-Image-2.5-Pro
     participant Blob as Blob Storage
@@ -112,9 +119,18 @@ sequenceDiagram
     API->>DB: Persist source idea and project type
     User->>Web: Generate chapter plan
     Web->>API: Request plan
-    API->>DB: Persist planning status and prompt
-    API->>Text: Generate structured global plan
-    API->>DB: Persist editable ordered chapters
+    API->>DB: Persist pending planning status and request ID
+    API->>Queue: Submit typed owner-scoped plan job
+    API-->>Web: Return 202 Accepted
+    Queue->>Job: Deliver plan message
+    Job->>DB: Load owner-partitioned project and mark processing
+    Job->>Text: Generate structured global plan
+    Job->>DB: Persist editable ordered chapters and completion status
+    loop While planning is pending or processing
+        Web->>API: Poll plan status
+        API->>DB: Read owner-scoped project
+        API-->>Web: Return current plan status
+    end
     loop Each selected or unfinished chapter
         User->>Web: Save edits or generate prose/image
         Web->>API: Persist plan and chapter edits
@@ -127,7 +143,9 @@ sequenceDiagram
     end
 ```
 
-Books are first-class `ProjectDocument` values with `Type=Book`. The owner-partitioned project document retains the source idea, the plan-generation prompt and status, stable ordered chapter IDs, editable plan fields and prose, illustration prompts, one image reference per chapter, and separate prose/image status and errors. Each stage is saved before and after a model call. Reopening the project therefore restores completed work, while interrupted or failed planning, prose, and illustration calls can be retried independently without replacing unrelated chapters. Regeneration overwrites only the selected chapter artifact at its stable owner-scoped blob path.
+Books are first-class `ProjectDocument` values with `Type=Book`. The owner-partitioned project document retains the source idea, the plan-generation request ID, prompt and status, stable ordered chapter IDs, editable plan fields and prose, illustration prompts, one image reference per chapter, and separate prose/image status and errors. Plan generation is submitted to the dedicated `book-plan-jobs` queue and processed by its own Container Apps Job, so slow planning cannot consume board-generation executions. The API request returns immediately; the Web client polls the durable status and can safely be closed and reopened. The request ID makes delivery idempotent and prevents an older queued message from replacing a newer plan request. Each stage is saved before and after a model call. Reopening the project therefore restores completed work, while interrupted or failed planning, prose, and illustration calls can be retried independently without replacing unrelated chapters. Regeneration overwrites only the selected chapter artifact at its stable owner-scoped blob path.
+
+The planning prompt requests string fields. If the model returns summaries, character events, or continuity notes as nested JSON objects or lists of text, the worker converts them to editable multiline text while retaining object labels and list order. Missing, empty, null, or non-text notes and incorrect chapter counts still fail validation and are logged by the worker; an invalid response never replaces the saved chapters.
 
 The Web client explicitly coordinates unfinished chapters rather than giving an autonomous agent control over persistence. Every prose request receives the complete current plan plus generated prior-chapter prose, so the writing agent can preserve plot and character continuity. This deterministic API orchestration also keeps user edits as the source of truth between stages.
 

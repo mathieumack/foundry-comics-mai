@@ -34,6 +34,7 @@ public sealed record BookChapterRequest(
 
 public sealed record BookPlanResponse(
     GenerationStatus Status,
+    bool IsGenerating,
     string? Error,
     IReadOnlyList<BookChapterResponse> Chapters);
 

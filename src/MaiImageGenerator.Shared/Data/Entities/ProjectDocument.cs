@@ -24,6 +24,7 @@ public enum ProjectType
 
 public sealed class BookPlan
 {
+    public string? GenerationRequestId { get; set; }
     public string? Prompt { get; set; }
     public GenerationStatus Status { get; set; }
     public string? Error { get; set; }

@@ -44,6 +44,11 @@
             <div class="book-state error" role="alert">@planError</div>
         }
 
+        @if (isPlanning)
+        {
+            <div class="book-state" role="status">The chapter plan is being generated. You can leave this page and return later.</div>
+        }
+
         @if (chapters.Count == 0)
         {
             <section class="empty-plan">
@@ -137,6 +142,7 @@
     private ProjectResponse? project;
     private string? error;
     private string? planError;
+    private bool isPlanGenerationActive;
     private int chapterCount = 8;
     private bool isLoading = true;
     private bool isPlanning;
@@ -158,6 +164,11 @@
             }
 
             ApplyPlan(await GenerationClient.GetBookPlanAsync(ProjectId, cancellation.Token));
+            if (isPlanGenerationActive)
+            {
+                isPlanning = true;
+                _ = PollPlanAsync();
+            }
         }
         catch (AccessTokenNotAvailableException exception)
         {
@@ -186,6 +197,10 @@
                 ProjectId,
                 new GenerateBookPlanRequest(chapterCount),
                 cancellation.Token));
+            if (isPlanGenerationActive)
+            {
+                await PollPlanAsync();
+            }
         }
         catch (GenerationApiException exception)
         {
@@ -297,6 +312,7 @@
 
     private void ApplyPlan(BookPlanResponse plan)
     {
+        isPlanGenerationActive = plan.IsGenerating;
         planError = plan.Error;
         var imageData = chapters
             .Where(chapter => chapter.ImageDataUrl is not null)
@@ -318,8 +334,40 @@
             ImageError = chapter.ImageError,
             ImageDataUrl = imageData.GetValueOrDefault(chapter.Id)
         }));
-        chapterCount = Math.Max(1, chapters.Count);
+        if (chapters.Count > 0)
+        {
+            chapterCount = chapters.Count;
+        }
         _ = LoadImagesAsync(plan);
+    }
+
+    private async Task PollPlanAsync()
+    {
+        try
+        {
+            while (isPlanGenerationActive)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), cancellation.Token);
+                ApplyPlan(await GenerationClient.GetBookPlanAsync(ProjectId, cancellation.Token));
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (AccessTokenNotAvailableException exception)
+        {
+            exception.Redirect();
+        }
+        catch (GenerationApiException exception)
+        {
+            error = exception.Message;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            isPlanning = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task LoadImagesAsync(BookPlanResponse plan)

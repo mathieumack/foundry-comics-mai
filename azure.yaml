@@ -26,6 +26,14 @@ services:
       path: Dockerfile
       context: ..
       remoteBuild: true
+  bookplanjob:
+    project: ./src/MaiImageGenerator.Jobs.BookPlanGeneration
+    host: containerapp
+    language: dotnet
+    docker:
+      path: Dockerfile
+      context: ..
+      remoteBuild: true
   web:
     host: staticwebapp
     project: ./src/MaiImageGenerator.Web
@@ -40,5 +48,4 @@ infra:
   provider: bicep
   path: infra
   module: main
-
 

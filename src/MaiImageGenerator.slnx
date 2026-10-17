@@ -2,6 +2,7 @@
   <Folder Name="/back/">
     <Project Path="MaiImageGenerator.Api/MaiImageGenerator.Api.csproj" />
     <Project Path="MaiImageGenerator.Jobs.BoardGeneration/MaiImageGenerator.Jobs.BoardGeneration.csproj" Id="2e3da7c1-830f-477c-ab11-97ca3376e783" />
+    <Project Path="MaiImageGenerator.Jobs.BookPlanGeneration/MaiImageGenerator.Jobs.BookPlanGeneration.csproj" />
     <Project Path="MaiImageGenerator.Shared/MaiImageGenerator.Shared.csproj" Id="702cd821-e251-41f3-94b8-9845b897dd50" />
   </Folder>
   <Folder Name="/front/">

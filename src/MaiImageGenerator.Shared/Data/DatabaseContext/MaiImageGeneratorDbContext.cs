@@ -62,6 +62,7 @@ public sealed class MaiImageGeneratorDbContext(
         project.OwnsOne(item => item.BookPlan, plan =>
         {
             plan.ToJsonProperty("bookPlan");
+            plan.Property(item => item.GenerationRequestId).ToJsonProperty("generationRequestId");
             plan.Property(item => item.Status).HasConversion<string>();
             plan.OwnsMany(item => item.Chapters, chapter =>
             {

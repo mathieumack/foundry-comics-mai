@@ -305,7 +305,10 @@ public sealed class ProjectsController(
 
             try
             {
-                return Ok(await bookService.GeneratePlanAsync(result.Project!, request.ChapterCount, cancellationToken));
+                return Accepted(await bookService.GeneratePlanAsync(
+                    result.Project!,
+                    request.ChapterCount,
+                    cancellationToken));
             }
             catch (ArgumentException exception)
             {

@@ -32,11 +32,15 @@ flowchart LR
     User[Authenticated user] --> Web[Blazor WebAssembly<br/>Static Web Apps]
     Web -->|Entra access token| API[.NET API<br/>Container Apps]
     API --> Cosmos[(Cosmos DB)]
-    API --> Queue[Azure Queue Storage]
-    Queue --> Job[Board generation job<br/>Container Apps Job]
-    Job --> Foundry[Microsoft Foundry<br/>MAI models]
-    Job --> Blob[(Azure Blob Storage)]
-    Job --> Cosmos
+    API --> BoardQueue[Board queue]
+    API --> PlanQueue[Book plan queue]
+    BoardQueue --> BoardJob[Board generation job<br/>Container Apps Job]
+    PlanQueue --> BookPlanJob[Book plan generation job<br/>Container Apps Job]
+    BoardJob --> Foundry[Microsoft Foundry<br/>MAI models]
+    BookPlanJob --> Foundry
+    BoardJob --> Blob[(Azure Blob Storage)]
+    BoardJob --> Cosmos
+    BookPlanJob --> Cosmos
     API --> Blob
 ```
 

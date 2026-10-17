@@ -52,6 +52,9 @@ param storageAccountQueueEndpoint string
 @description('Queue used to submit board generation jobs')
 param jobsQueueName string
 
+@description('Queue used to submit book plan generation jobs')
+param bookPlanJobsQueueName string
+
 @description('Azure Foundry endpoint')
 param azureFoundryEndpoint string
 
@@ -198,6 +201,10 @@ resource containerApp 'Microsoft.App/containerApps@2025-07-01' = {
               {
                 name: 'Storage__JobsQueueName'
                 value: jobsQueueName
+              }
+              {
+                name: 'Storage__BookPlanJobsQueueName'
+                value: bookPlanJobsQueueName
               }
               {
                 name: 'AzureAISearch__Endpoint'
