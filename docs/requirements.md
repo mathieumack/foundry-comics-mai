@@ -1,5 +1,7 @@
 # Requirements
 
+This environment is intended solely for training and discovery of Azure services and MAI models. Read the [educational disclaimer and transparency FAQ](responsible-ai.md) before provisioning.
+
 ## Local tools
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
@@ -25,7 +27,7 @@ You need an Azure subscription and a Microsoft Entra tenant where you can create
 
 ## Region and model capacity
 
-The default location is `swedencentral`. Before provisioning, confirm that the target subscription and region support:
+The default primary location is `swedencentral`. Static Web Apps is explicitly provisioned in `westeurope`, not in the primary location. Before provisioning, confirm that the target subscription and region support:
 
 - `MAI-Thinking-1`, version `2026-06-01`, with `GlobalStandard` capacity 500.
 - `MAI-Image-2.5-Pro`, version `2026-06-19`, with `GlobalStandard` capacity 2.
@@ -48,4 +50,6 @@ For automation, use the object ID of the deployment service principal or workloa
 
 The environment creates billable AI model deployments, AI Search Standard, SignalR Service Standard, Container Registry Premium, networking, storage, Cosmos DB, monitoring, and two event-driven Container Apps Jobs: one for board generation and one for book-plan generation. Review current Azure pricing and quotas before deployment.
 
-This repository is a reference implementation. A production adoption should additionally assess content safety, private ingress requirements, CORS restrictions, availability targets, backup and retention, alerting, rate limits, image moderation, and lifecycle policies.
+Create a budget and cost alerts, use non-sensitive training inputs, and plan environment teardown. Event-driven jobs can scale to zero, but that does not make the complete environment free while idle. AI Search and the Foundry capability host are provisioned even though current generation flows do not use search retrieval or hosted-agent orchestration.
+
+The repository is not intended for production use. Any independent adaptation would need its own assessment of content safety, private ingress, CORS, availability, backup and retention, alerting, rate limits, image moderation, and lifecycle policies. MIT grants no warranty or production-readiness guarantee.
