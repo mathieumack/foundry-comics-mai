@@ -13,6 +13,8 @@ This environment is intended solely for training and discovery of Azure services
 
 `azd` uses remote container builds, but Docker remains useful for local container validation.
 
+GitHub Actions setup additionally requires [GitHub CLI](https://cli.github.com/) locally. The workflow installs .NET 10 and azd, and signs both azd and Azure CLI in with OIDC. Parameter mappings for pipeline configuration are maintained in `infra/main.parameters.json` alongside `infra/main.bicepparam`; see [deployment](deployment.md#configure-github-actions).
+
 ```powershell
 dotnet --version
 pwsh --version

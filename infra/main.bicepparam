@@ -1,5 +1,6 @@
 using 'main.bicep'
 
+// Keep mappings and defaults aligned with main.parameters.json for azd pipeline config.
 param environmentName = readEnvironmentVariable('AZURE_ENV_NAME', 'demo')
 param location = readEnvironmentVariable('AZURE_LOCATION', 'swedencentral')
 
@@ -15,10 +16,6 @@ param bookPlanGenerationJobContainerImage = readEnvironmentVariable(
 	'SERVICE_BOOKPLANJOB_IMAGE_NAME',
 	'mcr.microsoft.com/dotnet/samples:dotnetapp'
 )
-
-// Deployer Principal ID: Object ID of the user deploying the resources
-// Auto-detected by predeploy scripts (predeploy.ps1/predeploy.sh)
-param deployerPrincipalId = readEnvironmentVariable('DEPLOYER_PRINCIPAL_ID', '')
 
 // Deploy the Foundry BYO connections and Agents capability host.
 // This value is auto-managed by the 'set-caphost-idempotency-flag' preprovision hook

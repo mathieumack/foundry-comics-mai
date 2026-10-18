@@ -13,6 +13,8 @@ az login
 
 Ensure both CLIs target the same tenant and subscription.
 
+For GitHub Actions, see [Configure GitHub Actions](#configure-github-actions) after selecting the local environment.
+
 ## 2. Create an environment
 
 ```powershell
@@ -78,7 +80,65 @@ Use `azd deploy` for application-only changes and `azd provision` when infrastru
 
 Foundry project connections become owned by the capability host after the first deployment. The preprovision hook detects an existing host and skips those immutable resources on subsequent provisions. Do not remove the hook without replacing this behavior.
 
+## Configure GitHub Actions
+
+Install GitHub CLI and authenticate with `gh auth login`. Select the existing local environment rather than creating a second environment:
+
+```powershell
+azd env list
+azd env select <environment-name>
+azd pipeline config --provider github --auth-type federated -e <environment-name>
+```
+
+For a user-assigned managed identity, do not pass `--principal-id` or `--principal-name`: in azd 1.31.1 these options look up an app-registration-backed service principal, not a managed identity. Run the command above without either option. If prompted, select `Federated User Managed Identity (MSI + OIDC)`, then `Use existing User Managed Identity (MSI)`. After selection, azd stores the identity reference in the local `AZURE_PIPELINE_MSI_CLIENT_ID` setting and reuses it on subsequent runs.
+
+Review the proposed role assignments and federated subjects. Accept the subjects detected for this repository, including any owner/repository numeric IDs; do not replace them with a legacy subject format. The workflow does not use a GitHub environment, so branch subjects must match the branch being deployed.
+
+`azd pipeline config` reads variable mappings from `infra/main.parameters.json`; azd 1.31.1 does not discover them from `infra/main.bicepparam`. Both files are intentionally present. Keep all mappings and defaults synchronized. Normal provisioning uses `main.bicepparam`, including the capability-host flag set by the preprovision hook.
+
+Check repository Actions variables after configuration:
+
+| Variable | Value |
+| --- | --- |
+| `AZURE_ENV_NAME` | The selected local environment name. |
+| `AZURE_LOCATION` | The primary region, normally `swedencentral`. |
+| `AZURE_RESOURCE_GROUP` | The existing target resource group. Set explicitly when reusing an environment. |
+| `AZURE_SUBSCRIPTION_ID` | The target subscription ID. |
+| `AZURE_TENANT_ID` | The tenant containing the deployment identity. |
+| `AZURE_CLIENT_ID` | The deployment identity's client/application ID. |
+
+For example, copy the existing resource group without writing deployment identifiers into tracked files:
+
+```powershell
+$resourceGroup = azd env get-value AZURE_RESOURCE_GROUP
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($resourceGroup)) {
+    throw 'Select and refresh the existing azd environment before configuring its resource group.'
+}
+gh variable set AZURE_RESOURCE_GROUP --body $resourceGroup
+gh variable list
+```
+
+The workflow passes these variables to `azd`, installs .NET 10, and authenticates both `azd` and Azure CLI using OIDC. Azure CLI authentication is required by the preprovision hook; `azd auth login` alone does not authenticate `az`. Deployments to the same environment are serialized to protect capability-host provisioning.
+
+The workflow runs on pushes to `main` and manual dispatches, not on pull requests. A manual dispatch from another branch requires a matching federated credential. Commit and push the workflow and infrastructure mapping only when ready: a push to `main` provisions billable resources and deploys the application.
+
+The pipeline identity needs Azure deployment/RBAC permissions and Microsoft Graph permissions for the Entra application module. Azure Contributor/User Access Administrator assignments do not grant Microsoft Graph application permissions. See [requirements](requirements.md).
+
+Updating azd to the available stable version is recommended, but do not rely on an upgrade alone to repair missing parameter mappings.
+
 ## Troubleshooting
+
+### Pipeline configuration cannot find a managed identity passed to `--principal-id`
+
+In azd 1.31.1, `--principal-id` triggers an application lookup even when the supplied client ID belongs to a valid managed identity. An error mentioning `could not find application` therefore does not mean the managed identity was deleted. Remove the option and use the managed-identity selection flow described above. Do not substitute the identity's object ID or resource ID into this option, or create an app registration just to bypass the error.
+
+### Pipeline configuration reports a local prompt without a mapped variable
+
+An error such as `parameter environmentName got its value from a local prompt ...` means that pipeline configuration cannot associate a resolved Bicep parameter with one environment variable. Setting `AZURE_ENV_NAME` alone is insufficient when the mapping file is missing.
+
+Ensure `infra/main.parameters.json` exists and maps `environmentName` to `${AZURE_ENV_NAME}`, then rerun the configuration command for the selected environment. It also maps location, all three container images, and the capability-host flag, preventing the next required parameter from failing in the same way. Defaults match `main.bicepparam`, so old blank image prompt answers are not reused for pipeline configuration.
+
+The command is not transactional: role assignments, federated credentials, and repository variables may already exist when the parameter merge fails. Inspect and reuse the configured identity instead of creating another one. There is no need to delete the local environment, recreate Azure resources, or switch to client secrets.
 
 ### `DEPLOYER_PRINCIPAL_ID` is empty
 
