@@ -16,6 +16,9 @@ param tags object = {}
 @description('Application Insights resource ID queried by alert rules')
 param applicationInsightsResourceId string
 
+@description('Public API health-check URL')
+param apiHealthUrl string
+
 @description('Optional operations email address for alert notifications')
 param notificationEmail string = ''
 
@@ -35,6 +38,68 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
           }
         ]
       : []
+  }
+}
+
+resource apiAvailabilityTest 'Microsoft.Insights/webtests@2022-06-15' = {
+  name: '${name}-api-health'
+  location: location
+  tags: union(tags, {
+    'hidden-link:${applicationInsightsResourceId}': 'Resource'
+  })
+  kind: 'standard'
+  properties: {
+    SyntheticMonitorId: '${name}-api-health'
+    Name: 'Comics API health'
+    Enabled: true
+    Frequency: 300
+    Timeout: 30
+    Kind: 'standard'
+    RetryEnabled: true
+    Locations: [
+      {
+        Id: 'emea-nl-ams-azr'
+      }
+    ]
+    Request: {
+      RequestUrl: apiHealthUrl
+      HttpVerb: 'GET'
+      ParseDependentRequests: false
+      FollowRedirects: true
+    }
+    ValidationRules: {
+      ExpectedHttpStatusCode: 200
+      SSLCheck: true
+      SSLCertRemainingLifetimeCheck: 7
+    }
+  }
+}
+
+resource apiAvailabilityAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
+  name: '${name}-api-unavailable'
+  location: 'global'
+  tags: tags
+  properties: {
+    description: 'Detects when the public API health check fails from its test location.'
+    severity: 1
+    enabled: true
+    scopes: [
+      apiAvailabilityTest.id
+      applicationInsightsResourceId
+    ]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT5M'
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.WebtestLocationAvailabilityCriteria'
+      webTestId: apiAvailabilityTest.id
+      componentId: applicationInsightsResourceId
+      failedLocationCount: 1
+    }
+    actions: [
+      {
+        actionGroupId: actionGroup.id
+      }
+    ]
   }
 }
 

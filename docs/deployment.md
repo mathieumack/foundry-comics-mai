@@ -9,6 +9,7 @@ Azure Developer CLI manages the environment and deployment. Azure CLI is also re
 ```powershell
 azd auth login
 az login
+az login --scope https://azuresre.dev/.default
 ```
 
 Ensure both CLIs target the same tenant and subscription.
@@ -20,6 +21,8 @@ azd env new
 azd env set AZURE_LOCATION swedencentral
 $principalId = az ad signed-in-user show --query id --output tsv
 azd env set DEPLOYER_PRINCIPAL_ID $principalId
+azd env set SRE_MONTHLY_AGENT_UNIT_LIMIT 500
+# Optional: azd env set SRE_ALERT_EMAIL operations@example.invalid
 ```
 
 Choose a short environment name because it contributes to Azure resource names. `AZURE_SUBSCRIPTION_ID` is selected by `azd env new` and stored only in the ignored `.azure` directory.
@@ -45,16 +48,19 @@ azd up
 The command performs these operations:
 
 1. The `preprovision` hook checks for an existing Foundry capability host and sets `DEPLOY_FOUNDRY_CAPABILITY_HOST`.
-2. Bicep creates the resources, private networking, identities, application registration, and RBAC assignments, including Azure SignalR Service in Default mode.
-3. `azd` remotely builds and deploys the API, board-generation job, and book-plan-generation job containers.
-4. The web `prepackage` hook writes `appsettings.Production.json` from Bicep outputs and publishes the Blazor application.
-5. `azd` deploys the frontend to Static Web Apps.
+2. Bicep creates the resources, private networking, identities, application registration, RBAC assignments, Azure Monitor alerts, and the read-only Azure SRE Agent.
+3. The `postprovision` hook applies the SRE response plan, issue safeguards, and daily review through the agent data plane.
+4. `azd` remotely builds and deploys the API, board-generation job, and book-plan-generation job containers.
+5. The web `prepackage` hook writes `appsettings.Production.json` from Bicep outputs and publishes the Blazor application.
+6. `azd` deploys the frontend to Static Web Apps.
 
 The checked-in production appsettings is only a neutral template. Never replace it with tenant-specific values manually.
 
 ## 5. Verify
 
-Use `azd env get-values` locally to inspect deployment outputs. Open `SERVICE_WEB_URI` and sign in. Submit a small board and confirm that `generation-jobs` triggers only the board-generation job, panel notifications arrive, the job completes, and artifacts are downloadable. Then generate a book plan and confirm that `book-plan-jobs` triggers only the book-plan-generation job and that the page progresses from pending to completed. Verify that the browser acquires the API scope, the API accepts the token, both jobs use the managed identity, and telemetry reaches Application Insights.
+Use `azd env get-values` locally to inspect deployment outputs. Confirm `SERVICE_API_URI/healthz` returns HTTP 200, then open `SERVICE_WEB_URI` and sign in. Submit a small board and confirm that `generation-jobs` triggers only the board-generation job, panel notifications arrive, the job completes, and artifacts are downloadable. Then generate a book plan and confirm that `book-plan-jobs` triggers only the book-plan-generation job and that the page progresses from pending to completed. Verify that the browser acquires the API scope, the API accepts the token, both jobs use the managed identity, and telemetry reaches Application Insights.
+
+Open Azure SRE Agent and confirm it is Running with Low access and Review mode, its three Azure connectors are connected, and the response plan and daily review exist. Complete the separately authorized, least-privilege GitHub connection and controlled alert test in [Azure SRE Agent operations](sre-agent.md); Bicep intentionally cannot authorize GitHub.
 
 Avoid sharing the complete environment output in issues because it contains deployment-specific identifiers and endpoints.
 
@@ -69,6 +75,8 @@ Avoid sharing the complete environment output in issues because it contains depl
 | Save chapter edits and generate prose, then an image | Separate stage states and one chapter image are saved; keep the page open for these foreground requests. |
 | Reopen the book | Saved plan, prose, image, and stage errors survive navigation. |
 | Use a second authorized test account | The first account's project/artifact IDs do not expose its data. |
+| Request `/healthz` without a token | API returns `200`; Container Apps liveness/readiness and the availability test use the same endpoint. |
+| Inspect Azure SRE Agent | Agent is Running in Review/Low mode; Azure Monitor, Application Insights, and Log Analytics connectors are connected. |
 
 Use synthetic inputs and a small chapter/panel count to limit cost. Do not deliberately submit harmful material to exercise safety paths. These are manual smoke checks; the repository has no automated end-to-end test suite.
 
@@ -77,6 +85,14 @@ Use synthetic inputs and a small chapter/panel count to limit cost. Do not delib
 Use `azd deploy` for application-only changes and `azd provision` when infrastructure changes. `azd up` performs both.
 
 Foundry project connections become owned by the capability host after the first deployment. The preprovision hook detects an existing host and skips those immutable resources on subsequent provisions. Do not remove the hook without replacing this behavior.
+
+The SRE postprovision hook uses idempotent PUT operations, so `azd provision` safely reapplies its response plan and daily task. Manual portal edits to those named objects are overwritten on the next provision.
+
+## Rollback
+
+For an application regression, check out the last known-good commit and run `azd deploy`. For infrastructure or SRE policy changes, check out the last known-good commit, review an Azure what-if result, and run `azd provision`. Do not roll back by manually deleting graph-owned resources.
+
+To contain SRE automation immediately, disable the response plan and scheduled task, disconnect GitHub, and stop the agent. Revoke the GitHub App installation if repository access must end. Detailed rollback and disablement steps are in [Azure SRE Agent operations](sre-agent.md).
 
 ## Troubleshooting
 
@@ -113,6 +129,14 @@ Confirm that the API identity has both SignalR App Server and SignalR REST API O
 Inspect the correct queue, job execution history, and Application Insights logs. Each worker takes one message with six hours of visibility and the job allows one concurrent execution, so a technical failure may wait for visibility expiry before a retry. The fifth dequeue deletes the failed message after logging it. The provisioned poison queues are not currently populated by the workers.
 
 Check Cosmos status together with queue submission logs: persistence and enqueue are separate operations. A board can remain `Pending` if enqueue fails after persistence. For chapter prose/images, check the returned stage status and error even when the HTTP response is successful; those operations are not queued.
+
+### SRE postprovision configuration fails
+
+Run `az login --scope https://azuresre.dev/.default`, confirm Azure CLI and `azd` use the same tenant/subscription, and confirm the deployer has SRE Agent Administrator on the agent. Rerun `azd provision`; the hook is idempotent.
+
+### SRE Agent does not create or update an issue
+
+Code Access and the GitHub issue connector are separate. Verify both target only `mathieumack/foundry-comics-mai`, the GitHub App has Metadata read, Contents read, and Issues read/write, and create/update-issue is set to Ask. Inspect the agent thread before changing permissions or autonomy.
 
 ## Remove an environment
 

@@ -60,11 +60,17 @@ flowchart TB
     API -. telemetry .-> Monitor[Application Insights and Log Analytics]
     BoardJob -. telemetry .-> Monitor
     PlanJob -. telemetry .-> Monitor
+    Monitor --> Alerts[Azure Monitor alerts]
+    Alerts --> SRE[Azure SRE Agent - Review and Low access]
+    SRE -->|Read-only correlation| Monitor
+    SRE -.->|Approved, governed issue action| GitHub[GitHub repository]
 ```
 
 The browser runs Blazor and calls the API directly; Static Web Apps is not an API proxy. Static Web Apps is deployed in West Europe, independently of the primary region. The Container Apps environment has external API ingress and VNet integration for private backend access. Storage, Cosmos DB, AI Search, and Foundry use private endpoints. Container Registry is public in the reference deployment and also has a private endpoint.
 
 SignalR runs in Default mode: the API hosts the server-push-only hub while the service handles client connections. Negotiation binds the authenticated user's identifier to the connection. Static Web Apps, the authenticated API, and SignalR remain public entry points.
+
+The SRE Agent has dedicated system- and user-assigned identities with Reader, Monitoring Reader, and Log Analytics Reader only on the deployment resource group. It queries Azure Monitor, the application Application Insights component, and Log Analytics; its own audit telemetry goes to a separate Application Insights component in the shared workspace. GitHub trust is established after provisioning and is not an Azure credential. The source-controlled response plan starts in Review mode, while GitHub issue writes additionally require an Ask tool policy because agent Review mode governs Azure writes, not every external connector action.
 
 ## Generation sequence
 
@@ -231,6 +237,7 @@ Cosmos persistence and enqueue are separate operations, not a transaction/outbox
 - Web obtains an Entra token for the generated API scope.
 - Container Apps authentication validates API access and audience.
 - API/jobs use a user-assigned managed identity; API uses `DefaultAzureCredential`.
+- Azure SRE Agent uses separate identities with read-only monitoring roles; it does not reuse the application identity.
 - SignalR App Server supports API hub connections; SignalR REST API Owner supports Dapr user-targeted sends.
 - Azure access uses RBAC, without storage/database/model access keys.
 - Telemetry and deployment-specific client configuration come from environment outputs, not committed values.
@@ -243,6 +250,7 @@ Paths are relative to the API origin; IDs are server-issued. User-facing stored-
 
 | Surface | Operations and behavior |
 | --- | --- |
+| `/healthz` | Anonymous shallow process health used by Container Apps liveness/readiness and Azure availability monitoring; it exposes no dependency details. |
 | `/api/projects` | `POST` creates (`201`); `GET` lists owner projects. |
 | `/api/projects/{projectId}` | `GET` reads; `PUT` updates metadata. |
 | `/api/projects/{projectId}/characters` | `GET` lists; `POST` creates; `/{characterId}` supports `GET`, `PUT`, `DELETE`. |
@@ -292,7 +300,7 @@ Bicep selects `OnceNewDefaultVersionAvailable` upgrades and the `GuardrailNoLimi
 
 ## Infrastructure ownership
 
-[`infra/main.bicep`](../infra/main.bicep) is the authoritative graph; [`infra/main.bicepparam`](../infra/main.bicepparam) maps environment parameters; [`azure.yaml`](../azure.yaml) owns service packaging/hooks. The preprovision hook detects immutable capability-host resources; the web prepackage hook generates configuration and publishes Blazor. Do not bypass these hooks or create graph-owned resources manually.
+[`infra/main.bicep`](../infra/main.bicep) is the authoritative graph; [`infra/main.bicepparam`](../infra/main.bicepparam) maps environment parameters; [`azure.yaml`](../azure.yaml) owns service packaging/hooks. The preprovision hook detects immutable capability-host resources, the postprovision hook applies SRE Agent data-plane policy, and the web prepackage hook generates configuration and publishes Blazor. Do not bypass these hooks or create graph-owned resources manually.
 
 ## Development and validation
 

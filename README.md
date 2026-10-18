@@ -116,7 +116,7 @@ These are educational scenarios, not claims of business suitability or productio
 
 [Architecture](docs/architecture.md): components, Azure topology, sequence diagrams, data ownership, queue contracts, API surfaces, configuration, and development checks.
 
-[Deployment](docs/deployment.md): the supported `azd` lifecycle. [Documentation index](docs/README.md): all guides, including the UX design proposal.
+[Deployment](docs/deployment.md): the supported `azd` lifecycle. [Azure SRE Agent operations](docs/sre-agent.md): monitoring, GitHub permissions, issue controls, and validation. [Documentation index](docs/README.md): all guides, including the UX design proposal.
 
 #### Security guidelines
 

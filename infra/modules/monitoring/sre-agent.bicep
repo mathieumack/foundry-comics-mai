@@ -185,6 +185,11 @@ resource appInsightsConnector 'Microsoft.App/agents/connectors@2025-05-01-previe
     }
     identity: 'system'
   }
+  dependsOn: [
+    systemIdentityReader
+    systemIdentityMonitoringReader
+    systemIdentityLogAnalyticsReader
+  ]
 }
 
 #disable-next-line BCP081
@@ -202,6 +207,11 @@ resource logAnalyticsConnector 'Microsoft.App/agents/connectors@2025-05-01-previ
     }
     identity: 'system'
   }
+  dependsOn: [
+    systemIdentityReader
+    systemIdentityMonitoringReader
+    systemIdentityLogAnalyticsReader
+  ]
 }
 
 #disable-next-line BCP081
@@ -217,6 +227,11 @@ resource azureMonitorConnector 'Microsoft.App/agents/connectors@2025-05-01-previ
     }
     identity: 'system'
   }
+  dependsOn: [
+    systemIdentityReader
+    systemIdentityMonitoringReader
+    systemIdentityLogAnalyticsReader
+  ]
 }
 
 output id string = agent.id

@@ -105,6 +105,7 @@ module operationalAlerts 'modules/monitoring/operational-alerts.bicep' = {
     location: location
     tags: tags
     applicationInsightsResourceId: appInsights.outputs.id
+    apiHealthUrl: 'https://${apiContainerApp.outputs.fqdn}/healthz'
     notificationEmail: sreAlertEmail
   }
 }
