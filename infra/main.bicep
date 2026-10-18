@@ -15,9 +15,6 @@ param environmentName string
 @description('Primary location for all resources')
 param location string
 
-@description('Principal ID of the deploying user to grant access to Azure resources. Auto-detected by predeploy scripts.')
-param deployerPrincipalId string
-
 @description('Deploy the Foundry BYO connections and Agents capability host. These resources are immutable once created: after the first successful deployment the connections become owned by the capability host and can no longer be modified through the connections API. Set to false (via azd env set DEPLOY_FOUNDRY_CAPABILITY_HOST false) on subsequent re-provisions to avoid the "Connection is in use by the workspace capability host" error.')
 param deployFoundryCapabilityHost bool = true
 
@@ -44,7 +41,6 @@ param bookPlanGenerationJobContainerImage string
 // Generate unique suffix based on resource group
 var suffix = substring(uniqueString(resourceGroup().id, environmentName), 0, 3)
 
-var currentUserPrincipalId = deployerPrincipalId
 var abbrs = loadJsonContent('abbreviations.json')
 var normalizedLocation = toLower(replace(location, ' ', ''))
 var locationAbbreviation = abbrs.locationAbbreviations[normalizedLocation]
@@ -119,7 +115,7 @@ module sreAgent 'modules/monitoring/sre-agent.bicep' = if (deploySreAgent) {
     applicationInsightsResourceId: appInsights.outputs.id
     applicationInsightsAppId: appInsights.outputs.appId
     logAnalyticsWorkspaceId: logAnalytics.outputs.id
-    administratorPrincipalId: currentUserPrincipalId
+    administratorPrincipalId: deployer().objectId
     monthlyAgentUnitLimit: sreMonthlyAgentUnitLimit
   }
 }
@@ -253,7 +249,6 @@ module cosmosDb 'modules/database/cosmosdb.bicep' = {
     privateEndpointSubnetId: vnet.outputs.privateEndpointsSubnetId
     privateDnsZoneId: privateDnsZones.outputs.cosmosDbZoneId
     managedIdentityPrincipalId: managedIdentity.outputs.principalId
-    userPrincipalId: currentUserPrincipalId
   }
 }
 
@@ -583,7 +578,6 @@ module roleAssignments 'modules/security/role-assignments.bicep' = {
   name: 'role-assignments'
   params: {
     principalId: managedIdentity.outputs.principalId
-    userPrincipalId: currentUserPrincipalId
     foundryProjectPrincipalId: foundry.outputs.foundryProjectPrincipalId
     foundryAccountPrincipalId: foundry.outputs.foundryPrincipalId
     cosmosDbAccountName: cosmosDb.outputs.cosmosDbAccountName
@@ -647,6 +641,7 @@ output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.outputs.name
 
 // Container Apps Environment (public FQDN suffix for container apps hosted in this environment)
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnv.outputs.defaultDomain
+
 output SERVICE_API_URI string = 'https://${apiContainerApp.outputs.fqdn}'
 output SERVICE_WEB_URI string = 'https://${staticWebApp.outputs.defaultHostname}'
 output AZURE_ENTRA_CLIENT_ID string = entraApiRegistration.outputs.clientId

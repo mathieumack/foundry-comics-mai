@@ -13,6 +13,8 @@ This environment is intended solely for training and discovery of Azure services
 
 `azd` uses remote container builds, but Docker remains useful for local container validation.
 
+GitHub Actions setup additionally requires [GitHub CLI](https://cli.github.com/) locally. The workflow installs .NET 10 and azd, and signs both azd and Azure CLI in with OIDC. Parameter mappings for pipeline configuration are maintained in `infra/main.parameters.json` alongside `infra/main.bicepparam`; see [deployment](deployment.md#configure-github-actions).
+
 ```powershell
 dotnet --version
 pwsh --version
@@ -25,7 +27,7 @@ azd version
 
 You need an Azure subscription and a Microsoft Entra tenant where you can create the resources declared in `infra/main.bicep`, create role assignments, and create or update an Entra application through the Microsoft Graph Bicep extension. Azure SRE Agent additionally requires access to the preview `Microsoft.App/agents` resource type and an Azure CLI data-plane token for `https://azuresre.dev`. Organization policies may require an administrator to grant these capabilities. The deployment does not accept a client secret as a substitute.
 
-The deployment principal becomes SRE Agent Administrator on the created agent. It should be an interactive user because the template identifies it as a user principal. Authenticate the data plane before provisioning:
+The deploying Azure principal becomes SRE Agent Administrator on the created agent. Authenticate the data plane before provisioning:
 
 ```powershell
 az login --scope https://azuresre.dev/.default
@@ -43,17 +45,6 @@ The default primary location is `swedencentral`. Static Web Apps is explicitly p
 - Azure SRE Agent in the primary region. The service and its ARM/data-plane APIs are preview and regional availability can change.
 
 Catalog availability does not reserve capacity. Confirm model quota separately in Microsoft Foundry or through your Azure quota process. If a model version or capacity is unavailable, update and validate the Bicep model definitions before provisioning.
-
-## Deployment principal
-
-`DEPLOYER_PRINCIPAL_ID` is required because Bicep grants the deploying user data-plane access to provisioned resources. For an interactive Azure CLI user:
-
-```powershell
-$principalId = az ad signed-in-user show --query id --output tsv
-azd env set DEPLOYER_PRINCIPAL_ID $principalId
-```
-
-For automation, use the object ID of the deployment service principal or workload identity and ensure it has equivalent deployment permissions.
 
 ## Cost and production readiness
 

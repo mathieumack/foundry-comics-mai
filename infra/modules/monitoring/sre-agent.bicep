@@ -165,7 +165,6 @@ resource administrator 'Microsoft.Authorization/roleAssignments@2022-04-01' = if
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', sreAgentAdministratorRoleId)
     principalId: administratorPrincipalId
-    principalType: 'User'
   }
 }
 

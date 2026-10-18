@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "apiContainerImage": {
+      "value": "${SERVICE_API_IMAGE_NAME=mcr.microsoft.com/dotnet/samples:aspnetapp@sha256:b8e94412a96b19ac12c78a7064af1bb0a6f584e752b9de7cc31ca4d45ead36b0}"
+    },
+    "generationJobContainerImage": {
+      "value": "${SERVICE_GENERATIONJOB_IMAGE_NAME=mcr.microsoft.com/dotnet/samples:dotnetapp}"
+    },
+    "bookPlanGenerationJobContainerImage": {
+      "value": "${SERVICE_BOOKPLANJOB_IMAGE_NAME=mcr.microsoft.com/dotnet/samples:dotnetapp}"
+    },
+    "deployFoundryCapabilityHost": {
+      "value": "${DEPLOY_FOUNDRY_CAPABILITY_HOST=true}"
+    },
+    "deploySreAgent": {
+      "value": "${DEPLOY_SRE_AGENT=true}"
+    },
+    "sreMonthlyAgentUnitLimit": {
+      "value": "${SRE_MONTHLY_AGENT_UNIT_LIMIT=500}"
+    },
+    "sreAlertEmail": {
+      "value": "${SRE_ALERT_EMAIL=}"
+    }
+  }
+}
