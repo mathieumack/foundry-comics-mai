@@ -14,6 +14,8 @@ This page describes the implemented educational application, not a production re
 
 The deployment packages four services: `web`, `api`, `generationjob`, and `bookplanjob`. Only board generation and book planning are queued. Azure AI Search and Foundry project/capability-host resources are provisioned, but current generation services do not perform search-grounded retrieval or use hosted-agent orchestration.
 
+GitHub Actions deploys the same `azd` resource graph using a federated deployment identity, separate from the application's runtime identity. Branch-scoped OIDC credentials authenticate both azd and Azure CLI; environment-variable mappings in `infra/main.parameters.json` support pipeline configuration while `infra/main.bicepparam` remains the provisioning parameter source. Runs targeting the same environment are serialized. See [deployment](deployment.md#configure-github-actions) for setup and permission boundaries.
+
 ![Application-level component and processing overview](images/solution-architecture.svg)
 
 The [editable Excalidraw source](images/solution-architecture.excalidraw) accompanies this overview. It intentionally omits provisioning-only dependencies and detailed network boundaries.

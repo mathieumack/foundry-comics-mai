@@ -31,9 +31,6 @@ param privateDnsZoneId string = ''
 @description('Principal ID of the managed identity to assign Cosmos DB roles to')
 param managedIdentityPrincipalId string = ''
 
-@description('Principal ID of the user to assign Cosmos DB roles to')
-param userPrincipalId string = ''
-
 @description('Container names to create')
 param containerNames array = []
 
@@ -150,17 +147,6 @@ resource sqlRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignm
   parent: cosmosDbAccount
   properties: {
     principalId: managedIdentityPrincipalId
-    roleDefinitionId: '${cosmosDbAccount.id}/sqlRoleDefinitions/${cosmosDbDataContributorRoleDefinitionId}'
-    scope: cosmosDbAccount.id
-  }
-}
-
-// Cosmos DB native RBAC role assignment for User
-resource sqlRoleAssignmentUser 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2023-11-15' = if (!empty(userPrincipalId)) {
-  name: guid(cosmosDbDataContributorRoleDefinitionId, userPrincipalId, cosmosDbAccount.id)
-  parent: cosmosDbAccount
-  properties: {
-    principalId: userPrincipalId
     roleDefinitionId: '${cosmosDbAccount.id}/sqlRoleDefinitions/${cosmosDbDataContributorRoleDefinitionId}'
     scope: cosmosDbAccount.id
   }

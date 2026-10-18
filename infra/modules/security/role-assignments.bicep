@@ -9,9 +9,6 @@ targetScope = 'resourceGroup'
 @description('Principal ID to assign roles to')
 param principalId string
 
-@description('User Principal ID to assign roles to')
-param userPrincipalId string = ''
-
 @description('Foundry Project Principal ID for ACR pull operations (Hosted Agents)')
 param foundryProjectPrincipalId string = ''
 
@@ -93,17 +90,6 @@ resource storageQueueDataContributorRoleAssignmentMI 'Microsoft.Authorization/ro
   }
 }
 
-// Storage Account Blob Data Contributor role assignment for User
-resource storageBlobDataContributorRoleAssignmentUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(storageAccountName) && !empty(userPrincipalId)) {
-  name: guid(storageAccount.id, userPrincipalId, storageBlobDataContributorRoleId)
-  scope: storageAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
-    principalId: userPrincipalId
-    principalType: 'User'
-  }
-}
-
 // Storage Account Blob Data Reader role assignment for AI Search managed identity
 // Required so the AI Search blob indexer can read Markdown blobs from the 'processing' container.
 var storageBlobDataReaderRoleId = '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1' // Storage Blob Data Reader
@@ -118,71 +104,9 @@ resource aiSearchStorageBlobDataReaderRoleAssignment 'Microsoft.Authorization/ro
   }
 }
 
-// Storage Account Queue Data Contributor role assignment for User
-resource storageQueueDataContributorRoleAssignmentUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(storageAccountName) && !empty(userPrincipalId)) {
-  name: guid(storageAccount.id, userPrincipalId, storageQueueDataContributorRoleId)
-  scope: storageAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageQueueDataContributorRoleId)
-    principalId: userPrincipalId
-    principalType: 'User'
-  }
-}
-
-// Storage Account Table Data Contributor role assignment
-// Storage Account Table Data Contributor role assignment for User
-resource storageTableDataContributorRoleAssignmentUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(storageAccountName) && !empty(userPrincipalId)) {
-  name: guid(storageAccount.id, userPrincipalId, storageTableDataContributorRoleId)
-  scope: storageAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageTableDataContributorRoleId)
-    principalId: userPrincipalId
-    principalType: 'User'
-  }
-}
-
-// Storage File Data SMB Share Contributor role assignment (for Azure File Share managed identity access)
-// Storage File Data SMB Share Contributor role assignment for User
-resource storageFileDataSMBShareContributorRoleAssignmentUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(storageAccountName) && !empty(userPrincipalId)) {
-  name: guid(storageAccount.id, userPrincipalId, storageFileDataSMBShareContributorRoleId)
-  scope: storageAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageFileDataSMBShareContributorRoleId)
-    principalId: userPrincipalId
-    principalType: 'User'
-  }
-}
-
 // Foundry (Cognitive Services) Azure AI User role assignment
 resource foundryAccount 'Microsoft.CognitiveServices/accounts@2023-05-01' existing = if (!empty(foundryName)) {
   name: foundryName
-}
-
-// Foundry (Cognitive Services) Azure AI User role assignment for User
-resource foundryAzureAIUserRoleAssignmentUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(foundryName) && !empty(userPrincipalId)) {
-  name: guid(foundryAccount.id, userPrincipalId, azureAIUserRoleId)
-  scope: foundryAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', azureAIUserRoleId)
-    principalId: userPrincipalId
-    principalType: 'User'
-  }
-}
-
-// Foundry (Cognitive Services) Cognitive Services User role assignment for User.
-// Required for the post-provision Content Understanding configuration step, which calls
-// PATCH /contentunderstanding/defaults and needs the data action
-// 'Microsoft.CognitiveServices/accounts/MultiModalIntelligence/defaults/write'.
-// The Azure AI User role does not include this data action, whereas Cognitive Services User
-// grants 'Microsoft.CognitiveServices/*' data actions.
-resource foundryCognitiveServicesUserRoleAssignmentUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(foundryName) && !empty(userPrincipalId)) {
-  name: guid(foundryAccount.id, userPrincipalId, cognitiveServicesUserRoleId)
-  scope: foundryAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesUserRoleId)
-    principalId: userPrincipalId
-    principalType: 'User'
-  }
 }
 
 // API managed identity needs the same data action for Content Understanding calls.
@@ -214,29 +138,7 @@ resource aiSearchService 'Microsoft.Search/searchServices@2025-05-01' existing =
 
 var searchIndexDataContributor = '8ebe5a00-799e-43f5-93ac-243d3dce84a7' // Search Index Data Contributor
 
-// AI Search Index Data Contributor role assignment for User
-resource aiSearchIndexDataContributorRoleAssignmentUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(userPrincipalId)) {
-  name: guid(aiSearchService.id, userPrincipalId, searchIndexDataContributor)
-  scope: aiSearchService
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', searchIndexDataContributor)
-    principalId: userPrincipalId
-    principalType: 'User'
-  }
-}
-
 var searchServiceContributor = '7ca78c08-252a-4471-8644-bb5ff32d4ba0' // Search Service Contributor role name
-
-// AI Search Service Contributor role assignment for User
-resource aiSearchServiceContributorRoleAssignmentUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(userPrincipalId)) {
-  name: guid(aiSearchService.id, userPrincipalId, searchServiceContributor)
-  scope: aiSearchService
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', searchServiceContributor)
-    principalId: userPrincipalId
-    principalType: 'User'
-  }
-}
 
 // ============================================
 // FOUNDRY PROJECT IDENTITY ROLE ASSIGNMENTS
