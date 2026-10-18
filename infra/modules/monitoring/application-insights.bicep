@@ -29,6 +29,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
 
 output id string = appInsights.id
 output name string = appInsights.name
+output appId string = appInsights.properties.AppId
 @secure()
 output instrumentationKey string = appInsights.properties.InstrumentationKey
 @secure()

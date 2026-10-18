@@ -21,6 +21,17 @@ param deployerPrincipalId string
 @description('Deploy the Foundry BYO connections and Agents capability host. These resources are immutable once created: after the first successful deployment the connections become owned by the capability host and can no longer be modified through the connections API. Set to false (via azd env set DEPLOY_FOUNDRY_CAPABILITY_HOST false) on subsequent re-provisions to avoid the "Connection is in use by the workspace capability host" error.')
 param deployFoundryCapabilityHost bool = true
 
+@description('Deploy Azure SRE Agent and its read-only monitoring connectors')
+param deploySreAgent bool = true
+
+@description('Monthly active-flow Azure Agent Unit limit for Azure SRE Agent')
+@minValue(500)
+@maxValue(1000000)
+param sreMonthlyAgentUnitLimit int = 500
+
+@description('Optional operations email address for Azure Monitor alert notifications')
+param sreAlertEmail string = ''
+
 @description('Container image for the API workload')
 param apiContainerImage string
 
@@ -84,6 +95,31 @@ module appInsights 'modules/monitoring/application-insights.bicep' = {
     location: location
     tags: tags
     workspaceResourceId: logAnalytics.outputs.id
+  }
+}
+
+module operationalAlerts 'modules/monitoring/operational-alerts.bicep' = {
+  name: 'operational-alerts'
+  params: {
+    name: 'sre-${environmentName}-${regionalSuffix}'
+    location: location
+    tags: tags
+    applicationInsightsResourceId: appInsights.outputs.id
+    notificationEmail: sreAlertEmail
+  }
+}
+
+module sreAgent 'modules/monitoring/sre-agent.bicep' = if (deploySreAgent) {
+  name: 'sre-agent'
+  params: {
+    name: take('sre-${environmentName}-${regionalSuffix}', 63)
+    location: location
+    tags: tags
+    applicationInsightsResourceId: appInsights.outputs.id
+    applicationInsightsAppId: appInsights.outputs.appId
+    logAnalyticsWorkspaceId: logAnalytics.outputs.id
+    administratorPrincipalId: currentUserPrincipalId
+    monthlyAgentUnitLimit: sreMonthlyAgentUnitLimit
   }
 }
 
@@ -594,6 +630,9 @@ output AZURE_FOUNDRY_NAME string = foundry.outputs.foundryName
 @secure()
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.outputs.connectionString
 output APPLICATIONINSIGHTS_RESOURCE_ID string = appInsights.outputs.id
+output AZURE_SRE_AGENT_ID string = sreAgent.?outputs.?id ?? ''
+output AZURE_SRE_AGENT_NAME string = sreAgent.?outputs.?name ?? ''
+output AZURE_MONITOR_ACTION_GROUP_ID string = operationalAlerts.outputs.actionGroupId
 
 // AI Project
 output AZURE_AI_ACCOUNT_NAME string = foundry.outputs.foundryName

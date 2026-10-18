@@ -28,3 +28,6 @@ param deployerPrincipalId = readEnvironmentVariable('DEPLOYER_PRINCIPAL_ID', '')
 // 'azd provision' idempotent. You can still override it manually if needed:
 //   azd env set DEPLOY_FOUNDRY_CAPABILITY_HOST false
 param deployFoundryCapabilityHost = toLower(readEnvironmentVariable('DEPLOY_FOUNDRY_CAPABILITY_HOST', 'true')) == 'true'
+param deploySreAgent = toLower(readEnvironmentVariable('DEPLOY_SRE_AGENT', 'true')) == 'true'
+param sreMonthlyAgentUnitLimit = int(readEnvironmentVariable('SRE_MONTHLY_AGENT_UNIT_LIMIT', '500'))
+param sreAlertEmail = readEnvironmentVariable('SRE_ALERT_EMAIL', '')

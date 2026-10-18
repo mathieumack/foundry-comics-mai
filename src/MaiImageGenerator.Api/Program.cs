@@ -98,6 +98,7 @@ builder.Services.AddScoped<BookService>();
 builder.Services.AddSingleton<AuthenticatedUserIdProvider>();
 builder.Services.AddSingleton<IUserIdProvider>(
     serviceProvider => serviceProvider.GetRequiredService<AuthenticatedUserIdProvider>());
+builder.Services.AddHealthChecks();
 builder.Services.AddSignalR()
     .AddAzureSignalR(options =>
     {
@@ -137,6 +138,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapControllers();
+app.MapHealthChecks("/healthz");
 
 // Map SignalR hub
 app.MapHub<NotificationHub>("/hubs/notifications");
