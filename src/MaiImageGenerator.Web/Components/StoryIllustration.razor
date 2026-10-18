@@ -1,0 +1,32 @@
+<svg class="story-illustration" viewBox="0 0 400 240" role="img" aria-label="@Label">
+    <rect width="400" height="240" fill="var(--cp-bg-elevated)" />
+    <circle cx="285" cy="87" r="68" fill="var(--cp-highlight)" />
+    @if (Book)
+    {
+        <g stroke="var(--cp-text)" stroke-width="2" fill="var(--cp-surface)">
+            <path d="M155 220V105a45 45 0 0 1 90 0v115Z" />
+            <path d="M169 220V106a31 31 0 0 1 62 0v114Z" fill="var(--cp-accent)" />
+            <path d="M195 220v-58q-9-13 4-28 18 9 11 25v61" fill="var(--cp-bg)" />
+            <path d="M70 222V80m0 47C18 127 23 82 27 66c44 6 51 38 43 61Zm0 45c44-5 64-37 55-60-41 0-60 34-55 60ZM319 222V63m0 47c-39-6-49-34-45-55 38 0 52 32 45 55Zm0 52c45-10 58-43 48-63-39 6-54 37-48 63Z" fill="var(--cp-accent-soft)" />
+            <path d="M0 230q80-40 160-10t240-6M130 39l5-10 5 10 10 5-10 5-5 10-5-10-10-5Z" fill="none" />
+        </g>
+    }
+    else
+    {
+        <g stroke="var(--cp-text)" fill="none" stroke-width="2">
+            <ellipse cx="285" cy="87" rx="100" ry="18" transform="rotate(-26 285 87)" />
+            <path d="m30 32 4 10 10 4-10 4-4 10-4-10-10-4 10-4ZM178 30v12m-6-6h12M360 176v12m-6-6h12M0 205q70-40 140-12t140 0 120 8M0 224q100-28 210-5t190-2" />
+            <circle cx="120" cy="102" r="33" fill="var(--cp-surface)" />
+            <rect x="96" y="84" width="48" height="28" rx="13" fill="var(--cp-accent)" />
+            <path d="m106 90 12-2M104 135l-12 53 22 5 9-35 12 35 20-6-16-53Z" fill="var(--cp-surface)" />
+            <path d="m102 141-24 15-8-11m70-6 20 13 12-23M114 193l-4 13H88m49-14 4 14h22" />
+            <rect x="109" y="139" width="20" height="15" rx="3" fill="var(--cp-highlight)" />
+            <path d="M197 200v-61m0 28c-25 0-32-13-25-25 22 0 28 13 25 25Zm0-17c-3-25 11-36 25-32 2 21-12 34-25 32Z" fill="var(--cp-accent)" />
+        </g>
+    }
+</svg>
+
+@code {
+    [Parameter] public bool Book { get; set; }
+    [Parameter] public string Label { get; set; } = "Une idée devient une aventure";
+}

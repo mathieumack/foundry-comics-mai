@@ -29,5 +29,6 @@ builder.Services.AddHttpClient("Bff", client =>
 builder.Services.AddScoped(sp => new GenerationApiClient(
 	sp.GetRequiredService<IHttpClientFactory>().CreateClient("Bff")));
 builder.Services.AddRadzenComponents();
+builder.Services.AddScoped<StoryDraftState>();
 
 await builder.Build().RunAsync();

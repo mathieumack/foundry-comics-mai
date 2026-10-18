@@ -1,0 +1,153 @@
+@page "/new"
+@attribute [Authorize]
+@implements IDisposable
+@inject GenerationApiClient GenerationClient
+@inject StoryDraftState Drafts
+@inject NavigationManager Navigation
+@inject DialogService Dialogs
+
+<PageTitle>Une nouvelle histoire · MAI Studio</PageTitle>
+<NavigationLock ConfirmExternalNavigation="@HasUnsavedChanges" OnBeforeInternalNavigation="BeforeNavigationAsync" />
+<main class="wizard">
+    <header class="page-heading"><div><span class="eyebrow">À vous de jouer</span><h1>Une idée. Tout un univers.</h1><p>Choisissez votre terrain de jeu. On s'occupe du premier élan.</p></div></header>
+    <ol class="wizard-steps" aria-label="Étapes de création">
+        @for (var i = 1; i <= 3; i++)
+        {
+            <li aria-current="@(step == i ? "step" : null)"><b>@i</b>@(i == 1 ? "L'idée" : i == 2 ? "L'univers" : "C'est parti")</li>
+        }
+    </ol>
+    <section class="surface">
+        @if (step == 1)
+        {
+            <div class="choice-grid" role="group" aria-label="Format de l'histoire">
+                <button class="choice" aria-pressed="@(type == ProjectType.Comic ? "true" : "false")" @onclick="() => type = ProjectType.Comic"><RadzenIcon Icon="grid_view" /><strong>Bande dessinée</strong><small>Des cases, du rythme et de l'action.</small></button>
+                <button class="choice" aria-pressed="@(type == ProjectType.Book ? "true" : "false")" @onclick="() => type = ProjectType.Book"><RadzenIcon Icon="auto_stories" /><strong>Livre illustré</strong><small>Des chapitres pour aller plus loin.</small></button>
+            </div>
+            <label class="field" for="story-idea">Et si… <span class="muted">(votre idée, en quelques mots)</span></label>
+            <textarea id="story-idea" class="text" @bind="idea" @bind:event="oninput" rows="5" maxlength="12000" placeholder="Une astronaute découvre la dernière graine de la galaxie…"></textarea>
+            <button class="link-btn" @onclick="Inspire">Besoin d'un déclic ? Essayez une idée.</button>
+        }
+        else if (step == 2)
+        {
+            <label class="field" for="story-title">Un titre pour votre histoire</label><input class="text" id="story-title" @bind="title" @bind:event="oninput" maxlength="200" placeholder="Ex. Le jardin de la Lune" />
+            <span class="field-label">Quelle ambiance visuelle ?</span>
+            <div class="choice-grid style-choices" role="group" aria-label="Direction artistique">
+                @foreach (var style in styles)
+                {
+                    <button class="choice" aria-pressed="@(artStyle == style ? "true" : "false")" @onclick="() => artStyle = style"><StoryIllustration Book="@(style == "Rêve pastel")" Label="Exemple décoratif, le rendu IA peut varier" /><div><strong>@style</strong><small>@StyleDescription(style)</small></div></button>
+                }
+            </div>
+            <p class="hint">Le style devient une consigne artistique. Les illustrations ci-dessus ne garantissent pas le rendu du modèle.</p>
+            <label class="field" for="art-notes">Votre touche personnelle <span class="muted">(facultatif)</span></label><textarea class="text" id="art-notes" @bind="artNotes" rows="2" placeholder="Époque, couleurs, atmosphère…"></textarea>
+            @if (type == ProjectType.Comic)
+            {
+                <label class="field" for="new-template">Mise en page de la première planche</label>
+                <select class="text" id="new-template" @bind="template"><option value="@BoardTemplate.Standard">Classique · 6 cases</option><option value="@BoardTemplate.Storyline">Strip · 3 cases</option><option value="@BoardTemplate.Dynamic1">Dynamique · 5 cases, panorama au milieu</option><option value="@BoardTemplate.Dynamic2">Ouverture cinéma · 5 cases, panorama en haut</option></select>
+            }
+            else
+            {
+                <label class="field" for="chapter-count">Nombre de chapitres (1 à 30)</label><input class="text" id="chapter-count" type="number" @bind="chapterCountText" min="1" max="30" step="1" />
+            }
+        }
+        else
+        {
+            <span class="eyebrow">@(type == ProjectType.Comic ? "Bande dessinée" : "Livre illustré") · @artStyle</span><h2 style="margin-top:12px">@title</h2><p style="margin-top:16px;white-space:pre-wrap">@idea</p>
+            <p class="hint">@(type == ProjectType.Comic ? $"{BoardTemplateDefinitions.Get(template).Slots.Count} cases à personnaliser" : $"{chapterCount} chapitres à imaginer")</p>
+            <p class="hint">@(type == ProjectType.Comic ? "MAI prépare vos scènes. Vous pourrez tout modifier avant de générer les images. Le projet sera sauvegardé ; les scènes restent un brouillon jusqu'à la génération." : "Votre projet est sauvegardé, puis MAI prépare un plan en arrière-plan. Vous pourrez modifier chaque chapitre avant de lancer le texte ou l'image.")</p>
+        }
+        @if (error is not null) { <div class="error" role="alert">@error</div> }
+        @if (createdProject is not null && error is not null)
+        {
+            <p class="hint">Le projet est déjà créé. Réessayez pour préparer son plan, sans créer de doublon, ou <a href="@($"/projects/{createdProject.ProjectId:D}/book")">ouvrez le livre</a>.</p>
+        }
+        @if (isBusy) { <div class="loading-state" role="status"><RadzenProgressBarCircular ShowValue="false" /><span>@(type == ProjectType.Comic ? "MAI imagine vos premières scènes…" : "Préparation du livre…")</span></div> }
+        <div class="wizard-footer">
+            <button class="btn quiet" disabled="@isBusy" @onclick="Back">@(step == 1 ? "Annuler" : "← Retour")</button>
+            <button class="btn primary" disabled="@isBusy" @onclick="NextAsync">@(step == 1 ? "Choisir mon univers" : step == 2 ? "Voir mon récapitulatif" : type == ProjectType.Comic ? "Préparer mes scènes" : "Préparer mon plan")<RadzenIcon Icon="arrow_forward" /></button>
+        </div>
+        <p class="hint">Vous préférez tout composer vous-même ? <a href="/boards/new">Ouvrir une planche libre</a>.</p>
+    </section>
+</main>
+
+@code {
+    [SupplyParameterFromQuery(Name = "inspire")] public bool Inspired { get; set; }
+    private readonly CancellationTokenSource cancellation = new();
+    private readonly string[] styles = ["Ligne claire", "Encre & mystère", "Rêve pastel"];
+    private readonly (string Title, string Idea)[] inspirations =
+    [
+        ("Le jardin de la Lune", "Une astronaute découvre une graine sur la Lune. Avec son robot, elle tente de faire pousser le premier jardin de l'espace."),
+        ("Le facteur des étoiles", "Un facteur livre une lettre sur Mars. L'adresse n'existe plus, mais une petite créature connaît le chemin."),
+        ("La porte des saisons", "Une jeune botaniste trouve une porte au fond de son jardin. De l'autre côté, chaque pas change la saison.")
+    ];
+    private int step = 1, inspirationIndex = -1;
+    private int chapterCount = 8;
+    private string chapterCountText = "8";
+    private string idea = string.Empty, title = string.Empty, artStyle = "Ligne claire", artNotes = string.Empty;
+    private ProjectType type;
+    private BoardTemplate template;
+    private string? error;
+    private bool isBusy, allowNavigation;
+    private ProjectResponse? createdProject;
+    private bool HasUnsavedChanges => !allowNavigation && (isBusy || !string.IsNullOrWhiteSpace(idea) || !string.IsNullOrWhiteSpace(title));
+
+    protected override void OnInitialized() { if (Inspired) Inspire(); }
+    private void Inspire()
+    {
+        inspirationIndex = (inspirationIndex + 1) % inspirations.Length;
+        (title, idea) = inspirations[inspirationIndex];
+    }
+    private static string StyleDescription(string style) => style switch { "Ligne claire" => "Expressif et lumineux", "Encre & mystère" => "Contrastes et caractère", _ => "Doux et poétique" };
+    private void Back()
+    {
+        error = null;
+        if (step == 1) Navigation.NavigateTo("/");
+        else if (createdProject is null) step--;
+        else error = "Le projet est déjà créé. Ouvrez-le ou réessayez la préparation de son plan.";
+    }
+    private async Task NextAsync()
+    {
+        error = null;
+        if (step == 1)
+        {
+            if (string.IsNullOrWhiteSpace(idea)) { error = "Racontez votre idée en quelques mots pour commencer."; return; }
+            step++; return;
+        }
+        if (step == 2)
+        {
+            if (string.IsNullOrWhiteSpace(title)) { error = "Donnez un titre à votre histoire."; return; }
+            if (type == ProjectType.Book && (!int.TryParse(chapterCountText, out chapterCount) || chapterCount is < 1 or > 30)) { error = "Choisissez un nombre entier de chapitres entre 1 et 30."; return; }
+            step++; return;
+        }
+        isBusy = true;
+        try
+        {
+            var context = $"{artStyle}. {artNotes}".Trim();
+            ProjectScaffoldResponse? scaffold = null;
+            if (type == ProjectType.Comic)
+            {
+                scaffold = await GenerationClient.CreateScaffoldAsync(new CreateProjectScaffoldRequest(
+                    $"{idea.Trim()}\nDirection artistique : {context}", BoardTemplateDefinitions.Get(template).Slots.Count), cancellation.Token);
+                context = $"{context}\n{scaffold.Context}";
+            }
+            createdProject ??= await GenerationClient.CreateProjectAsync(new CreateProjectRequest(title.Trim(), context, type, idea.Trim()), cancellation.Token);
+            if (type == ProjectType.Book)
+                await GenerationClient.GenerateBookPlanAsync(createdProject.ProjectId, new GenerateBookPlanRequest(chapterCount), cancellation.Token);
+            else
+                Drafts.Store(createdProject.ProjectId, new PreparedComic(template, scaffold!));
+            allowNavigation = true;
+            Navigation.NavigateTo(type == ProjectType.Book ? $"/projects/{createdProject.ProjectId:D}/book" : $"/projects/{createdProject.ProjectId:D}");
+        }
+        catch (AccessTokenNotAvailableException exception) { exception.Redirect(); }
+        catch (Exception exception) when (exception is GenerationApiException or HttpRequestException) { error = exception.Message; }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        finally { isBusy = false; }
+    }
+    private async Task BeforeNavigationAsync(LocationChangingContext context)
+    {
+        if (HasUnsavedChanges && await Dialogs.Confirm(
+            isBusy ? "Une préparation est en cours. Quitter cette page peut interrompre sa récupération. Continuer ?" : "Votre idée n'est pas encore sauvegardée. Quitter cette page ?",
+            "Quitter la création", new ConfirmOptions { OkButtonText = "Quitter", CancelButtonText = "Rester" }) != true)
+            context.PreventNavigation();
+    }
+    public void Dispose() { cancellation.Cancel(); cancellation.Dispose(); }
+}

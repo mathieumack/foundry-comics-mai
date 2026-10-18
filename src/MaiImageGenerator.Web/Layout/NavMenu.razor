@@ -1,38 +1,5 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">MAI Comic Studio</a>
-        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-    </div>
-</div>
-
-<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
-    <nav class="nav flex-column">
-        <AuthorizeView>
-            <Authorized>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                        <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> New board
-                    </NavLink>
-                </div>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="projects">
-                        <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> My projects
-                    </NavLink>
-                </div>
-            </Authorized>
-        </AuthorizeView>
-    </nav>
-</div>
-
-@code {
-    private bool collapseNavMenu = true;
-
-    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
-
-    private void ToggleNavMenu()
-    {
-        collapseNavMenu = !collapseNavMenu;
-    }
-}
+<nav class="studio-nav" aria-label="Mon espace créatif">
+    <NavLink href="/" Match="NavLinkMatch.All" class="studio-nav-link" aria-label="Mon atelier"><RadzenIcon Icon="grid_view" /><span>Mon atelier</span></NavLink>
+    <NavLink href="/projects" class="studio-nav-link" aria-label="Mes histoires"><RadzenIcon Icon="auto_stories" /><span>Mes histoires</span></NavLink>
+    <NavLink href="/new?inspire=true" class="studio-nav-link" aria-label="Boîte à idées"><RadzenIcon Icon="auto_awesome" /><span>Boîte à idées</span></NavLink>
+</nav>

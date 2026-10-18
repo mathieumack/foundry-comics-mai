@@ -2,133 +2,271 @@
 @attribute [Authorize]
 @implements IDisposable
 @inject GenerationApiClient GenerationClient
+@inject DialogService DialogService
 
-<PageTitle>@(project?.Title ?? "Book")</PageTitle>
+<NavigationLock ConfirmExternalNavigation="@HasUnsavedChanges"
+                OnBeforeInternalNavigation="ConfirmNavigationAsync" />
+
+<PageTitle>@(project?.Title ?? "Livre illustré")</PageTitle>
 
 <main class="book-shell">
-    <a class="back-link" href="/projects">← All projects</a>
+    <a class="back-link" href="/projects">← Mes histoires</a>
 
     @if (isLoading)
     {
-        <div class="book-state" role="status">Loading book…</div>
+        <div class="empty-state" role="status">Ouverture de votre livre…</div>
     }
     else if (error is not null && project is null)
     {
-        <div class="book-state error" role="alert">@error</div>
+        <div class="error" role="alert">@error</div>
     }
     else if (project is not null)
     {
-        <header class="book-header">
+        <header class="page-heading workspace-heading">
             <div>
-                <span class="eyebrow">Book project</span>
+                <span class="eyebrow">Livre illustré</span>
                 <h1>@project.Title</h1>
-                <p>@project.SourceIdea</p>
+                <p class="muted">Un plan d’abord. Puis l’aventure, chapitre après chapitre.</p>
             </div>
             <div class="header-actions">
-                <RadzenNumeric @bind-Value="chapterCount" Min="1" Max="30" ShowUpDown="true" />
-                <RadzenButton Text="@(chapters.Count == 0 ? "Generate plan" : "Regenerate plan")"
+                <div class="field chapter-count-field">
+                    <label for="chapter-count">Nombre de chapitres</label>
+                    <input id="chapter-count"
+                           type="text"
+                           inputmode="numeric"
+                           pattern="[0-9]+"
+                           required
+                           value="@chapterCountText"
+                           @oninput="UpdateChapterCount"
+                           disabled="@isBusy"
+                           aria-invalid="@(IsChapterCountValid ? "false" : "true")"
+                           aria-describedby="chapter-count-hint" />
+                    <span id="chapter-count-hint" class="@(IsChapterCountValid ? "hint" : "error")">
+                        @(IsChapterCountValid ? "De 1 à 30 chapitres." : "Saisissez un nombre entier de 1 à 30.")
+                    </span>
+                </div>
+                <RadzenButton Text="@(chapters.Count == 0 ? "Créer le plan" : "Recréer le plan")"
                               Icon="auto_fix_high"
+                              class="btn primary"
+                              ButtonStyle="ButtonStyle.Primary"
                               IsBusy="isPlanning"
-                              Disabled="isBusy"
+                              Disabled="isBusy || !IsChapterCountValid"
                               Click="@GeneratePlanAsync" />
             </div>
         </header>
 
         @if (error is not null)
         {
-            <div class="book-state error" role="alert">@error</div>
+            <div class="error" role="alert">@error</div>
         }
 
         @if (planError is not null)
         {
-            <div class="book-state error" role="alert">@planError</div>
+            <div class="error" role="alert">Le plan n’a pas pu être créé : @planError</div>
+        }
+
+        @if (HasUnsavedChanges)
+        {
+            <p class="hint" role="status">Modifications non enregistrées. Pensez à les conserver avant de quitter.</p>
+        }
+        else if (chapters.Count > 0)
+        {
+            <p class="hint" role="status">Toutes les modifications sont enregistrées.</p>
         }
 
         @if (isPlanning)
         {
-            <div class="book-state" role="status">The chapter plan is being generated. You can leave this page and return later.</div>
+            <div class="surface plan-progress" role="status">
+                <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" />
+                <p>Votre plan de chapitres se prépare. Vous pourrez revenir ici plus tard.</p>
+            </div>
         }
 
         @if (chapters.Count == 0)
         {
-            <section class="empty-plan">
+            <section class="surface empty-state empty-plan">
                 <RadzenIcon Icon="menu_book" />
-                <h2>Turn the idea into a complete chapter plan</h2>
-                <p>MAI-Thinking will draft titles, story summaries, character development, and continuity notes.</p>
+                <h2>Donnez une structure à votre histoire</h2>
+                <p class="muted">MAI-Thinking proposera des titres, les grandes étapes du récit et des repères de continuité.</p>
+                @if (planError is null)
+                {
+                    <p class="hint">Choisissez le nombre de chapitres, puis créez votre plan.</p>
+                }
             </section>
         }
         else
         {
             <div class="book-actions">
-                <RadzenButton Text="Save edits"
-                              Icon="save"
-                              ButtonStyle="ButtonStyle.Light"
-                              Variant="Variant.Outlined"
-                              IsBusy="isSaving"
-                              Disabled="isBusy"
-                              Click="@SaveAsync" />
-                <RadzenButton Text="Generate remaining chapters"
-                              Icon="auto_awesome"
-                              Disabled="isBusy"
-                              Click="@GenerateRemainingAsync" />
+                <span class="hint">@chapters.Count chapitres · sélectionnez-en un pour vous concentrer sur son contenu</span>
+                <div class="header-actions">
+                    <RadzenButton Text="Garder mes modifications"
+                                  Icon="save"
+                                  class="btn quiet"
+                                  ButtonStyle="ButtonStyle.Light"
+                                  Variant="Variant.Outlined"
+                                  IsBusy="isSaving"
+                                  Disabled="isBusy || !HasUnsavedChanges"
+                                  Click="@SaveAsync" />
+                    <RadzenButton Text="Générer les éléments manquants"
+                                  Icon="auto_awesome"
+                                  class="btn primary"
+                                  ButtonStyle="ButtonStyle.Primary"
+                                  Disabled="isBusy"
+                                  Click="@GenerateRemainingAsync" />
+                </div>
             </div>
 
-            <section class="chapters" aria-label="Book chapters">
-                @foreach (var chapter in chapters)
+            <div class="book-layout">
+                <aside class="surface chapter-list" aria-label="Navigation des chapitres">
+                    <span class="eyebrow">Le chemin de l’histoire</span>
+                    <p class="hint">@chapters.Count chapitres au programme</p>
+                    <nav aria-label="Choisir un chapitre">
+                        @foreach (var chapter in chapters)
+                        {
+                            <button @key="chapter.Id"
+                                    type="button"
+                                    class="chapter-nav-item @(chapter.Id == selectedChapterId ? "is-current" : string.Empty)"
+                                    aria-pressed="@(chapter.Id == selectedChapterId ? "true" : "false")"
+                                    @onclick="() => SelectChapter(chapter.Id)">
+                                <span class="chapter-nav-number">@chapter.Number.ToString("D2")</span>
+                                <span class="chapter-nav-title">@chapter.Title</span>
+                                @if (chapter.ProseStatus == GenerationStatus.Completed)
+                                {
+                                    <span class="status ready">Texte prêt</span>
+                                }
+                                else
+                                {
+                                    <span class="status">À écrire</span>
+                                }
+                            </button>
+                        }
+                    </nav>
+                </aside>
+
+                @if (SelectedChapter is { } chapterDraft)
                 {
-                    <article class="chapter" @key="chapter.Id">
-                        <div class="chapter-heading">
-                            <span>Chapter @chapter.Number</span>
+                    <article class="surface chapter-editor" @key="chapterDraft.Id" aria-labelledby="active-chapter-title">
+                        <div class="section-heading">
                             <div>
-                                <span class="generation-status">@($"Prose: {chapter.ProseStatus}")</span>
-                                <span class="generation-status">@($"Image: {chapter.ImageStatus}")</span>
+                                <span class="eyebrow">Chapitre @chapterDraft.Number</span>
+                                <h2 id="active-chapter-title">@chapterDraft.Title</h2>
+                            </div>
+                            <div class="chapter-statuses" aria-label="État du chapitre">
+                                <span class="@StatusClass(chapterDraft.ProseStatus)">Texte : @StatusLabel(chapterDraft.ProseStatus)</span>
+                                <span class="@StatusClass(chapterDraft.ImageStatus)">Image : @StatusLabel(chapterDraft.ImageStatus)</span>
                             </div>
                         </div>
-                        <RadzenTextBox @bind-Value="chapter.Title"
-                                       Placeholder="Chapter title"
-                                       Disabled="isBusy"
-                                       Style="width: 100%" />
-                        <label>Story summary</label>
-                        <RadzenTextArea @bind-Value="chapter.Summary" Rows="4" Disabled="isBusy" Style="width: 100%" />
-                        <label>Character events and development</label>
-                        <RadzenTextArea @bind-Value="chapter.CharacterEvents" Rows="3" Disabled="isBusy" Style="width: 100%" />
-                        <label>Settings, plot points, and continuity</label>
-                        <RadzenTextArea @bind-Value="chapter.Continuity" Rows="3" Disabled="isBusy" Style="width: 100%" />
-                        <label>Chapter prose</label>
-                        <RadzenTextArea @bind-Value="chapter.Prose" Rows="14" Disabled="isBusy" Style="width: 100%" />
-                        @if (chapter.ProseError is not null)
-                        {
-                            <p class="chapter-error">@chapter.ProseError</p>
-                        }
-                        <div class="chapter-actions">
-                            <RadzenButton Text="@(chapter.ProseStatus == GenerationStatus.Completed ? "Regenerate prose" : "Generate prose")"
+
+                        <div class="field">
+                            <label for="chapter-title">Titre du chapitre</label>
+                            <RadzenTextBox id="chapter-title"
+                                           @bind-Value="chapterDraft.Title"
+                                           Placeholder="Le titre de ce chapitre"
+                                           Disabled="isBusy"
+                                           Style="width: 100%" />
+                        </div>
+                        <div class="field">
+                            <label for="chapter-summary">Ce qui se passe dans ce chapitre</label>
+                            <RadzenTextArea id="chapter-summary"
+                                            @bind-Value="chapterDraft.Summary"
+                                            Rows="4"
+                                            Disabled="isBusy"
+                                            Style="width: 100%" />
+                        </div>
+
+                        <details class="continuity-details">
+                            <summary>Personnages et continuité</summary>
+                            <div class="field">
+                                <label for="chapter-events">Évolution des personnages</label>
+                                <RadzenTextArea id="chapter-events"
+                                                @bind-Value="chapterDraft.CharacterEvents"
+                                                Rows="3"
+                                                Disabled="isBusy"
+                                                Style="width: 100%" />
+                            </div>
+                            <div class="field">
+                                <label for="chapter-continuity">Détails à ne pas oublier</label>
+                                <RadzenTextArea id="chapter-continuity"
+                                                @bind-Value="chapterDraft.Continuity"
+                                                Rows="3"
+                                                Disabled="isBusy"
+                                                Style="width: 100%" />
+                            </div>
+                        </details>
+
+                        <section class="chapter-section" aria-labelledby="prose-heading">
+                            <div class="section-heading">
+                                <h3 id="prose-heading">Le récit</h3>
+                                <span class="@StatusClass(chapterDraft.ProseStatus)">@StatusLabel(chapterDraft.ProseStatus)</span>
+                            </div>
+                            <div class="field">
+                                <label for="chapter-prose">Votre texte, toujours modifiable</label>
+                                <RadzenTextArea id="chapter-prose"
+                                                @bind-Value="chapterDraft.Prose"
+                                                Rows="12"
+                                                Placeholder="Le récit apparaîtra ici. Vous pouvez aussi écrire directement."
+                                                Disabled="isBusy"
+                                                Style="width: 100%" />
+                            </div>
+                            @if (chapterDraft.ProseError is not null)
+                            {
+                                <p class="error" role="alert">@chapterDraft.ProseError</p>
+                            }
+                            <RadzenButton Text="@(string.IsNullOrWhiteSpace(chapterDraft.Prose) ? "Écrire ce chapitre" : "Réécrire le texte")"
                                           Icon="edit_note"
+                                          class="btn primary"
+                                          ButtonStyle="ButtonStyle.Primary"
                                           Disabled="isBusy"
-                                          Click="@(() => GenerateProseAsync(chapter.Id))" />
-                            <RadzenButton Text="@(chapter.ImageStatus == GenerationStatus.Completed ? "Regenerate image" : "Generate image")"
+                                          Click="@(() => GenerateProseAsync(chapterDraft.Id))" />
+                        </section>
+
+                        <section class="chapter-section" aria-labelledby="illustration-heading">
+                            <div class="section-heading">
+                                <h3 id="illustration-heading">L’illustration</h3>
+                                <span class="@StatusClass(chapterDraft.ImageStatus)">@StatusLabel(chapterDraft.ImageStatus)</span>
+                            </div>
+                            <div class="field">
+                                <label for="chapter-image-prompt">La scène à illustrer <span class="muted">(facultatif)</span></label>
+                                <RadzenTextArea id="chapter-image-prompt"
+                                                @bind-Value="chapterDraft.ImagePrompt"
+                                                Rows="3"
+                                                Placeholder="Laissez vide pour partir du résumé du chapitre."
+                                                Disabled="isBusy"
+                                                Style="width: 100%" />
+                            </div>
+                            @if (chapterDraft.ImageError is not null)
+                            {
+                                <p class="error" role="alert">@chapterDraft.ImageError</p>
+                            }
+                            @if (chapterDraft.ImageLoadError is not null)
+                            {
+                                <p class="error" role="alert">L’illustration n’a pas pu être affichée : @chapterDraft.ImageLoadError</p>
+                            }
+                            @if (chapterDraft.ImageDataUrl is not null)
+                            {
+                                <img class="chapter-image"
+                                     src="@chapterDraft.ImageDataUrl"
+                                     alt="@($"Illustration du chapitre {chapterDraft.Number}")" />
+                            }
+                            else if (chapterDraft.ImageStatus == GenerationStatus.Completed)
+                            {
+                                <p class="hint" role="status">Chargement de l’illustration…</p>
+                            }
+                            else
+                            {
+                                <p class="hint">Le texte et l’image se créent séparément. Une illustration sera associée à ce chapitre.</p>
+                            }
+                            <RadzenButton Text="@(chapterDraft.ImageStatus == GenerationStatus.Completed ? "Recréer l’illustration" : "Illustrer ce chapitre")"
                                           Icon="image"
+                                          class="btn quiet"
                                           ButtonStyle="ButtonStyle.Light"
                                           Variant="Variant.Outlined"
                                           Disabled="isBusy"
-                                          Click="@(() => GenerateImageAsync(chapter.Id))" />
-                        </div>
-                        <label>Illustration prompt</label>
-                        <RadzenTextArea @bind-Value="chapter.ImagePrompt"
-                                        Placeholder="Optional; generated from the plan when blank"
-                                        Rows="3"
-                                        Disabled="isBusy"
-                                        Style="width: 100%" />
-                        @if (chapter.ImageError is not null)
-                        {
-                            <p class="chapter-error">@chapter.ImageError</p>
-                        }
-                        @if (chapter.ImageDataUrl is not null)
-                        {
-                            <img class="chapter-image" src="@chapter.ImageDataUrl" alt="@($"Illustration for chapter {chapter.Number}")" />
-                        }
+                                          Click="@(() => GenerateImageAsync(chapterDraft.Id))" />
+                        </section>
                     </article>
                 }
-            </section>
+            </div>
         }
     }
 </main>
@@ -139,16 +277,22 @@
 
     private readonly CancellationTokenSource cancellation = new();
     private readonly List<ChapterDraft> chapters = [];
+    private readonly Dictionary<string, ChapterValues> savedDrafts = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> activeImageLoads = new(StringComparer.Ordinal);
     private ProjectResponse? project;
     private string? error;
     private string? planError;
+    private string? selectedChapterId;
     private bool isPlanGenerationActive;
-    private int chapterCount = 8;
+    private string chapterCountText = "8";
+    private bool IsChapterCountValid => TryGetChapterCount(out _);
     private bool isLoading = true;
     private bool isPlanning;
     private bool isSaving;
     private bool isGenerating;
     private bool isBusy => isPlanning || isSaving || isGenerating;
+    private bool HasUnsavedChanges => chapters.Any(HasUnsavedChangesFor);
+    private ChapterDraft? SelectedChapter => chapters.SingleOrDefault(chapter => chapter.Id == selectedChapterId);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -159,11 +303,11 @@
             project = await GenerationClient.GetProjectAsync(ProjectId, cancellation.Token);
             if (project.Type != ProjectType.Book)
             {
-                error = "This project is not a book.";
+                error = "Ce projet n’est pas un livre illustré.";
                 return;
             }
 
-            ApplyPlan(await GenerationClient.GetBookPlanAsync(ProjectId, cancellation.Token));
+            ApplyPlan(await GenerationClient.GetBookPlanAsync(ProjectId, cancellation.Token), markSaved: true);
             if (isPlanGenerationActive)
             {
                 isPlanning = true;
@@ -173,12 +317,13 @@
         catch (AccessTokenNotAvailableException exception)
         {
             exception.Redirect();
+            return;
         }
-        catch (GenerationApiException exception)
+        catch (Exception exception) when (IsRequestFailure(exception))
         {
             error = exception.Message;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
         }
         finally
@@ -189,22 +334,45 @@
 
     private async Task GeneratePlanAsync()
     {
+        if (!TryGetChapterCount(out var chapterCount))
+        {
+            error = "Saisissez un nombre entier de 1 à 30 avant de créer le plan.";
+            return;
+        }
+
+        if (chapters.Count > 0 &&
+            !await ConfirmAsync("Recréer le plan remplacera les chapitres et leur contenu actuel. Cette action ne peut pas être annulée. Continuer ?",
+                "Recréer le plan"))
+        {
+            return;
+        }
+
         isPlanning = true;
         error = null;
+        planError = null;
         try
         {
             ApplyPlan(await GenerationClient.GenerateBookPlanAsync(
                 ProjectId,
                 new GenerateBookPlanRequest(chapterCount),
-                cancellation.Token));
+                cancellation.Token),
+                markSaved: true);
             if (isPlanGenerationActive)
             {
                 await PollPlanAsync();
             }
         }
-        catch (GenerationApiException exception)
+        catch (AccessTokenNotAvailableException exception)
         {
-            error = exception.Message;
+            exception.Redirect();
+            return;
+        }
+        catch (Exception exception) when (IsRequestFailure(exception))
+        {
+            planError = exception.Message;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
         }
         finally
         {
@@ -218,11 +386,21 @@
         error = null;
         try
         {
-            ApplyPlan(await GenerationClient.UpdateBookPlanAsync(ProjectId, CreateUpdateRequest(), cancellation.Token));
+            ApplyPlan(
+                await GenerationClient.UpdateBookPlanAsync(ProjectId, CreateUpdateRequest(), cancellation.Token),
+                markSaved: true);
         }
-        catch (GenerationApiException exception)
+        catch (AccessTokenNotAvailableException exception)
+        {
+            exception.Redirect();
+            return;
+        }
+        catch (Exception exception) when (IsRequestFailure(exception))
         {
             error = exception.Message;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
         }
         finally
         {
@@ -236,25 +414,69 @@
         error = null;
         try
         {
-            ApplyPlan(await GenerationClient.UpdateBookPlanAsync(ProjectId, CreateUpdateRequest(), cancellation.Token));
+            ApplyPlan(
+                await GenerationClient.UpdateBookPlanAsync(ProjectId, CreateUpdateRequest(), cancellation.Token),
+                markSaved: true);
+
             foreach (var chapterId in chapters.Select(chapter => chapter.Id).ToArray())
             {
                 var chapter = chapters.Single(item => item.Id == chapterId);
                 if (chapter.ProseStatus != GenerationStatus.Completed)
                 {
-                    ApplyPlan(await GenerationClient.GenerateChapterProseAsync(ProjectId, chapterId, cancellation.Token));
+                    chapter.ProseError = null;
+                    try
+                    {
+                        ApplyPlan(
+                            await GenerationClient.GenerateChapterProseAsync(ProjectId, chapterId, cancellation.Token),
+                            markSaved: true);
+                    }
+                    catch (AccessTokenNotAvailableException exception)
+                    {
+                        exception.Redirect();
+                        return;
+                    }
+                    catch (Exception exception) when (IsRequestFailure(exception))
+                    {
+                        chapter.ProseError = exception.Message;
+                        return;
+                    }
                 }
 
                 chapter = chapters.Single(item => item.Id == chapterId);
                 if (chapter.ImageStatus != GenerationStatus.Completed)
                 {
-                    ApplyPlan(await GenerationClient.GenerateChapterImageAsync(ProjectId, chapterId, cancellation.Token));
+                    chapter.ImageError = null;
+                    chapter.ImageLoadError = null;
+                    try
+                    {
+                        ApplyPlan(
+                            await GenerationClient.GenerateChapterImageAsync(ProjectId, chapterId, cancellation.Token),
+                            markSaved: true,
+                            refreshImageIds: [chapterId]);
+                    }
+                    catch (AccessTokenNotAvailableException exception)
+                    {
+                        exception.Redirect();
+                        return;
+                    }
+                    catch (Exception exception) when (IsRequestFailure(exception))
+                    {
+                        chapter.ImageError = exception.Message;
+                        return;
+                    }
                 }
             }
         }
-        catch (GenerationApiException exception)
+        catch (AccessTokenNotAvailableException exception)
+        {
+            exception.Redirect();
+        }
+        catch (Exception exception) when (IsRequestFailure(exception))
         {
             error = exception.Message;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
         }
         finally
         {
@@ -264,16 +486,36 @@
 
     private async Task GenerateProseAsync(string chapterId)
     {
+        var chapter = chapters.SingleOrDefault(item => item.Id == chapterId);
+        if (chapter is null ||
+            ((!string.IsNullOrWhiteSpace(chapter.Prose) || chapter.ProseStatus == GenerationStatus.Completed) &&
+             !await ConfirmAsync("Le texte actuel sera remplacé par une nouvelle version. Continuer ?", "Réécrire le chapitre")))
+        {
+            return;
+        }
+
         isGenerating = true;
         error = null;
+        chapter.ProseError = null;
         try
         {
-            ApplyPlan(await GenerationClient.UpdateBookPlanAsync(ProjectId, CreateUpdateRequest(), cancellation.Token));
-            ApplyPlan(await GenerationClient.GenerateChapterProseAsync(ProjectId, chapterId, cancellation.Token));
+            ApplyPlan(
+                await GenerationClient.UpdateBookPlanAsync(ProjectId, CreateUpdateRequest(), cancellation.Token),
+                markSaved: true);
+            ApplyPlan(
+                await GenerationClient.GenerateChapterProseAsync(ProjectId, chapterId, cancellation.Token),
+                markSaved: true);
         }
-        catch (GenerationApiException exception)
+        catch (AccessTokenNotAvailableException exception)
         {
-            error = exception.Message;
+            exception.Redirect();
+        }
+        catch (Exception exception) when (IsRequestFailure(exception))
+        {
+            chapter.ProseError = exception.Message;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
         }
         finally
         {
@@ -283,22 +525,82 @@
 
     private async Task GenerateImageAsync(string chapterId)
     {
+        var chapter = chapters.SingleOrDefault(item => item.Id == chapterId);
+        if (chapter is null ||
+            ((chapter.ImageUri is not null || chapter.ImageStatus == GenerationStatus.Completed) &&
+             !await ConfirmAsync("L’illustration actuelle sera remplacée. Continuer ?", "Recréer l’illustration")))
+        {
+            return;
+        }
+
         isGenerating = true;
         error = null;
+        chapter.ImageError = null;
+        chapter.ImageLoadError = null;
         try
         {
-            ApplyPlan(await GenerationClient.UpdateBookPlanAsync(ProjectId, CreateUpdateRequest(), cancellation.Token));
-            ApplyPlan(await GenerationClient.GenerateChapterImageAsync(ProjectId, chapterId, cancellation.Token));
+            ApplyPlan(
+                await GenerationClient.UpdateBookPlanAsync(ProjectId, CreateUpdateRequest(), cancellation.Token),
+                markSaved: true);
+            ApplyPlan(
+                await GenerationClient.GenerateChapterImageAsync(ProjectId, chapterId, cancellation.Token),
+                markSaved: true,
+                refreshImageIds: [chapterId]);
         }
-        catch (GenerationApiException exception)
+        catch (AccessTokenNotAvailableException exception)
         {
-            error = exception.Message;
+            exception.Redirect();
+        }
+        catch (Exception exception) when (IsRequestFailure(exception))
+        {
+            chapter.ImageError = exception.Message;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
         }
         finally
         {
             isGenerating = false;
         }
     }
+
+    private async Task<bool> ConfirmAsync(string message, string title)
+    {
+        return await DialogService.Confirm(
+            message,
+            title,
+            new ConfirmOptions
+            {
+                OkButtonText = "Continuer",
+                CancelButtonText = "Annuler",
+                CloseDialogOnOverlayClick = false
+            }) == true;
+    }
+
+    private async Task ConfirmNavigationAsync(LocationChangingContext context)
+    {
+        if (HasUnsavedChanges &&
+            !await ConfirmAsync("Des modifications ne sont pas enregistrées. Les abandonner et quitter cette page ?",
+                "Modifications non enregistrées"))
+        {
+            context.PreventNavigation();
+        }
+    }
+
+    private void SelectChapter(string chapterId)
+    {
+        selectedChapterId = chapterId;
+    }
+
+    private void UpdateChapterCount(ChangeEventArgs args)
+    {
+        chapterCountText = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private bool TryGetChapterCount(out int chapterCount) =>
+        int.TryParse(chapterCountText, System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out chapterCount) &&
+        chapterCount is >= 1 and <= 30;
 
     private UpdateBookPlanRequest CreateUpdateRequest() => new(chapters.Select(chapter => new BookChapterRequest(
         chapter.Id,
@@ -310,36 +612,155 @@
         chapter.Prose,
         chapter.ImagePrompt)).ToArray());
 
-    private void ApplyPlan(BookPlanResponse plan)
+    private void ApplyPlan(BookPlanResponse plan, bool markSaved = false, HashSet<string>? refreshImageIds = null)
     {
         isPlanGenerationActive = plan.IsGenerating;
         planError = plan.Error;
-        var imageData = chapters
-            .Where(chapter => chapter.ImageDataUrl is not null)
-            .ToDictionary(chapter => chapter.Id, chapter => chapter.ImageDataUrl!, StringComparer.Ordinal);
-        chapters.Clear();
-        chapters.AddRange(plan.Chapters.Select(chapter => new ChapterDraft
+
+        var existingChapters = chapters.ToDictionary(chapter => chapter.Id, StringComparer.Ordinal);
+        var updatedChapters = new List<ChapterDraft>(plan.Chapters.Count);
+        foreach (var source in plan.Chapters)
         {
-            Id = chapter.Id,
-            Number = chapter.Number,
-            Title = chapter.Title,
-            Summary = chapter.Summary,
-            CharacterEvents = chapter.CharacterEvents,
-            Continuity = chapter.Continuity,
-            Prose = chapter.Prose,
-            ProseStatus = chapter.ProseStatus,
-            ProseError = chapter.ProseError,
-            ImagePrompt = chapter.ImagePrompt,
-            ImageStatus = chapter.ImageStatus,
-            ImageError = chapter.ImageError,
-            ImageDataUrl = imageData.GetValueOrDefault(chapter.Id)
-        }));
+            if (existingChapters.TryGetValue(source.Id, out var existing))
+            {
+                var previousSaved = savedDrafts.GetValueOrDefault(source.Id);
+                var current = ValuesOf(existing);
+                var incoming = ValuesOf(source);
+                var merged = markSaved
+                    ? incoming
+                    : MergeValues(current, incoming, previousSaved);
+
+                var imageChanged = !Equals(existing.ImageUri, source.ImageUri) ||
+                                   refreshImageIds?.Contains(source.Id) == true;
+                existing.Title = merged.Title;
+                existing.Summary = merged.Summary;
+                existing.CharacterEvents = merged.CharacterEvents;
+                existing.Continuity = merged.Continuity;
+                existing.Prose = merged.Prose;
+                existing.ImagePrompt = merged.ImagePrompt;
+                existing.ProseStatus = source.ProseStatus;
+                existing.ProseError = source.ProseError;
+                existing.ImageStatus = source.ImageStatus;
+                existing.ImageError = source.ImageError;
+                existing.ImageUri = source.ImageUri;
+                if (imageChanged)
+                {
+                    existing.ImageDataUrl = null;
+                    existing.ImageLoadError = null;
+                    existing.ImageLoadRevision++;
+                }
+
+                updatedChapters.Add(existing);
+                if (markSaved)
+                {
+                    savedDrafts[source.Id] = ValuesOf(existing);
+                }
+                else
+                {
+                    savedDrafts[source.Id] = MergeSavedValues(current, incoming, previousSaved);
+                }
+            }
+            else
+            {
+                var created = new ChapterDraft
+                {
+                    Id = source.Id,
+                    Number = source.Number,
+                    Title = source.Title,
+                    Summary = source.Summary,
+                    CharacterEvents = source.CharacterEvents,
+                    Continuity = source.Continuity,
+                    Prose = source.Prose,
+                    ProseStatus = source.ProseStatus,
+                    ProseError = source.ProseError,
+                    ImagePrompt = source.ImagePrompt,
+                    ImageStatus = source.ImageStatus,
+                    ImageError = source.ImageError,
+                    ImageUri = source.ImageUri
+                };
+                updatedChapters.Add(created);
+                savedDrafts[source.Id] = ValuesOf(created);
+            }
+        }
+
+        chapters.Clear();
+        chapters.AddRange(updatedChapters);
+        foreach (var staleId in savedDrafts.Keys.Except(chapters.Select(chapter => chapter.Id), StringComparer.Ordinal).ToArray())
+        {
+            savedDrafts.Remove(staleId);
+        }
+
         if (chapters.Count > 0)
         {
-            chapterCount = chapters.Count;
+            chapterCountText = chapters.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (selectedChapterId is null || chapters.All(chapter => chapter.Id != selectedChapterId))
+            {
+                selectedChapterId = chapters[0].Id;
+            }
         }
+        else
+        {
+            selectedChapterId = null;
+        }
+
         _ = LoadImagesAsync(plan);
     }
+
+    private bool HasUnsavedChangesFor(ChapterDraft chapter)
+    {
+        return !savedDrafts.TryGetValue(chapter.Id, out var saved) || ValuesOf(chapter) != saved;
+    }
+
+    private static ChapterValues ValuesOf(ChapterDraft chapter) => new(
+        chapter.Title,
+        chapter.Summary,
+        chapter.CharacterEvents,
+        chapter.Continuity,
+        chapter.Prose,
+        chapter.ImagePrompt);
+
+    private static ChapterValues ValuesOf(BookChapterResponse chapter) => new(
+        chapter.Title,
+        chapter.Summary,
+        chapter.CharacterEvents,
+        chapter.Continuity,
+        chapter.Prose,
+        chapter.ImagePrompt);
+
+    private static ChapterValues MergeValues(ChapterValues current, ChapterValues incoming, ChapterValues? saved) => new(
+        WasEdited(current.Title, saved?.Title, saved is not null) ? current.Title : incoming.Title,
+        WasEdited(current.Summary, saved?.Summary, saved is not null) ? current.Summary : incoming.Summary,
+        WasEdited(current.CharacterEvents, saved?.CharacterEvents, saved is not null) ? current.CharacterEvents : incoming.CharacterEvents,
+        WasEdited(current.Continuity, saved?.Continuity, saved is not null) ? current.Continuity : incoming.Continuity,
+        WasEdited(current.Prose, saved?.Prose, saved is not null) ? current.Prose : incoming.Prose,
+        WasEdited(current.ImagePrompt, saved?.ImagePrompt, saved is not null) ? current.ImagePrompt : incoming.ImagePrompt);
+
+    private static ChapterValues MergeSavedValues(ChapterValues current, ChapterValues incoming, ChapterValues? saved) => new(
+        WasEdited(current.Title, saved?.Title, saved is not null) ? saved!.Title : incoming.Title,
+        WasEdited(current.Summary, saved?.Summary, saved is not null) ? saved!.Summary : incoming.Summary,
+        WasEdited(current.CharacterEvents, saved?.CharacterEvents, saved is not null) ? saved!.CharacterEvents : incoming.CharacterEvents,
+        WasEdited(current.Continuity, saved?.Continuity, saved is not null) ? saved!.Continuity : incoming.Continuity,
+        WasEdited(current.Prose, saved?.Prose, saved is not null) ? saved!.Prose : incoming.Prose,
+        WasEdited(current.ImagePrompt, saved?.ImagePrompt, saved is not null) ? saved!.ImagePrompt : incoming.ImagePrompt);
+
+    private static bool WasEdited(string? current, string? saved, bool hasSavedValue) =>
+        hasSavedValue && !string.Equals(current, saved, StringComparison.Ordinal);
+
+    private static string StatusLabel(GenerationStatus status) => status switch
+    {
+        GenerationStatus.Completed => "Prêt",
+        GenerationStatus.Processing => "En cours",
+        GenerationStatus.Failed => "À reprendre",
+        _ => "À créer"
+    };
+
+    private static string StatusClass(GenerationStatus status) => status switch
+    {
+        GenerationStatus.Completed => "status ready",
+        GenerationStatus.Processing => "status working",
+        GenerationStatus.Failed => "status failed",
+        _ => "status"
+    };
 
     private async Task PollPlanAsync()
     {
@@ -348,7 +769,10 @@
             while (isPlanGenerationActive)
             {
                 await Task.Delay(TimeSpan.FromSeconds(2), cancellation.Token);
-                ApplyPlan(await GenerationClient.GetBookPlanAsync(ProjectId, cancellation.Token));
+                var preserveDrafts = HasUnsavedChanges;
+                ApplyPlan(
+                    await GenerationClient.GetBookPlanAsync(ProjectId, cancellation.Token),
+                    markSaved: !preserveDrafts);
                 await InvokeAsync(StateHasChanged);
             }
         }
@@ -356,11 +780,11 @@
         {
             exception.Redirect();
         }
-        catch (GenerationApiException exception)
+        catch (Exception exception) when (IsRequestFailure(exception))
         {
             error = exception.Message;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
         }
         finally
@@ -372,20 +796,75 @@
 
     private async Task LoadImagesAsync(BookPlanResponse plan)
     {
-        foreach (var chapter in plan.Chapters.Where(item => item.ImageUri is not null))
+        foreach (var source in plan.Chapters.Where(chapter => chapter.ImageUri is not null))
         {
-            var draft = chapters.SingleOrDefault(item => item.Id == chapter.Id);
-            if (draft is not null && draft.ImageDataUrl is null)
+            var draft = chapters.SingleOrDefault(chapter => chapter.Id == source.Id);
+            if (draft is null || draft.ImageDataUrl is not null || draft.ImageUri is null ||
+                activeImageLoads.TryGetValue(draft.Id, out var activeRevision) &&
+                activeRevision == draft.ImageLoadRevision)
             {
-                try
+                continue;
+            }
+
+            var requestedUri = draft.ImageUri;
+            var requestedRevision = draft.ImageLoadRevision;
+            activeImageLoads[draft.Id] = requestedRevision;
+            try
+            {
+                var dataUrl = await GenerationClient.DownloadDataUrlAsync(
+                    AddImageCacheKey(requestedUri, requestedRevision),
+                    cancellation.Token);
+                var latest = chapters.SingleOrDefault(chapter => chapter.Id == draft.Id);
+                if (latest is not null &&
+                    latest.ImageLoadRevision == requestedRevision &&
+                    Equals(latest.ImageUri, requestedUri))
                 {
-                    draft.ImageDataUrl = await GenerationClient.DownloadDataUrlAsync(chapter.ImageUri!, cancellation.Token);
+                    latest.ImageDataUrl = dataUrl;
+                    latest.ImageLoadError = null;
                     await InvokeAsync(StateHasChanged);
                 }
-                catch (Exception exception) when (exception is GenerationApiException or OperationCanceledException)
+            }
+            catch (AccessTokenNotAvailableException exception)
+            {
+                exception.Redirect();
+            }
+            catch (Exception exception) when (IsRequestFailure(exception))
+            {
+                SetImageLoadError(draft.Id, requestedRevision, exception.Message);
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+            }
+            finally
+            {
+                if (activeImageLoads.GetValueOrDefault(draft.Id) == requestedRevision)
                 {
+                    activeImageLoads.Remove(draft.Id);
                 }
             }
+        }
+    }
+
+    private bool IsRequestFailure(Exception exception) =>
+        exception is GenerationApiException or HttpRequestException ||
+        exception is OperationCanceledException && !cancellation.IsCancellationRequested;
+
+    private static Uri AddImageCacheKey(Uri imageUri, int revision)
+    {
+        var original = imageUri.OriginalString;
+        var separator = original.Contains('?') ? "&" : "?";
+        return new Uri($"{original}{separator}bookImageRevision={revision}", imageUri.IsAbsoluteUri
+            ? UriKind.Absolute
+            : UriKind.Relative);
+    }
+
+    private void SetImageLoadError(string chapterId, int revision, string message)
+    {
+        var chapter = chapters.SingleOrDefault(item => item.Id == chapterId);
+        if (chapter is not null && chapter.ImageLoadRevision == revision)
+        {
+            chapter.ImageLoadError = message;
+            _ = InvokeAsync(StateHasChanged);
         }
     }
 
@@ -404,11 +883,22 @@
         public string CharacterEvents { get; set; } = string.Empty;
         public string Continuity { get; set; } = string.Empty;
         public string? Prose { get; set; }
-        public GenerationStatus ProseStatus { get; init; }
-        public string? ProseError { get; init; }
+        public GenerationStatus ProseStatus { get; set; }
+        public string? ProseError { get; set; }
         public string? ImagePrompt { get; set; }
-        public GenerationStatus ImageStatus { get; init; }
-        public string? ImageError { get; init; }
+        public GenerationStatus ImageStatus { get; set; }
+        public string? ImageError { get; set; }
+        public string? ImageLoadError { get; set; }
+        public Uri? ImageUri { get; set; }
         public string? ImageDataUrl { get; set; }
+        public int ImageLoadRevision { get; set; }
     }
+
+    private sealed record ChapterValues(
+        string Title,
+        string Summary,
+        string CharacterEvents,
+        string Continuity,
+        string? Prose,
+        string? ImagePrompt);
 }

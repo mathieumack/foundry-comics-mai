@@ -1,1075 +1,177 @@
-﻿@page "/"
+@page "/boards/new"
 @page "/projects/{ProjectId:guid}"
 @page "/projects/{ProjectId:guid}/boards/{BoardId:guid}"
 @attribute [Authorize]
-@implements IAsyncDisposable
-@using Microsoft.AspNetCore.SignalR
-@using Microsoft.AspNetCore.SignalR.Client
-@inject GenerationApiClient GenerationClient
-@inject IAccessTokenProvider TokenProvider
-@inject IConfiguration Configuration
-@inject NavigationManager Navigation
-@inject NotificationService NotificationService
 
-@code {
-	[Parameter]
-	public Guid? ProjectId { get; set; }
-
-	[Parameter]
-	public Guid? BoardId { get; set; }
-
-	[Parameter]
-	[SupplyParameterFromQuery(Name = "generationId")]
-	public Guid? GenerationId { get; set; }
-}
-
-<PageTitle>MAI Studio</PageTitle>
-
-<div class="project-workspace @(ProjectId is null ? null : "has-project-menu")">
-	@if (ProjectId is Guid projectId)
-	{
-		<aside class="project-menu" aria-label="Project boards">
-			<a class="back-to-projects" href="/projects">
-				<RadzenIcon Icon="arrow_back" />
-				All projects
-			</a>
-			@if (isProjectLoading)
-			{
-				<div class="project-menu-state" role="status">Loading project…</div>
-			}
-			else if (projectError is not null)
-			{
-				<div class="project-menu-state error" role="alert">@projectError</div>
-			}
-			else if (project is not null)
-			{
-				<h2>@project.Title</h2>
-				<NavLink class="new-project-board" href="@($"/projects/{projectId:D}")" Match="NavLinkMatch.All">
-					<RadzenIcon Icon="add" />
-					New board
-				</NavLink>
-				<nav aria-label="Boards">
-					@foreach (var board in projectBoards)
-					{
-						<NavLink class="project-board-link"
-								 href="@($"/projects/{projectId:D}/boards/{board.GenerationId:D}")"
-								 Match="NavLinkMatch.All">
-							<span>@board.Title</span>
-							<small>@board.Status</small>
-						</NavLink>
-					}
-					@if (projectBoards.Count == 0)
-					{
-						<p>No boards yet.</p>
-					}
-				</nav>
-			}
-		</aside>
-	}
-
-<div class="studio-shell">
-	<main class="workspace">
-		<section class="control-rail" aria-label="Generation settings">
-			<div class="section-heading">
-				<span>01</span>
-				<div>
-					<h1>Storyboard</h1>
-					<p>Compose panels in their reading order.</p>
-				</div>
-			</div>
-
-			<details class="connection-panel" open>
-				<summary>
-					<span>Start from a story</span>
-					<small>Let MAI-Thinking draft the whole project</small>
-				</summary>
-				<div class="connection-fields">
-					<RadzenTextArea @bind-Value="storyDescription"
-									Name="story-description"
-									Placeholder="Describe your story, characters, setting, tone, and key events..."
-									Rows="5"
-									Disabled="EditingLocked"
-									Style="width: 100%" />
-					<RadzenButton Text="Scaffold project"
-								  Icon="auto_fix_high"
-								  ButtonStyle="ButtonStyle.Light"
-								  Variant="Variant.Outlined"
-								  IsBusy="isScaffolding"
-								  Disabled="EditingLocked"
-								  Click="@CreateScaffoldAsync"
-								  Style="width: 100%" />
-				</div>
-			</details>
-
-			<label for="board-title">Board title</label>
-			<RadzenTextBox @bind-Value="boardTitle"
-							Name="board-title"
-							Placeholder="Title displayed above the panels"
-							Disabled="EditingLocked"
-							Style="width: 100%" />
-
-			<label for="project-description">Project description</label>
-			<RadzenTextArea @bind-Value="projectDescription"
-							Name="project-description"
-							Placeholder="A summary of the story and project..."
-							Rows="3"
-							Disabled="EditingLocked"
-							Style="width: 100%" />
-
-			<label for="context">Art direction <span>optional</span></label>
-			<RadzenTextArea @bind-Value="context"
-							Name="context"
-							Placeholder="Shared style, characters, period, palette, and visual continuity..."
-							Rows="4"
-							Disabled="EditingLocked"
-							Style="width: 100%" />
-
-			<label for="board-template">Board template</label>
-			<RadzenDropDown TValue="BoardTemplate"
-							Name="board-template"
-							Value="selectedTemplate"
-							Data="templateOptions"
-							TextProperty="Name"
-							ValueProperty="Template"
-							Change="@ChangeTemplate"
-							Disabled="EditingLocked"
-							Style="width: 100%" />
-
-			<div class="panel-list-heading">
-				<div>
-					<strong>Panels</strong>
-					<small>@panels.Count slots</small>
-				</div>
-			</div>
-
-			<div class="panel-editor-list">
-				@for (var index = 0; index < panels.Count; index++)
-				{
-					var panel = panels[index];
-					var panelIndex = index;
-					<div class="panel-editor" @key="panel.Id">
-						<div class="panel-editor-toolbar">
-							<span>Panel @(panelIndex + 1)</span>
-							<div class="panel-actions">
-								<RadzenButton Icon="arrow_upward"
-												  title="Move panel up"
-												  aria-label="@($"Move panel {panelIndex + 1} up")"
-												  ButtonStyle="ButtonStyle.Light"
-												  Variant="Variant.Flat"
-												  Size="ButtonSize.Small"
-												  Disabled="@(EditingLocked || panelIndex == 0)"
-												  Click="@(() => MovePanel(panelIndex, -1))" />
-								<RadzenButton Icon="arrow_downward"
-												  title="Move panel down"
-												  aria-label="@($"Move panel {panelIndex + 1} down")"
-												  ButtonStyle="ButtonStyle.Light"
-												  Variant="Variant.Flat"
-												  Size="ButtonSize.Small"
-												  Disabled="@(EditingLocked || panelIndex == panels.Count - 1)"
-												  Click="@(() => MovePanel(panelIndex, 1))" />
-							</div>
-						</div>
-						<RadzenTextArea @bind-Value="panel.Prompt"
-										Name="@($"panel-{panel.Id}")"
-										Placeholder="Describe the framing, action, setting, and dialogue for this panel..."
-										Rows="4"
-										Disabled="EditingLocked"
-										Style="width: 100%" />
-						@if (characters.Count > 0)
-						{
-							<RadzenDropDown @bind-Value="panel.CharacterIds"
-											TValue="IEnumerable<string>"
-											Data="characters"
-											TextProperty="Name"
-											ValueProperty="Id"
-											Multiple="true"
-											Placeholder="Characters in this panel"
-											Disabled="EditingLocked"
-											Style="width: 100%" />
-						}
-					</div>
-				}
-			</div>
-
-			<div class="inline-setting">
-				<div>
-					<strong>Rewrite with MAI-Thinking</strong>
-					<small>Structures the prompt before generation.</small>
-				</div>
-				<RadzenSwitch @bind-Value="rewritePrompt" Disabled="EditingLocked" />
-			</div>
-
-			<details class="connection-panel">
-				<summary>
-					<span>Character references</span>
-					<small>Optional identity images stored securely</small>
-				</summary>
-				<div class="connection-fields">
-					@foreach (var character in characters)
-					{
-						<div class="panel-editor" @key="character.Id">
-							<div class="panel-editor-toolbar">
-								<strong>Character</strong>
-								@if (ProjectId is null)
-								{
-									<RadzenButton Icon="delete_outline"
-													  title="Remove character"
-													  ButtonStyle="ButtonStyle.Danger"
-													  Variant="Variant.Flat"
-													  Size="ButtonSize.Small"
-													  Disabled="EditingLocked"
-													  Click="@(() => RemoveCharacter(character))" />
-								}
-								</div>
-								<RadzenTextBox @bind-Value="character.Name"
-											   Placeholder="Character name"
-											   Disabled="@(EditingLocked || ProjectId is not null)"
-											   Style="width: 100%" />
-								@if (ProjectId is null)
-								{
-									<InputFile OnChange="@(args => UploadReferencesAsync(character, args))"
-										   accept="image/png,image/jpeg"
-										   multiple />
-								}
-							@if (character.References.Count > 0)
-							{
-								<small>@string.Join(", ", character.References.Select(reference => reference.FileName))</small>
-							}
-						</div>
-					}
-					@if (ProjectId is null)
-					{
-						<RadzenButton Icon="person_add"
-								  Text="Add character"
-								  ButtonStyle="ButtonStyle.Light"
-								  Variant="Variant.Flat"
-								  Disabled="EditingLocked"
-								  Click="AddCharacter" />
-						<p class="security-note">References are uploaded through the authenticated API and remain in private storage.</p>
-					}
-					else
-					{
-						<p class="security-note">Characters and references are shared by every board in this project.</p>
-					}
-				</div>
-			</details>
-
-			<div class="generation-actions">
-				<RadzenButton Text="Generate board"
-							  Icon="auto_awesome"
-							  ButtonStyle="ButtonStyle.Primary"
-							  Size="ButtonSize.Large"
-							  IsBusy="isSubmitting"
-							  Disabled="EditingLocked"
-							  Click="@GenerateBoardAsync"
-							  Style="width: 100%" />
-				@if (activeGenerationId is not null && boardDataUrl is null)
-				{
-					<RadzenButton Text="Refresh board"
-								  Icon="refresh"
-								  ButtonStyle="ButtonStyle.Light"
-								  Variant="Variant.Outlined"
-								  IsBusy="isRefreshing"
-								  Disabled="isRefreshing"
-								  Click="@RefreshGenerationAsync"
-								  Style="width: 100%" />
-				}
-			</div>
-
-			@if (isGenerating)
-			{
-				<div class="generation-progress" role="status">
-					<RadzenProgressBarCircular Value="@GenerationProgress" ShowValue="true" />
-					<div>
-						<strong>Generating board</strong>
-						<span>@progressMessage</span>
-					</div>
-				</div>
-			}
-		</section>
-
-		<section class="preview-stage" aria-label="Generation result">
-			<div class="preview-toolbar">
-				<div>
-					<span class="eyebrow">02 / layout</span>
-					<h2>Comic board</h2>
-				</div>
-				@if (boardDataUrl is not null)
-				{
-					<a class="download-link" href="@boardDataUrl" download="mai-comic-board.png">
-						<RadzenIcon Icon="download" />
-						Download board
-					</a>
-				}
-			</div>
-
-			@if (boardDataUrl is not null)
-			{
-				<div class="board-frame">
-					<img src="@boardDataUrl" alt="Generated comic board" />
-				</div>
-			}
-			else
-			{
-				<div class="board-draft @(panels.All(panel => panel.ImageDataUrl is null) ? "is-empty" : null)">
-					<div class="board-title-preview">@(string.IsNullOrWhiteSpace(boardTitle) ? "Board title" : boardTitle)</div>
-					<div class="board-grid" style="@BoardGridStyle">
-						@for (var index = 0; index < panels.Count; index++)
-						{
-							var panel = panels[index];
-							<div class="panel-preview @PanelStatusClass(panel.Status)"
-								 style="@PanelSlotStyle(index)"
-								 @key="panel.Id">
-								@if (panel.ImageDataUrl is not null)
-								{
-									<img src="@panel.ImageDataUrl" alt="Generated panel @(index + 1)" />
-								}
-								else
-								{
-									<span class="panel-number">@(index + 1)</span>
-									<RadzenIcon Icon="@(panel.Status == PanelUiStatus.Generating ? "hourglass_top" : "image")" />
-									<small>@PanelStatusLabel(panel.Status)</small>
-								}
-							</div>
-						}
-					</div>
-					@if (panels.All(panel => panel.ImageDataUrl is null) && !isGenerating)
-					{
-						<div class="board-empty-copy">
-							<strong>Your comic board takes shape here</strong>
-							<span>Each prompt creates one panel, assembled automatically in order.</span>
-						</div>
-					}
-				</div>
-			}
-
-			@if (panels.Any(panel => panel.Status == PanelUiStatus.Error))
-			{
-				<div class="panel-generation-errors" role="alert">
-					<strong>Some panels could not be generated</strong>
-					<ul>
-						@for (var index = 0; index < panels.Count; index++)
-						{
-							var panel = panels[index];
-							if (panel.Status == PanelUiStatus.Error)
-							{
-								<li><span>Panel @(index + 1)</span> @(panel.Error ?? "The image could not be generated.")</li>
-							}
-						}
-					</ul>
-				</div>
-			}
-
-			@if (panels.Any(panel => !string.IsNullOrWhiteSpace(panel.EffectivePrompt)))
-			{
-				<details class="rewritten-prompt">
-					<summary>Final prompts sent to the model</summary>
-					<ol>
-						@foreach (var panel in panels.Where(panel => !string.IsNullOrWhiteSpace(panel.EffectivePrompt)))
-						{
-							<li>@panel.EffectivePrompt</li>
-						}
-					</ol>
-				</details>
-			}
-		</section>
-	</main>
-</div>
-</div>
-
-@code {
-	private readonly List<ComicPanelDraft> panels = [new(), new(), new(), new(), new(), new()];
-	private readonly List<CharacterDraft> characters = [];
-	private readonly List<GenerationSummaryResponse> projectBoards = [];
-	private readonly TemplateOption[] templateOptions =
-	[
-		new("Standard", BoardTemplate.Standard),
-		new("Storyline", BoardTemplate.Storyline),
-		new("Dynamic 1", BoardTemplate.Dynamic1),
-		new("Dynamic 2", BoardTemplate.Dynamic2)
-	];
-	private HubConnection? notificationConnection;
-	private CancellationTokenSource? generationCancellation;
-	private Guid? activeGenerationId;
-	private Guid? loadedProjectId;
-	private string? storyDescription;
-	private Guid? loadedGenerationId;
-	private ProjectResponse? project;
-	private string boardTitle = "New comic board";
-	private string? projectDescription;
-	private string? context;
-	private string? boardDataUrl;
-	private string? progressMessage;
-	private string? projectError;
-	private int generatedPanelCount;
-	private BoardTemplate selectedTemplate;
-	private bool rewritePrompt = true;
-	private bool isGenerating;
-	private bool isRefreshing;
-	private bool isSubmitting;
-	private bool isScaffolding;
-	private bool isProjectLoading;
-	private bool refreshRequested;
-	private static readonly TimeSpan PanelRefreshRetryDelay = TimeSpan.FromMilliseconds(500);
-	private const int PanelRefreshAttemptCount = 8;
-
-	private double GenerationProgress => panels.Count == 0 ? 0 : generatedPanelCount * 100d / panels.Count;
-	private bool EditingLocked => isSubmitting || isGenerating || isScaffolding;
-	private BoardTemplateDefinition SelectedTemplateDefinition => BoardTemplateDefinitions.Get(selectedTemplate);
-	private BoardTemplateDefinition DisplayTemplateDefinition =>
-		BoardTemplateDefinitions.Resolve(selectedTemplate, panels.Count);
-	private string BoardGridStyle => $"grid-template-columns: repeat({DisplayTemplateDefinition.Columns}, minmax(0, 1fr));";
-
-	protected override async Task OnInitializedAsync()
-	{
-		var apiBaseUrl = Configuration["ApiBaseUrl"]
-			?? throw new InvalidOperationException("ApiBaseUrl is required.");
-		var apiScope = Configuration["AzureAd:DefaultAccessTokenScopes:0"]
-			?? throw new InvalidOperationException("The API access scope is required.");
-
-		notificationConnection = new HubConnectionBuilder()
-			.WithUrl(new Uri(new Uri(apiBaseUrl), "hubs/notifications"), options =>
-			{
-				options.AccessTokenProvider = async () =>
-				{
-					var result = await TokenProvider.RequestAccessToken(
-						new AccessTokenRequestOptions { Scopes = [apiScope] });
-					return result.TryGetToken(out var token)
-						? token.Value
-						: throw new AccessTokenNotAvailableException(Navigation, result, [apiScope]);
-				};
-			})
-			.WithAutomaticReconnect()
-			.Build();
-		notificationConnection.On<PanelNotification>(
-			"PanelGenerationStarted",
-			notification => InvokeAsync(() => HandlePanelStarted(notification)));
-		notificationConnection.On<PanelNotification>(
-			"PanelGenerationCompleted",
-			notification => InvokeAsync(() => HandlePanelCompletedAsync(notification)));
-		try
-		{
-			await notificationConnection.StartAsync();
-		}
-		catch (AccessTokenNotAvailableException exception)
-		{
-			exception.Redirect();
-		}
-		catch (Exception exception) when (exception is HttpRequestException or HubException)
-		{
-			Notify(NotificationSeverity.Warning, "Live updates unavailable", exception.Message);
-		}
-	}
-
-	private async Task CreateScaffoldAsync()
-	{
-		if (string.IsNullOrWhiteSpace(storyDescription))
-		{
-			Notify(NotificationSeverity.Warning, "Story description required", "Describe your story before creating a project.");
-			return;
-		}
-
-		isScaffolding = true;
-		try
-		{
-			var scaffold = await GenerationClient.CreateScaffoldAsync(
-				new CreateProjectScaffoldRequest(storyDescription.Trim(), panels.Count),
-				CancellationToken.None);
-			boardTitle = scaffold.Title;
-			projectDescription = scaffold.Description;
-			context = scaffold.Context;
-			panels.Clear();
-			panels.AddRange(scaffold.PanelPrompts.Select(prompt => new ComicPanelDraft { Prompt = prompt }));
-			activeGenerationId = null;
-			boardDataUrl = null;
-			Notify(NotificationSeverity.Success, "Project scaffolded", "Review and edit the generated project before creating images.");
-		}
-		catch (AccessTokenNotAvailableException exception)
-		{
-			exception.Redirect();
-		}
-		catch (GenerationApiException exception)
-		{
-			Notify(NotificationSeverity.Error, "Scaffolding failed", exception.Message);
-		}
-		finally
-		{
-			isScaffolding = false;
-		}
-	}
-
-	protected override async Task OnParametersSetAsync()
-	{
-		var projectChanged = loadedProjectId != ProjectId;
-		if (projectChanged)
-		{
-			loadedProjectId = ProjectId;
-			project = null;
-			projectBoards.Clear();
-			projectError = null;
-			if (ProjectId is Guid projectId)
-			{
-				await LoadProjectAsync(projectId);
-				if (project is null)
-				{
-					return;
-				}
-			}
-		}
-
-		var requestedGenerationId = BoardId ?? GenerationId;
-		if (requestedGenerationId is not Guid generationId)
-		{
-			if (loadedGenerationId is not null || projectChanged)
-			{
-				ResetBoard();
-				ApplyProjectDefaults();
-			}
-
-			return;
-		}
-
-		if (ProjectId is not null && projectBoards.All(board => board.GenerationId != generationId))
-		{
-			projectError = "This board does not belong to the selected project.";
-			return;
-		}
-
-		if (loadedGenerationId == generationId)
-		{
-			return;
-		}
-
-		loadedGenerationId = generationId;
-		generationCancellation?.Cancel();
-		generationCancellation?.Dispose();
-		generationCancellation = new CancellationTokenSource();
-
-		try
-		{
-			var generation = await GenerationClient.GetAsync(generationId, generationCancellation.Token);
-			boardTitle = generation.Title;
-			projectDescription = generation.Description;
-			context = generation.Context;
-			rewritePrompt = generation.RewritePrompt;
-			selectedTemplate = generation.Template;
-			activeGenerationId = generation.GenerationId;
-			boardDataUrl = null;
-			characters.Clear();
-			foreach (var character in generation.Characters)
-			{
-				var draft = new CharacterDraft { Id = character.Id, Name = character.Name };
-				draft.References.AddRange(character.References.Select(reference =>
-					new UploadedReference(reference.ReferenceId, reference.FileName)));
-				characters.Add(draft);
-			}
-
-			panels.Clear();
-			panels.AddRange(generation.Panels
-				.OrderBy(panel => panel.Number)
-				.Select(panel => new ComicPanelDraft
-				{
-					Prompt = panel.Prompt,
-					CharacterIds = panel.CharacterIds
-				}));
-			await ApplyGenerationAsync(generation, generationCancellation.Token);
-			await HandleGenerationStatusAsync(generation, generationCancellation.Token);
-		}
-		catch (AccessTokenNotAvailableException exception)
-		{
-			exception.Redirect();
-		}
-		catch (GenerationApiException exception)
-		{
-			Notify(NotificationSeverity.Error, "Board could not be opened", exception.Message);
-		}
-		catch (OperationCanceledException)
-		{
-		}
-	}
-
-	private async Task LoadProjectAsync(Guid projectId)
-	{
-		isProjectLoading = true;
-		try
-		{
-			project = await GenerationClient.GetProjectAsync(projectId, CancellationToken.None);
-			projectBoards.AddRange(await GenerationClient.ListBoardsAsync(projectId, CancellationToken.None));
-		}
-		catch (AccessTokenNotAvailableException exception)
-		{
-			exception.Redirect();
-		}
-		catch (GenerationApiException exception)
-		{
-			project = null;
-			projectError = exception.Message;
-		}
-		finally
-		{
-			isProjectLoading = false;
-		}
-	}
-
-	private void ApplyProjectDefaults()
-	{
-		if (project is null)
-		{
-			return;
-		}
-
-		context = project.Context;
-		characters.Clear();
-		foreach (var character in project.Characters)
-		{
-			var draft = new CharacterDraft { Id = character.CharacterId, Name = character.Name };
-			draft.References.AddRange(character.References.Select(reference =>
-				new UploadedReference(reference.ReferenceId, reference.FileName)));
-			characters.Add(draft);
-		}
-	}
-
-	private void ResetBoard()
-	{
-		generationCancellation?.Cancel();
-		generationCancellation?.Dispose();
-		generationCancellation = null;
-		activeGenerationId = null;
-		loadedGenerationId = null;
-		boardTitle = "New comic board";
-		projectDescription = null;
-		context = null;
-		boardDataUrl = null;
-		progressMessage = null;
-		generatedPanelCount = 0;
-		rewritePrompt = true;
-		selectedTemplate = BoardTemplate.Standard;
-		isGenerating = false;
-		isRefreshing = false;
-		isSubmitting = false;
-		characters.Clear();
-		panels.Clear();
-		ResetPanelsForTemplate();
-	}
-
-	private async Task GenerateBoardAsync()
-	{
-		if (!ValidateBoard())
-		{
-			return;
-		}
-
-		generationCancellation?.Cancel();
-		generationCancellation?.Dispose();
-		generationCancellation = new CancellationTokenSource();
-		boardDataUrl = null;
-		generatedPanelCount = 0;
-		isGenerating = true;
-		isSubmitting = true;
-		activeGenerationId = null;
-
-		try
-		{
-			foreach (var panel in panels)
-			{
-				panel.Status = PanelUiStatus.Pending;
-				panel.ImageDataUrl = null;
-				panel.EffectivePrompt = null;
-				panel.Error = null;
-			}
-
-			progressMessage = "Submitting generation";
-			var panelRequests = panels.Select(panel => new PanelRequest(
-				panel.Prompt.Trim(),
-				panel.CharacterIds.ToArray())).ToArray();
-			GenerationResponse generation;
-			if (ProjectId is Guid projectId && project is not null)
-			{
-				if (!string.Equals(project.Context, context?.Trim(), StringComparison.Ordinal))
-				{
-					project = await GenerationClient.UpdateProjectAsync(
-						projectId,
-						new CreateProjectRequest(project.Title, context?.Trim()),
-						generationCancellation.Token);
-				}
-
-				generation = await GenerationClient.CreateBoardAsync(
-					projectId,
-					new CreateBoardRequest(
-						boardTitle.Trim(),
-						projectDescription?.Trim(),
-						rewritePrompt,
-						selectedTemplate,
-						panelRequests),
-					generationCancellation.Token);
-				projectBoards.Insert(0, new GenerationSummaryResponse(
-					generation.GenerationId,
-					generation.Title,
-					generation.CreatedAt,
-					generation.Status,
-					null));
-				loadedGenerationId = generation.GenerationId;
-			}
-			else
-			{
-				var request = new CreateGenerationRequest(
-					boardTitle.Trim(),
-					projectDescription?.Trim(),
-					context?.Trim(),
-					rewritePrompt,
-					selectedTemplate,
-					panelRequests,
-					characters.Select(character => new CharacterRequest(
-						character.Id,
-						character.Name.Trim(),
-						character.References.Select(reference => reference.ReferenceId).ToArray())).ToArray());
-				generation = await GenerationClient.CreateAsync(request, generationCancellation.Token);
-			}
-
-			activeGenerationId = generation.GenerationId;
-			await ApplyGenerationAsync(generation, generationCancellation.Token);
-			await HandleGenerationStatusAsync(generation, generationCancellation.Token);
-			if (ProjectId is Guid activeProjectId)
-			{
-				Navigation.NavigateTo($"/projects/{activeProjectId:D}/boards/{generation.GenerationId:D}");
-			}
-			if (generation.Status is GenerationStatus.Pending or GenerationStatus.Processing)
-			{
-				Notify(NotificationSeverity.Info, "Generation queued", "Use Refresh board to retrieve the latest panels and status.");
-			}
-		}
-		catch (AccessTokenNotAvailableException exception)
-		{
-			exception.Redirect();
-		}
-		catch (GenerationApiException exception)
-		{
-			isGenerating = false;
-			Notify(NotificationSeverity.Error, "Generation failed", exception.Message);
-		}
-		catch (OperationCanceledException)
-		{
-			isGenerating = false;
-		}
-		finally
-		{
-			isSubmitting = false;
-		}
-	}
-
-	private async Task RefreshGenerationAsync()
-	{
-		if (activeGenerationId is not Guid generationId)
-		{
-			return;
-		}
-
-		if (isRefreshing)
-		{
-			refreshRequested = true;
-			return;
-		}
-
-		isRefreshing = true;
-		try
-		{
-			var generation = await GenerationClient.GetAsync(generationId, generationCancellation?.Token ?? CancellationToken.None);
-			await ApplyGenerationAsync(generation, generationCancellation?.Token ?? CancellationToken.None);
-			await HandleGenerationStatusAsync(generation, generationCancellation?.Token ?? CancellationToken.None);
-		}
-		catch (AccessTokenNotAvailableException exception)
-		{
-			exception.Redirect();
-		}
-		catch (GenerationApiException exception)
-		{
-			Notify(NotificationSeverity.Error, "Refresh failed", exception.Message);
-		}
-		catch (OperationCanceledException)
-		{
-		}
-		finally
-		{
-			isRefreshing = false;
-			if (refreshRequested)
-			{
-				refreshRequested = false;
-				await RefreshGenerationAsync();
-			}
-		}
-	}
-
-	private void HandlePanelStarted(PanelNotification notification)
-	{
-		if (!TryGetNotifiedPanel(notification, out var panel))
-		{
-			return;
-		}
-
-		panel.Status = PanelUiStatus.Generating;
-		isGenerating = true;
-		progressMessage = $"Generating panel {notification.PanelNumber} of {panels.Count}";
-		StateHasChanged();
-	}
-
-	private async Task HandlePanelCompletedAsync(PanelNotification notification)
-	{
-		if (!TryGetNotifiedPanel(notification, out var panel))
-		{
-			return;
-		}
-
-		panel.Status = PanelUiStatus.Ready;
-		StateHasChanged();
-
-		var cancellationToken = generationCancellation?.Token ?? CancellationToken.None;
-		for (var attempt = 0; attempt < PanelRefreshAttemptCount; attempt++)
-		{
-			await RefreshGenerationAsync();
-			if (!TryGetNotifiedPanel(notification, out panel) ||
-				panel.ImageDataUrl is not null ||
-				panel.Status == PanelUiStatus.Error)
-			{
-				return;
-			}
-
-			if (attempt < PanelRefreshAttemptCount - 1)
-			{
-				try
-				{
-					await Task.Delay(PanelRefreshRetryDelay, cancellationToken);
-				}
-				catch (OperationCanceledException)
-				{
-					return;
-				}
-			}
-		}
-
-		Notify(
-			NotificationSeverity.Warning,
-			"Panel image delayed",
-			$"Panel {notification.PanelNumber} is ready, but its image is not available yet. Use Refresh board to retry.");
-	}
-
-	private bool TryGetNotifiedPanel(PanelNotification notification, out ComicPanelDraft panel)
-	{
-		if (Guid.TryParse(notification.BoardId, out var boardId) &&
-			boardId == activeGenerationId &&
-			notification.PanelNumber > 0 &&
-			notification.PanelNumber <= panels.Count)
-		{
-			panel = panels[notification.PanelNumber - 1];
-			return true;
-		}
-
-		panel = null!;
-		return false;
-	}
-
-	private async Task HandleGenerationStatusAsync(GenerationResponse generation, CancellationToken cancellationToken)
-	{
-		isGenerating = generation.Status is GenerationStatus.Pending or GenerationStatus.Processing;
-		if (generation.Status == GenerationStatus.Completed)
-		{
-			if (generation.BoardUri is not null && boardDataUrl is null)
-			{
-				boardDataUrl = await GenerationClient.DownloadDataUrlAsync(generation.BoardUri, cancellationToken);
-			}
-
-			var failedPanelCount = generation.Panels.Count(panel => panel.Status == PanelGenerationStatus.Failed);
-			if (failedPanelCount > 0)
-			{
-				Notify(
-					NotificationSeverity.Warning,
-					"Board generated with missing panels",
-					$"{failedPanelCount} panel(s) were blocked by content safety. Review the details below the board.");
-			}
-			else
-			{
-				Notify(NotificationSeverity.Success, "Board ready", "Your comic board was generated successfully.");
-			}
-		}
-		else if (generation.Status == GenerationStatus.Failed)
-		{
-			Notify(NotificationSeverity.Error, "Generation failed", generation.Error ?? "The API could not complete the board.");
-		}
-		else if (generation.Status == GenerationStatus.Canceled)
-		{
-			Notify(NotificationSeverity.Warning, "Generation canceled", "The board generation was canceled by the worker.");
-		}
-	}
-
-	private bool ValidateBoard()
-	{
-		if (string.IsNullOrWhiteSpace(boardTitle))
-		{
-			Notify(NotificationSeverity.Warning, "Board title required", "Enter a title before starting generation.");
-			return false;
-		}
-
-		var emptyPanelIndex = panels.FindIndex(panel => string.IsNullOrWhiteSpace(panel.Prompt));
-		if (emptyPanelIndex >= 0)
-		{
-			Notify(NotificationSeverity.Warning, "Panel prompt required", $"Describe panel {emptyPanelIndex + 1} before starting generation.");
-			return false;
-		}
-
-		var invalidCharacter = ProjectId is null
-			? characters.FirstOrDefault(character =>
-				string.IsNullOrWhiteSpace(character.Name) || character.References.Count == 0)
-			: null;
-		if (invalidCharacter is not null)
-		{
-			Notify(NotificationSeverity.Warning, "Character incomplete", "Every character needs a name and at least one reference image.");
-			return false;
-		}
-
-		return true;
-	}
-
-	private void ChangeTemplate(object value)
-	{
-		if (value is not BoardTemplate template || template == selectedTemplate)
-		{
-			return;
-		}
-
-		selectedTemplate = template;
-		generationCancellation?.Cancel();
-		activeGenerationId = null;
-		boardDataUrl = null;
-		generatedPanelCount = 0;
-		progressMessage = null;
-		ResetPanelsForTemplate();
-	}
-
-	private void ResetPanelsForTemplate()
-	{
-		panels.Clear();
-		panels.AddRange(Enumerable.Range(0, SelectedTemplateDefinition.Slots.Count)
-			.Select(_ => new ComicPanelDraft()));
-	}
-
-	private string PanelSlotStyle(int index)
-	{
-		var slot = DisplayTemplateDefinition.Slots[index];
-		return $"grid-column: {slot.Column + 1} / span {slot.ColumnSpan}; grid-row: {slot.Row + 1} / span {slot.RowSpan};";
-	}
-
-	private void MovePanel(int index, int offset)
-	{
-		var destination = index + offset;
-		if (destination < 0 || destination >= panels.Count)
-		{
-			return;
-		}
-
-		(panels[index], panels[destination]) = (panels[destination], panels[index]);
-		boardDataUrl = null;
-	}
-
-	private void AddCharacter() => characters.Add(new CharacterDraft());
-
-	private void RemoveCharacter(CharacterDraft character)
-	{
-		characters.Remove(character);
-		foreach (var panel in panels)
-		{
-			panel.CharacterIds = panel.CharacterIds.Where(id => id != character.Id).ToArray();
-		}
-	}
-
-	private sealed record TemplateOption(string Name, BoardTemplate Template);
-	private sealed record PanelNotification(string BoardId, int PanelNumber);
-
-	private async Task UploadReferencesAsync(CharacterDraft character, InputFileChangeEventArgs args)
-	{
-		try
-		{
-			foreach (var file in args.GetMultipleFiles(4))
-			{
-				var uploaded = await GenerationClient.UploadReferenceAsync(file, CancellationToken.None);
-				character.References.Add(new UploadedReference(uploaded.ReferenceId, uploaded.FileName));
-			}
-			StateHasChanged();
-		}
-		catch (AccessTokenNotAvailableException exception)
-		{
-			exception.Redirect();
-		}
-		catch (Exception exception)
-		{
-			Notify(NotificationSeverity.Error, "Reference upload failed", exception.Message);
-		}
-	}
-
-	private async Task ApplyGenerationAsync(GenerationResponse generation, CancellationToken cancellationToken)
-	{
-		generatedPanelCount = generation.CompletedPanelCount;
-		progressMessage = generation.Status switch
-		{
-			GenerationStatus.Pending => "Waiting for an available generation worker",
-			GenerationStatus.Processing => $"Generated {generation.CompletedPanelCount} of {generation.PanelCount} panels",
-			GenerationStatus.Completed => "Board assembled",
-			GenerationStatus.Failed => "Generation failed",
-			GenerationStatus.Canceled => "Generation canceled",
-			_ => "Generating board"
-		};
-
-		foreach (var panelStatus in generation.Panels)
-		{
-			var panel = panels[panelStatus.Number - 1];
-			panel.Status = panelStatus.Status switch
-			{
-				PanelGenerationStatus.Processing => PanelUiStatus.Generating,
-				PanelGenerationStatus.Completed => PanelUiStatus.Ready,
-				PanelGenerationStatus.Failed => PanelUiStatus.Error,
-				_ => PanelUiStatus.Pending
-			};
-			panel.EffectivePrompt = panelStatus.EffectivePrompt;
-			panel.Error = panelStatus.Error;
-			if (panel.ImageDataUrl is null && panelStatus.ImageUri is not null)
-			{
-				panel.ImageDataUrl = await GenerationClient.DownloadDataUrlAsync(panelStatus.ImageUri, cancellationToken);
-			}
-		}
-	}
-
-	private void Notify(NotificationSeverity severity, string summary, string detail)
-	{
-		NotificationService.Notify(new NotificationMessage
-		{
-			Severity = severity,
-			Summary = summary,
-			Detail = detail,
-			Duration = 6000
-		});
-	}
-
-	private static string PanelStatusClass(PanelUiStatus status) => status switch
-	{
-		PanelUiStatus.Generating => "is-generating",
-		PanelUiStatus.Ready => "is-ready",
-		PanelUiStatus.Error => "has-error",
-		_ => string.Empty
-	};
-
-	private static string PanelStatusLabel(PanelUiStatus status) => status switch
-	{
-		PanelUiStatus.Generating => "Generating...",
-		PanelUiStatus.Ready => "Ready",
-		PanelUiStatus.Error => "Failed",
-		_ => "Pending"
-	};
-
-	public async ValueTask DisposeAsync()
-	{
-		generationCancellation?.Cancel();
-		generationCancellation?.Dispose();
-		if (notificationConnection is not null)
-		{
-			await notificationConnection.DisposeAsync();
-		}
-	}
-}
+<PageTitle>@(project?.Title ?? "Atelier BD") · MAI Studio</PageTitle>
+<NavigationLock ConfirmExternalNavigation="@HasUnsavedChanges" OnBeforeInternalNavigation="BeforeNavigationAsync" />
+<main>
+    <header class="page-heading workspace-heading">
+        <div><a class="link-btn" href="/projects">← Mes histoires</a><h1>@(project?.Title ?? "Votre prochaine aventure")</h1><p>Votre idée, vos choix. Une planche à la fois.</p></div>
+        <div class="header-actions">
+            <span class="status @(isGenerating ? "working" : "")">@(isGenerating ? "Génération en cours" : HasUnsavedChanges ? "Brouillon non sauvegardé" : activeGenerationId is not null ? "Version sauvegardée" : "Nouvelle planche")</span>
+            @if (boardDataUrl is not null)
+            {
+                <a class="btn" href="@boardDataUrl" download="mai-comic-board.png"><RadzenIcon Icon="download" />Télécharger le PNG</a>
+            }
+        </div>
+    </header>
+    @if (projectError is not null) { <div class="error" role="alert">@projectError</div> }
+    @if (workspaceError is not null) { <div class="error" role="alert">@workspaceError</div> }
+    @if (isProjectLoading || isBoardLoading)
+    {
+        <div class="loading-state" role="status"><RadzenProgressBarCircular ShowValue="false" /><span>Ouverture de votre atelier…</span></div>
+    }
+    else if (projectError is null)
+    {
+        <div class="workspace-layout">
+            <aside class="project-menu" aria-label="Planches du projet">
+                <span class="eyebrow">Le fil de l'histoire</span>
+                <h2>@(project?.Title ?? "Planche libre")</h2>
+                @if (ProjectId is Guid projectId)
+                {
+                    <NavLink class="board-link" href="@($"/projects/{projectId:D}")" Match="NavLinkMatch.All"><RadzenIcon Icon="add" />Nouvelle planche</NavLink>
+                    <nav aria-label="Planches">
+                        @foreach (var board in projectBoards)
+                        {
+                            <NavLink class="board-link" href="@($"/projects/{projectId:D}/boards/{board.GenerationId:D}")" Match="NavLinkMatch.All"><span>@board.Title</span><small>@StatusLabel(board.Status)</small></NavLink>
+                        }
+                    </nav>
+                    @if (projectBoards.Count == 0) { <p class="hint">Votre première planche vous attend.</p> }
+                }
+                else { <p class="hint">Composez une planche libre ou <a href="/new">créez une histoire</a> pour partager vos personnages entre plusieurs planches.</p> }
+            </aside>
+            <div class="studio-workspace">
+                <div class="segments studio-tabs" role="group" aria-label="Étapes de la planche">
+                    <button class="segment" aria-pressed="@(activeTab == StudioTab.Scenes ? "true" : "false")" @onclick="() => activeTab = StudioTab.Scenes">1. Les scènes</button>
+                    <button class="segment" aria-pressed="@(activeTab == StudioTab.Characters ? "true" : "false")" @onclick="() => activeTab = StudioTab.Characters">2. Les personnages</button>
+                    <button class="segment" aria-pressed="@(activeTab == StudioTab.Preview ? "true" : "false")" @onclick="() => activeTab = StudioTab.Preview">3. La planche</button>
+                </div>
+                @if (activeTab == StudioTab.Characters)
+                {
+                    <section class="surface">
+                        <span class="eyebrow">Le casting de votre histoire</span><h2>Des héros qu'on reconnaît.</h2>
+                        <p class="hint">Les personnages et références sont communs à toutes les planches du projet. Leur nom et leurs images sont sauvegardés avec les boutons ci-dessous.</p>
+                        <div class="character-grid">
+                            @foreach (var character in characters)
+                            {
+                                <article class="character-card" @key="character.Id">
+                                    <label class="field" for="@($"character-{character.Id}")">Nom du personnage</label>
+                                    <input class="text" id="@($"character-{character.Id}")" @bind="character.Name" @bind:event="oninput" disabled="@EditingLocked" maxlength="200" />
+                                    <div class="row-actions" style="margin-top:12px">
+                                        @if (ProjectId is not null) { <button class="btn" @onclick="() => SaveCharacterAsync(character)" disabled="@EditingLocked">Enregistrer le nom</button> }
+                                        <button class="btn quiet" @onclick="() => RemoveCharacterAsync(character)" disabled="@EditingLocked">Retirer</button>
+                                    </div>
+                                    <label class="field" for="@($"reference-{character.Id}")">Images de référence (PNG ou JPEG)</label>
+                                    <InputFile id="@($"reference-{character.Id}")" OnChange="args => UploadReferencesAsync(character, args)" accept="image/png,image/jpeg" multiple disabled="@EditingLocked" />
+                                    <p class="hint">4 fichiers par envoi · 10 Mo maximum par image. Envoi privé via l'API.</p>
+                                    <ul class="reference-list">@foreach (var reference in character.References) { <li>@reference.FileName</li> }</ul>
+                                </article>
+                            }
+                        </div>
+                        <label class="field" for="new-character">Un nouveau personnage</label>
+                        <div class="row-actions"><input class="text" id="new-character" @bind="newCharacterName" placeholder="Son petit nom" maxlength="200" disabled="@EditingLocked" style="max-width:240px" /><button class="btn" @onclick="AddCharacterAsync" disabled="@EditingLocked"><RadzenIcon Icon="person_add" />Ajouter</button></div>
+                        @if (isCharacterSaving) { <p role="status" class="hint">Enregistrement du personnage…</p> }
+                    </section>
+                }
+                else
+                {
+                    <div class="editor-layout">
+                        <section class="surface">
+                            @if (activeTab == StudioTab.Scenes)
+                            {
+                                <span class="eyebrow">Le storyboard</span><h2>Chaque case raconte quelque chose.</h2>
+                                <details open="@(panels.All(p => string.IsNullOrWhiteSpace(p.Prompt)))">
+                                    <summary>Partir d'une idée</summary>
+                                    <label class="field" for="story-description">Racontez l'aventure</label>
+                                    <textarea class="text" id="story-description" @bind="storyDescription" rows="4" disabled="@EditingLocked" placeholder="Personnages, lieu, ton, rebondissements…"></textarea>
+                                    <button class="btn" style="margin-top:12px" @onclick="CreateScaffoldAsync" disabled="@EditingLocked"><RadzenIcon Icon="auto_fix_high" />@(isScaffolding ? "MAI imagine vos scènes…" : "Proposer mes scènes")</button>
+                                </details>
+                                <label class="field" for="board-title">Titre de la planche</label><input class="text" id="board-title" @bind="boardTitle" @bind:event="oninput" disabled="@EditingLocked" />
+                                <div class="panel-picks" role="group" aria-label="Choisir une case">
+                                    @for (var index = 0; index < panels.Count; index++)
+                                    {
+                                        var panelIndex = index;
+                                        <button class="panel-pick" aria-pressed="@(selectedPanel == panelIndex ? "true" : "false")" @onclick="() => selectedPanel = panelIndex">@((index + 1).ToString("D2"))</button>
+                                    }
+                                </div>
+                                @if (panels.Count > 0)
+                                {
+                                    var panel = panels[selectedPanel];
+                                    <label class="field" for="panel-prompt">Que se passe-t-il dans la case @(selectedPanel + 1) ?</label>
+                                    <textarea @key="panel.Id" class="text" id="panel-prompt" @bind="panel.Prompt" @bind:event="oninput" rows="5" disabled="@EditingLocked" placeholder="Cadrage, action, décor, dialogue…"></textarea>
+                                    @if (characters.Count > 0)
+                                    {
+                                        <label class="field" for="panel-characters">Personnages présents</label>
+                                        <RadzenDropDown @bind-Value="panel.CharacterIds" TValue="IEnumerable<string>" Data="characters" TextProperty="Name" ValueProperty="Id" Multiple="true" Name="panel-characters" aria-label="Personnages présents dans la case" Disabled="EditingLocked" Style="width:100%" />
+                                    }
+                                    <div class="row-actions" style="margin-top:16px"><button class="btn quiet" disabled="@(EditingLocked || selectedPanel == 0)" @onclick="() => MovePanel(-1)">← Avant</button><button class="btn quiet" disabled="@(EditingLocked || selectedPanel == panels.Count - 1)" @onclick="() => MovePanel(1)">Après →</button></div>
+                                }
+                                <details><summary>Direction artistique & réglages</summary>
+                                    <label class="field" for="description">Résumé du projet</label><textarea class="text" id="description" @bind="projectDescription" rows="3" disabled="@EditingLocked"></textarea>
+                                    <label class="field" for="context">Ambiance commune</label><textarea class="text" id="context" @bind="context" rows="3" disabled="@EditingLocked"></textarea>
+                                    <label class="field" for="board-template">Mise en page</label>
+                                    <select class="text" id="board-template" value="@selectedTemplate" @onchange="ChangeTemplateAsync" disabled="@EditingLocked"><option value="@BoardTemplate.Standard">Classique · 6 cases</option><option value="@BoardTemplate.Storyline">Strip · 3 cases</option><option value="@BoardTemplate.Dynamic1">Dynamique · 5 cases</option><option value="@BoardTemplate.Dynamic2">Ouverture cinéma · 5 cases</option></select>
+                                    <label class="checkline"><input type="checkbox" @bind="rewritePrompt" disabled="@EditingLocked" />Enrichir les consignes avec MAI</label>
+                                </details>
+                            }
+                            else
+                            {
+                                <span class="eyebrow">Le grand aperçu</span><h2>@(boardDataUrl is not null ? "Votre aventure prend forme." : "Tout commence par vos scènes.")</h2>
+                                <p class="hint">Les images apparaissent case par case. Vous pouvez revenir aux scènes pour préparer une nouvelle version.</p>
+                            }
+                            <div class="generation-box">
+                                @if (isGenerating)
+                                {
+                                    <div role="status"><strong>Votre planche prend vie…</strong><p class="hint">@progressMessage</p><progress value="@generatedPanelCount" max="@panels.Count" aria-label="Cases illustrées"></progress><p class="hint">Vous pouvez quitter l'atelier et retrouver cette planche dans votre projet.</p></div>
+                                }
+                                else
+                                {
+                                    <strong>@(activeGenerationId is null ? "Prêt pour le premier coup de crayon ?" : "Envie d'une nouvelle version ?")</strong>
+                                    <button class="btn primary" @onclick="GenerateBoardAsync" disabled="@EditingLocked"><RadzenIcon Icon="auto_awesome" />@(isSubmitting ? "Envoi…" : activeGenerationId is null ? "Illustrer ma planche" : "Générer une nouvelle version")</button>
+                                    <p class="hint">Les scènes sont sauvegardées au lancement. Une nouvelle génération ne remplace pas les versions précédentes du projet.</p>
+                                }
+                                @if (activeGenerationId is not null)
+                                {
+                                    <button class="btn quiet" @onclick="RefreshGenerationAsync" disabled="@isRefreshing"><RadzenIcon Icon="refresh" />@(isRefreshing ? "Actualisation…" : "Actualiser la planche")</button>
+                                }
+                            </div>
+                        </section>
+                        <section aria-label="Aperçu de la planche">
+                            @if (boardDataUrl is not null && activeTab == StudioTab.Preview)
+                            {
+                                <div class="board-frame"><img src="@boardDataUrl" alt="Planche de bande dessinée générée" /></div>
+                            }
+                            else
+                            {
+                                <div class="board-draft"><div class="board-title-preview">@boardTitle</div><div class="board-grid" style="@BoardGridStyle">
+                                    @for (var index = 0; index < panels.Count; index++)
+                                    {
+                                        var panelIndex = index;
+                                        var panel = panels[index];
+                                        <button class="panel-preview @PanelStatusClass(panel.Status)" style="@PanelSlotStyle(index)" aria-label="@($"Modifier la case {index + 1} : {PanelStatusLabel(panel.Status)}")" aria-pressed="@(selectedPanel == index ? "true" : "false")" @onclick="() => SelectPanel(panelIndex)">
+                                            <span class="panel-number">@(index + 1)</span>
+                                            @if (panel.ImageDataUrl is not null) { <img src="@panel.ImageDataUrl" alt="@($"Case {index + 1} générée")" /> }
+                                            else { <RadzenIcon Icon="@(panel.Status == PanelUiStatus.Generating ? "hourglass_top" : "image")" /><small>@PanelStatusLabel(panel.Status)</small> }
+                                        </button>
+                                    }
+                                </div></div>
+                            }
+                            <p class="hint" style="text-align:center">APERÇU · @panels.Count cases · @(boardDataUrl is not null && activeTab == StudioTab.Preview ? "Revenez aux scènes pour préparer une nouvelle version." : "Cliquez sur une case pour la modifier.")</p>
+                            @if (panels.Any(panel => panel.Status == PanelUiStatus.Error))
+                            {
+                                <div class="error" role="alert"><strong>Certaines images n'ont pas pu être créées.</strong><ul>
+                                    @for (var index = 0; index < panels.Count; index++) { if (panels[index].Status == PanelUiStatus.Error) { <li>Case @(index + 1) : @panels[index].Error</li> } }
+                                </ul><p>Les autres cases restent disponibles. Modifiez les scènes concernées puis générez une nouvelle version de la planche.</p></div>
+                            }
+                            @if (panels.Any(p => !string.IsNullOrWhiteSpace(p.EffectivePrompt)))
+                            {
+                                <details><summary>Consignes finales envoyées au modèle</summary><ol>@foreach (var panel in panels) { <li>@panel.EffectivePrompt</li> }</ol></details>
+                            }
+                        </section>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</main>

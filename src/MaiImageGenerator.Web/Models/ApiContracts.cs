@@ -63,6 +63,8 @@ public sealed record ProjectCharacterResponse(
     string Name,
     IReadOnlyList<CharacterReferenceResponse> References);
 
+public sealed record ProjectCharacterRequest(string Name);
+
 public sealed record CreateBoardRequest(
     string Title,
     string? Description,

@@ -10,6 +10,16 @@
 | Book plan generation job | Consumes only the book-plan queue, generates the structured chapter plan, and updates durable status. |
 | Shared library | Defines Cosmos entities, configuration types, database context, and the versioned queue message contract. |
 
+## Frontend workshop
+
+The authenticated root route is the creative workshop, with a project library at `/projects` and a three-step story wizard at `/new`. The wizard creates a real owner-scoped project. Comic scaffolding is prepared before project creation and passed to the board editor through a scoped, in-memory draft store; it is not a persisted board until generation is submitted. Book creation submits the existing durable plan job. A failed plan submission can be retried from the wizard without creating a second project.
+
+The comic workspace retains project and board routes, displays one selected scene beside the template-aware preview, and manages shared characters and reference uploads through the existing authenticated project endpoints. Generated versions, per-panel SignalR progress, bounded status refresh retries, partial failures, final prompt inspection, and PNG download remain available. `/boards/new` preserves free-form generation; legacy `/?generationId=...` links redirect there.
+
+Books use a chapter navigator and a single active editor, retaining explicit save, plan polling, generate-missing coordination, independent prose/image generation and error states. Navigation guards warn about unsaved edits. Board and book-plan generation are durable background operations; chapter writing and illustration still require keeping the page open while API operations complete.
+
+The shared shell uses CSS theme tokens for native controls and Radzen components. Light mode uses pale blue and slate-grey on cool paper surfaces; dark mode uses electric blue, violet and navy. Each mode selects the existing matching comic background. A small local-storage preference contains only the chosen theme and defaults to the browser's color scheme. There are no new packages, public artifact URLs, or authentication changes. Library illustrations identify the format and are decorative, not generated cover thumbnails. See [UX design](ux-design.md) for the design rationale and the original interactive prototype.
+
 ## Azure topology
 
 ```mermaid

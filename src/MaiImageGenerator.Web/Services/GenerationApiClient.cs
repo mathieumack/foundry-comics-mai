@@ -54,6 +54,49 @@ public sealed class GenerationApiClient(HttpClient httpClient)
             ?? throw new GenerationApiException("The API returned no book plan.");
     }
 
+    public async Task<ProjectCharacterResponse> AddCharacterAsync(
+        Guid projectId, string name, CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            $"api/projects/{projectId:D}/characters", new ProjectCharacterRequest(name), cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ProjectCharacterResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no character.");
+    }
+
+    public async Task<ProjectCharacterResponse> UpdateCharacterAsync(
+        Guid projectId, string characterId, string name, CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.PutAsJsonAsync(
+            $"api/projects/{projectId:D}/characters/{Uri.EscapeDataString(characterId)}",
+            new ProjectCharacterRequest(name), cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ProjectCharacterResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no character.");
+    }
+
+    public async Task DeleteCharacterAsync(Guid projectId, string characterId, CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.DeleteAsync(
+            $"api/projects/{projectId:D}/characters/{Uri.EscapeDataString(characterId)}", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task<ReferenceUploadResponse> UploadCharacterReferenceAsync(
+        Guid projectId, string characterId, IBrowserFile file, CancellationToken cancellationToken)
+    {
+        using var form = new MultipartFormDataContent();
+        await using var source = file.OpenReadStream(10 * 1024 * 1024, cancellationToken);
+        using var content = new StreamContent(source);
+        content.Headers.ContentType = new(file.ContentType);
+        form.Add(content, "file", file.Name);
+        using var response = await httpClient.PostAsync(
+            $"api/projects/{projectId:D}/characters/{Uri.EscapeDataString(characterId)}/references", form, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ReferenceUploadResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no reference metadata.");
+    }
+
     public async Task<BookPlanResponse> GenerateBookPlanAsync(
         Guid projectId,
         GenerateBookPlanRequest request,

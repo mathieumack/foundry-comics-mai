@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MAI Studio — Des idées plein les pages</title>
+  <script>
+    (() => {
+      const param = new URLSearchParams(window.location.search).get("scoutTheme");
+      const theme = param === "light" || param === "dark"
+        ? param
+        : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
+  <style>
+    :root {
+      color-scheme: light;
+      --cp-bg: #edf3f7;
+      --cp-bg-elevated: #f7fafc;
+      --cp-surface: #ffffff;
+      --cp-surface-soft: #e8f0f6;
+      --cp-border: #c8d7e2;
+      --cp-border-strong: #7b94a7;
+      --cp-text: #203344;
+      --cp-text-muted: #506679;
+      --cp-text-soft: #5f7282;
+      --cp-accent: #22638c;
+      --cp-accent-hover: #174f75;
+      --cp-accent-soft: #e2f1fb;
+      --cp-accent-fg: #173e59;
+      --cp-button: #b9dff7;
+      --cp-button-hover: #a3d2f0;
+      --cp-button-border: #76acd0;
+      --cp-secondary: #526f85;
+      --cp-secondary-soft: #e9eff4;
+      --cp-secondary-border: #a4b8c7;
+      --cp-success: #16743a;
+      --cp-danger: #bd2222;
+      --cp-warning: #906000;
+      --cp-link: #0078d4;
+      --cp-shadow: 0 18px 48px rgba(32, 51, 68, 0.12);
+      --cp-overlay: rgba(255, 255, 255, 0.8);
+      --cp-panel: rgba(247, 250, 252, 0.90);
+      --cp-panel-strong: rgba(247, 250, 252, 0.97);
+      --cp-sheen: rgba(255, 255, 255, 0.55);
+      --cp-highlight: rgba(62, 132, 181, 0.15);
+    }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --cp-bg: #080f20;
+      --cp-bg-elevated: #101b32;
+      --cp-surface: #111e36;
+      --cp-surface-soft: #182845;
+      --cp-border: #304669;
+      --cp-border-strong: #57769f;
+      --cp-text: #eaf2ff;
+      --cp-text-muted: #b1c2dd;
+      --cp-text-soft: #a4b6d3;
+      --cp-accent: #72baff;
+      --cp-accent-hover: #a5d5ff;
+      --cp-accent-soft: #162f51;
+      --cp-accent-fg: #ffffff;
+      --cp-button: #225de0;
+      --cp-button-hover: #1c50c2;
+      --cp-button-border: #729dff;
+      --cp-secondary: #baa5ff;
+      --cp-secondary-soft: #282044;
+      --cp-secondary-border: #7762b3;
+      --cp-success: #4ade80;
+      --cp-danger: #f87171;
+      --cp-warning: #fbbf24;
+      --cp-link: #4da6ff;
+      --cp-shadow: 0 18px 48px rgba(3, 8, 20, 0.40);
+      --cp-overlay: rgba(5, 10, 24, 0.88);
+      --cp-panel: rgba(16, 27, 50, 0.90);
+      --cp-panel-strong: rgba(16, 27, 50, 0.97);
+      --cp-sheen: rgba(255, 255, 255, 0.04);
+      --cp-highlight: rgba(126, 96, 245, 0.18);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--cp-bg); color: var(--cp-text); font: 15px/1.55 "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif; }
+    button, input, textarea, select { font: inherit; }
+    button, a, input, textarea, select, summary { -webkit-tap-highlight-color: var(--cp-highlight); }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    :focus-visible { outline: 3px solid var(--cp-accent); outline-offset: 4px; }
+    h1, h2, h3, p { margin: 0; }
+    h1, h2, h3 { line-height: 1.15; overflow-wrap: anywhere; }
+    a { color: var(--cp-accent); }
+    svg { display: block; }
+    [hidden] { display: none !important; }
+    .symbols { position: absolute; width: 0; height: 0; overflow: hidden; }
+    .icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+    .skip { position: fixed; top: -100px; left: 16px; z-index: 100; background: var(--cp-surface); padding: 12px; }
+    .skip:focus { top: 16px; }
+    .sidebar { width: 232px; position: fixed; inset: 0 auto 0 0; padding: 32px 20px 20px; border-right: 1px solid var(--cp-border); background: var(--cp-bg-elevated); display: flex; flex-direction: column; z-index: 10; }
+    .brand { display: flex; align-items: center; gap: 12px; font-size: 22px; letter-spacing: -1px; font-weight: 800; }
+    .brand-mark { background: var(--cp-button); color: var(--cp-accent-fg); width: 36px; height: 36px; border-radius: 10px 10px 2px 10px; display: grid; place-items: center; font-size: 24px; transform: rotate(-6deg); }
+    .brand small { font-size: 10px; display: block; color: var(--cp-text-soft); font-weight: 600; letter-spacing: 2px; }
+    .sidebar .primary { margin: 36px 0 28px; }
+    .nav-caption, .eyebrow { text-transform: uppercase; letter-spacing: 2px; font-size: 10px; font-weight: 750; color: var(--cp-text-muted); }
+    .nav-caption { padding: 0 12px 12px; }
+    .nav-item { display: flex; gap: 12px; align-items: center; padding: 12px; width: 100%; text-align: left; border: 0; border-radius: 10px; background: none; color: var(--cp-text-muted); font-weight: 600; margin-bottom: 4px; }
+    .nav-item:hover { background: var(--cp-surface-soft); color: var(--cp-text); }
+    .nav-item[aria-current="page"] { color: var(--cp-accent); background: var(--cp-accent-soft); }
+    .nav-count { margin-left: auto; font-size: 11px; border: 1px solid var(--cp-border); padding: 0 6px; border-radius: 5px; }
+    .sidebar-bottom { margin-top: auto; }
+    .tip { padding: 16px; border: 1px dashed var(--cp-border-strong); border-radius: 12px; margin-bottom: 20px; }
+    .tip strong { display: block; font-size: 13px; margin: 8px 0; }
+    .tip p { font-size: 12px; color: var(--cp-text-muted); }
+    .profile { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--cp-border); padding-top: 20px; font-size: 12px; }
+    .avatar { width: 36px; height: 36px; background: var(--cp-highlight); color: var(--cp-accent); display: grid; place-items: center; border-radius: 50%; font-weight: 700; }
+    .muted { color: var(--cp-text-muted); }
+    .small { font-size: 12px; }
+    .app { margin-left: 232px; }
+    .topbar { min-height: 76px; padding: 16px 44px; border-bottom: 1px solid var(--cp-border); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .breadcrumb { color: var(--cp-text-muted); font-size: 12px; }
+    .breadcrumb strong { color: var(--cp-text); font-weight: 600; }
+    .top-actions, .row { display: flex; align-items: center; gap: 12px; }
+    .demo-badge { border: 1px solid var(--cp-border-strong); border-radius: 6px; padding: 3px 8px; text-transform: uppercase; font-size: 9px; letter-spacing: 1px; font-weight: 700; }
+    .btn { border: 1px solid var(--cp-border); background: var(--cp-surface); color: var(--cp-text); border-radius: 10px; padding: 10px 16px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 650; font-size: 13px; text-decoration: none; }
+    .btn:hover { border-color: var(--cp-border-strong); background: var(--cp-bg-elevated); }
+    .primary { background: var(--cp-button); color: var(--cp-accent-fg); border-color: var(--cp-button-border); }
+    .primary:hover { background: var(--cp-button-hover); color: var(--cp-accent-fg); border-color: var(--cp-accent); }
+    .quiet { border-color: var(--cp-border); background: var(--cp-bg-elevated); }
+    .icon-btn { width: 38px; height: 38px; padding: 8px; }
+    .link-btn { border: 0; background: none; color: var(--cp-accent); font-weight: 650; padding: 4px 0; font-size: 13px; }
+    main { padding: 36px 44px 24px; max-width: 1560px; margin: auto; }
+    .page-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; margin-bottom: 28px; }
+    .page-heading h1 { font-size: 30px; letter-spacing: -1px; font-weight: 750; margin-bottom: 8px; }
+    .page-heading p { color: var(--cp-text-muted); font-size: 13px; }
+    .edition { font: 11px Consolas, "Courier New", Courier, monospace; color: var(--cp-text-muted); white-space: nowrap; }
+    .hero { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--cp-border); border-radius: 16px; background: var(--cp-bg-elevated); overflow: hidden; min-height: 330px; margin-bottom: 36px; }
+    .hero-copy { padding: 36px; position: relative; z-index: 1; }
+    .hero-copy .eyebrow { color: var(--cp-accent); }
+    .hero h2 { font-size: clamp(30px, 3.2vw, 49px); letter-spacing: -2px; margin: 16px 0; font-weight: 800; line-height: 1.04; }
+    .hero h2 em { font-family: Georgia, serif; font-weight: 500; color: var(--cp-accent); }
+    .hero p { color: var(--cp-text-muted); max-width: 320px; font-size: 13px; margin-bottom: 24px; }
+    .hero-footnote { display: block; color: var(--cp-text-soft); font-size: 10px; margin-top: 12px; }
+    .hero-art { position: relative; display: grid; place-items: center; background: radial-gradient(var(--cp-border) 1px, var(--cp-bg-elevated) 1px); background-size: 12px 12px; min-height: 300px; padding: 24px 32px; overflow: hidden; }
+    .mini-board { width: 270px; background: var(--cp-surface); padding: 12px; border: 2px solid var(--cp-text); transform: rotate(7deg); box-shadow: 8px 8px 0 var(--cp-highlight); }
+    .mini-board strong { display: block; font-size: 15px; letter-spacing: -1px; text-transform: uppercase; text-align: center; margin-bottom: 8px; }
+    .mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .mini-grid svg { width: 100%; border: 1px solid var(--cp-text); background: var(--cp-bg); }
+    .mini-grid svg:first-child { grid-column: span 2; height: 120px; }
+    .sticker { position: absolute; left: 10%; bottom: 32px; padding: 10px 16px; background: var(--cp-secondary-soft); color: var(--cp-secondary); font-size: 12px; font-weight: 800; transform: rotate(-10deg); border-radius: 50%; border: 3px solid var(--cp-secondary-border); }
+    .orbit { position: absolute; right: 20px; top: 14px; font: italic 48px Georgia, serif; color: var(--cp-secondary); transform: rotate(12deg); }
+    .section-heading { display: flex; justify-content: space-between; align-items: center; margin: 0 0 20px; gap: 16px; }
+    .section-heading h2 { font-size: 20px; letter-spacing: -.5px; }
+    .filters { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+    .segments { display: inline-flex; gap: 4px; border-bottom: 1px solid var(--cp-border); }
+    .segment { padding: 10px 14px; border: 0; border-bottom: 2px solid var(--cp-bg); background: none; color: var(--cp-text-muted); font-size: 12px; font-weight: 650; }
+    .segment[aria-pressed="true"] { color: var(--cp-accent); border-bottom-color: var(--cp-accent); }
+    .search { display: flex; align-items: center; gap: 8px; background: var(--cp-surface); border: 1px solid var(--cp-border); padding: 8px 12px; border-radius: 10px; color: var(--cp-text-muted); }
+    .search input { border: 0; background: none; color: var(--cp-text); width: 165px; min-width: 0; font-size: 12px; }
+    .projects-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+    .project-card { border-radius: 16px; overflow: hidden; background: var(--cp-surface); border: 1px solid var(--cp-border); transition: transform .2s, border-color .2s; width: 100%; padding: 0; text-align: left; color: var(--cp-text); }
+    .project-card:hover { transform: translateY(-4px); border-color: var(--cp-accent); }
+    .cover { height: 180px; position: relative; background: var(--cp-bg-elevated); overflow: hidden; }
+    .cover > svg { width: 100%; height: 100%; }
+    .cover-label { position: absolute; left: 12px; top: 12px; background: var(--cp-surface); padding: 3px 8px; border-radius: 5px; font-size: 9px; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; }
+    .cover-book { margin: 18px auto; width: 104px; height: 146px; background: var(--cp-secondary-soft); color: var(--cp-secondary); transform: rotate(-8deg); border-left: 6px solid var(--cp-secondary-border); padding: 12px 10px; box-shadow: 5px 5px 0 var(--cp-border); }
+    .cover-book small { display: block; font-size: 7px; letter-spacing: 2px; text-transform: uppercase; }
+    .cover-book strong { font: 19px/1.05 Georgia, serif; display: block; margin-top: 20px; }
+    .cover-book svg { width: 24px; margin-top: 12px; }
+    .card-copy { padding: 18px; }
+    .card-copy h3 { font-size: 16px; margin: 8px 0 12px; }
+    .card-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--cp-text-muted); gap: 8px; }
+    .status { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; color: var(--cp-text-muted); }
+    .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--cp-text-muted); }
+    .status.ready::before { background: var(--cp-success); }
+    .status.working::before { background: var(--cp-warning); }
+    .idea-strip { margin-top: 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; border: 1px dashed var(--cp-border-strong); border-radius: 12px; }
+    .idea-strip p { font-size: 12px; color: var(--cp-text-muted); margin-top: 4px; }
+    .footer { display: flex; justify-content: space-between; gap: 16px; margin-top: 36px; padding-top: 16px; border-top: 1px solid var(--cp-border); font-size: 10px; color: var(--cp-text-muted); }
+    .empty { padding: 44px 20px; text-align: center; border: 1px dashed var(--cp-border-strong); border-radius: 16px; }
+    .empty p { margin: 12px 0 20px; color: var(--cp-text-muted); }
+    .workspace-heading { align-items: center; }
+    .workspace-layout { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 24px; }
+    .project-tree { background: var(--cp-bg-elevated); border: 1px solid var(--cp-border); border-radius: 12px; padding: 16px; align-self: start; }
+    .project-tree button, .project-tree .tree-current { width: 100%; margin-top: 12px; text-align: left; }
+    .tree-current { background: var(--cp-accent-soft); border-color: var(--cp-accent); color: var(--cp-accent); }
+    .project-tree p { font-size: 11px; color: var(--cp-text-muted); margin-top: 16px; }
+    .studio { min-width: 0; }
+    .studio-tabs { margin-bottom: 20px; }
+    .editor-layout { display: grid; grid-template-columns: minmax(210px, .85fr) minmax(240px, 1fr); gap: 24px; align-items: start; }
+    .surface { background: var(--cp-surface); border: 1px solid var(--cp-border); border-radius: 16px; padding: 24px; }
+    .surface h2 { font-size: 18px; margin-bottom: 8px; }
+    label.field { display: block; font-size: 12px; font-weight: 650; margin: 16px 0 6px; }
+    input.text, textarea, select { width: 100%; border: 1px solid var(--cp-border-strong); border-radius: 10px; background: var(--cp-bg-elevated); color: var(--cp-text); padding: 10px 12px; }
+    textarea { resize: vertical; min-height: 90px; line-height: 1.6; font-size: 13px; }
+    input[type="file"] { max-width: 100%; font-size: 12px; }
+    .panel-picks { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0; }
+    .panel-pick { border: 1px solid var(--cp-border); background: var(--cp-bg-elevated); border-radius: 8px; color: var(--cp-text); padding: 7px 11px; }
+    .panel-pick[aria-pressed="true"] { background: var(--cp-accent-soft); border-color: var(--cp-accent); color: var(--cp-accent); }
+    .hint { font-size: 11px; color: var(--cp-text-muted); margin-top: 8px; }
+    details { border-top: 1px solid var(--cp-border); padding-top: 16px; margin-top: 20px; font-size: 12px; }
+    summary { cursor: pointer; font-weight: 650; }
+    .board-preview { border: 1px solid var(--cp-border); background: var(--cp-surface); padding: 16px; border-radius: 4px; }
+    .board-preview h2 { text-align: center; text-transform: uppercase; font-size: 17px; margin: 4px 0 12px; letter-spacing: -1px; overflow-wrap: anywhere; }
+    .board-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .board-grid.storyline { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .board-grid.dynamic1 .board-cell:nth-child(3), .board-grid.dynamic2 .board-cell:first-child { grid-column: span 2; }
+    .board-cell { position: relative; min-height: 110px; background: var(--cp-bg); border: 1px solid var(--cp-text); overflow: hidden; padding: 0; color: var(--cp-text); }
+    .board-cell svg { width: 100%; height: 110px; }
+    .board-cell[aria-pressed="true"] { outline: 3px solid var(--cp-accent); outline-offset: -3px; }
+    .cell-num { position: absolute; top: 4px; left: 4px; background: var(--cp-surface); padding: 0 5px; font-size: 9px; border-radius: 3px; }
+    .cell-draft { display: grid; place-items: center; min-height: 110px; font-size: 11px; color: var(--cp-text-muted); padding: 20px; }
+    .preview-caption { margin-top: 12px; text-align: center; font-size: 10px; color: var(--cp-text-muted); }
+    .generation-box { border: 1px solid var(--cp-border); background: var(--cp-bg-elevated); border-radius: 12px; padding: 16px; margin-top: 20px; }
+    .generation-box progress { width: 100%; accent-color: var(--cp-accent); height: 8px; }
+    .generation-box .btn { margin-top: 12px; }
+    .error { color: var(--cp-danger); font-size: 12px; margin: 12px 0; }
+    .checkline { display: flex; align-items: center; gap: 8px; margin: 12px 0; font-size: 12px; }
+    input[type="checkbox"] { accent-color: var(--cp-accent); }
+    .character-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    .character-card { display: flex; gap: 16px; align-items: center; padding: 20px; background: var(--cp-surface); border: 1px solid var(--cp-border); border-radius: 12px; }
+    .character-card > div { min-width: 0; overflow-wrap: anywhere; }
+    .character-card .avatar { width: 52px; height: 52px; font-size: 22px; flex-shrink: 0; }
+    .book-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 24px; }
+    .chapter-list button { display: block; width: 100%; margin-top: 10px; text-align: left; justify-content: flex-start; }
+    .reading { font: 17px/1.9 Georgia, serif; margin-top: 20px; white-space: pre-wrap; }
+    .chapter-art { width: 100%; height: 220px; border: 1px solid var(--cp-border); margin-top: 16px; background: var(--cp-bg); }
+    dialog { max-width: 680px; width: calc(100% - 32px); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--cp-border); border-radius: 16px; color: var(--cp-text); background: var(--cp-bg-elevated); box-shadow: var(--cp-shadow); }
+    dialog::backdrop { background: var(--cp-overlay); }
+    .dialog-header { padding: 24px 28px 20px; display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid var(--cp-border); gap: 16px; }
+    .dialog-header h2 { font-size: 24px; margin-top: 8px; letter-spacing: -.5px; }
+    .dialog-body { padding: 24px 28px; }
+    .dialog-footer { padding: 20px 28px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--cp-border); gap: 12px; }
+    .steps { display: flex; gap: 24px; margin-bottom: 28px; list-style: none; padding: 0; font-size: 11px; color: var(--cp-text-muted); }
+    .steps li { display: flex; align-items: center; gap: 8px; }
+    .steps b { border-radius: 50%; width: 24px; height: 24px; border: 1px solid var(--cp-border-strong); display: grid; place-items: center; }
+    .steps .active { color: var(--cp-accent); }
+    .steps .active b { background: var(--cp-button); color: var(--cp-accent-fg); border-color: var(--cp-button-border); }
+    .choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0 24px; }
+    .choice { border: 1px solid var(--cp-border); border-radius: 12px; padding: 16px; background: var(--cp-surface); color: var(--cp-text); text-align: left; }
+    .choice[aria-pressed="true"] { border-color: var(--cp-accent); background: var(--cp-accent-soft); }
+    .choice strong { display: block; margin: 10px 0 4px; font-size: 14px; }
+    .choice small { color: var(--cp-text-muted); font-size: 11px; }
+    .styles { grid-template-columns: repeat(3, 1fr); }
+    .style-art { height: 68px; width: 100%; border: 1px solid var(--cp-border); background: var(--cp-bg); }
+    .style-art.ink { filter: grayscale(1); }
+    .style-art.soft { opacity: .65; }
+    .summary-box { padding: 20px; background: var(--cp-surface); border-radius: 12px; border: 1px solid var(--cp-border); margin: 16px 0; }
+    .summary-box h3 { margin-bottom: 12px; }
+    .summary-box p { font-size: 13px; }
+    .toast { position: fixed; bottom: 24px; right: 24px; z-index: 30; padding: 16px 20px; border-radius: 12px; background: var(--cp-text); color: var(--cp-bg); max-width: min(420px, calc(100% - 32px)); box-shadow: var(--cp-shadow); font-size: 13px; }
+    .mobile-brand { display: none; }
+    @media (min-width: 1500px) { .cover { height: 220px; } }
+    @media (max-width: 1150px) {
+      .sidebar { width: 200px; padding-inline: 16px; }
+      .app { margin-left: 200px; }
+      main { padding: 28px; }
+      .topbar { padding-inline: 28px; }
+      .hero-copy { padding: 28px; }
+      .hero-art { padding-inline: 16px; }
+      .mini-board { width: 225px; }
+      .workspace-layout { grid-template-columns: 1fr; }
+      .project-tree { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+      .project-tree button, .project-tree .tree-current { width: auto; margin: 0; }
+      .project-tree p { display: none; }
+    }
+    @media (max-width: 800px) {
+      .sidebar { width: 76px; padding: 24px 12px; }
+      .sidebar .brand { justify-content: center; }
+      .brand-text, .sidebar .primary, .nav-label, .nav-count, .nav-caption, .sidebar-bottom { display: none; }
+      .sidebar nav { margin-top: 36px; }
+      .nav-item { justify-content: center; padding: 12px; }
+      .app { margin-left: 76px; }
+      .hero { grid-template-columns: 1fr 1fr; }
+      .hero h2 { font-size: 34px; }
+      .hero-art .mini-board { width: 180px; }
+      .sticker { left: 4%; bottom: 40px; font-size: 10px; }
+      .projects-grid { gap: 12px; }
+      .cover { height: 150px; }
+      .card-copy { padding: 12px; }
+      .card-meta { align-items: flex-start; flex-direction: column; gap: 4px; }
+      .book-layout { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+      .sidebar { position: fixed; top: auto; bottom: 0; width: 100%; height: 68px; padding: 8px 16px; border-right: 0; border-top: 1px solid var(--cp-border); }
+      .sidebar > .brand { display: none; }
+      .sidebar nav { display: flex; justify-content: space-around; margin: 0; }
+      .nav-item { width: auto; margin: 0; gap: 5px; flex-direction: column; padding: 4px 12px; font-size: 9px; }
+      .nav-label { display: inline; }
+      .app { margin-left: 0; padding-bottom: 76px; }
+      .topbar { padding: 12px 20px; min-height: 64px; }
+      .topbar .breadcrumb { display: none; }
+      .mobile-brand { display: block; font-size: 17px; font-weight: 800; letter-spacing: -.5px; }
+      .top-actions { gap: 8px; }
+      main { padding: 24px 20px; }
+      .edition { display: none; }
+      .page-heading h1 { font-size: 27px; }
+      .hero { grid-template-columns: 1fr; }
+      .hero-copy { padding: 28px; }
+      .hero h2 { font-size: 40px; }
+      .hero-art { min-height: 230px; }
+      .hero-art .mini-board { width: 225px; transform: rotate(5deg); }
+      .hero-art .mini-grid svg:first-child { height: 80px; }
+      .hero-art .mini-grid svg { height: 65px; }
+      .sticker { left: 12%; bottom: 20px; }
+      .projects-grid { grid-template-columns: 1fr; gap: 20px; }
+      .cover { height: 190px; }
+      .card-copy { padding: 20px; }
+      .card-meta { flex-direction: row; }
+      .idea-strip, .workspace-heading { align-items: flex-start; flex-direction: column; }
+      .editor-layout, .character-grid { grid-template-columns: 1fr; }
+      .character-card { flex-direction: column; align-items: flex-start; }
+      .character-card > div { width: 100%; }
+      .surface { padding: 20px; }
+      .segments { max-width: 100%; flex-wrap: wrap; }
+      .segment { padding: 10px 12px; }
+      .search, .search input { width: 100%; }
+      .section-heading { flex-wrap: wrap; }
+      .steps { gap: 12px; }
+      .steps li { gap: 4px; font-size: 10px; }
+      .dialog-header, .dialog-body, .dialog-footer { padding: 20px; }
+      .styles { grid-template-columns: 1fr; }
+      .styles .choice { display: flex; align-items: center; gap: 12px; }
+      .style-art { width: 72px; }
+      .toast { bottom: 84px; right: 16px; }
+      .footer { flex-direction: column; gap: 6px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
+    :root {
+      --studio-backdrop: url("../src/MaiImageGenerator.Web/wwwroot/images/background-blazor-maistudio.png");
+    }
+    html[data-theme="dark"] {
+      --studio-backdrop: url("../src/MaiImageGenerator.Web/wwwroot/images/background-blazor-maistudio-dark.png");
+    }
+    body { background-image: var(--studio-backdrop); background-position: center; background-size: cover; background-attachment: fixed; }
+    .sidebar, .topbar { background: var(--cp-panel-strong); }
+    .eyebrow, .cover-label { color: var(--cp-secondary); }
+    .cover-label { background: var(--cp-secondary-soft); border: 1px solid var(--cp-secondary-border); }
+    .quiet:hover { color: var(--cp-secondary); background: var(--cp-secondary-soft); border-color: var(--cp-secondary-border); }
+    .page-heading, .section-heading, .filters, .footer { background: var(--cp-panel-strong); border: 1px solid var(--cp-border); border-radius: 12px; padding: 16px 20px; }
+    .page-heading { border-left: 4px solid var(--cp-accent); }
+    .section-heading { margin-bottom: 12px; }
+    .filters { padding-block: 8px; }
+    .hero { border: 2px solid var(--cp-secondary-border); box-shadow: 4px 4px 0 var(--cp-highlight); }
+    .hero-copy { background: var(--cp-bg-elevated); }
+    .hero-art { background-image: var(--studio-backdrop); background-position: center; background-size: cover; }
+    .mini-board { transform: rotate(5deg); }
+    .project-card { border-color: var(--cp-secondary-border); box-shadow: 3px 3px 0 var(--cp-highlight); }
+    .idea-strip { background: var(--cp-panel-strong); }
+    .footer { margin-top: 28px; }
+    @media (max-width: 600px) {
+      body { background-attachment: scroll; }
+      .page-heading, .section-heading, .filters, .footer { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">Aller au contenu</a>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 5C9 3 6 3 3 4v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1v15"/></symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5ZM20 2v4m-2-2h4"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15A9 9 0 0 1 9 4a9 9 0 1 0 11 11Z"/></symbol>
+      <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 1 1 5 2c-2 1-2 2-2 3m0 3h.01"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+      <symbol id="art-moon" viewBox="0 0 400 240">
+        <rect width="400" height="240" fill="var(--cp-bg)"/>
+        <circle cx="290" cy="90" r="72" fill="var(--cp-highlight)"/>
+        <g stroke="var(--cp-text)" fill="none" stroke-width="2">
+          <ellipse cx="290" cy="90" rx="104" ry="18" transform="rotate(-26 290 90)"/>
+          <path d="m30 32 4 10 10 4-10 4-4 10-4-10-10-4 10-4ZM178 30v12m-6-6h12M360 176v12m-6-6h12"/>
+          <path d="M0 205q70-40 140-12t140 0 120 8"/>
+          <path d="M0 224q100-28 210-5t190-2"/>
+          <circle cx="120" cy="102" r="33" fill="var(--cp-surface)"/>
+          <rect x="96" y="84" width="48" height="28" rx="13" fill="var(--cp-accent)"/>
+          <path d="m106 90 12-2M104 135l-12 53 22 5 9-35 12 35 20-6-16-53Z" fill="var(--cp-surface)"/>
+          <path d="m102 141-24 15-8-11m70-6 20 13 12-23M114 193l-4 13H88m49-14 4 14h22"/>
+          <rect x="109" y="139" width="20" height="15" rx="3" fill="var(--cp-highlight)"/>
+          <path d="M197 200v-61m0 28c-25 0-32-13-25-25 22 0 28 13 25 25Zm0-17c-3-25 11-36 25-32 2 21-12 34-25 32Z" fill="var(--cp-accent)"/>
+          <path d="M270 198q16-23 34 0m-39 8h46"/>
+        </g>
+        <g fill="var(--cp-text)"><circle cx="64" cy="90" r="2"/><circle cx="228" cy="46" r="2"/><circle cx="339" cy="39" r="2"/><circle cx="42" cy="157" r="2"/></g>
+      </symbol>
+      <symbol id="art-city" viewBox="0 0 400 240">
+        <rect width="400" height="240" fill="var(--cp-bg)"/>
+        <circle cx="310" cy="75" r="54" fill="var(--cp-highlight)"/>
+        <g stroke="var(--cp-text)" stroke-width="2" fill="var(--cp-surface)">
+          <path d="M0 200h400M18 200V80l50-24 42 24v120M116 200V105h70v95M193 200V62l48-32 40 32v138M290 200v-80h88v80"/>
+          <path d="m18 80 46 16 46-16M64 96v104M128 120h10v18h-10Zm24 0h10v18h-10Zm-24 35h10v18h-10Zm24 0h10v18h-10ZM207 73h17v21h-17Zm31 0h17v21h-17Zm-31 37h17v21h-17Zm31 0h17v21h-17Z" fill="var(--cp-accent-soft)"/>
+          <path d="M0 222q150-30 400 0M316 135h47m-47 16h47m-47 16h47"/>
+          <path d="m145 197 8-28 13 2 12 26m-21-26-10-19 16-11 15 21 12-4" fill="none"/>
+          <circle cx="157" cy="132" r="10" fill="var(--cp-accent)"/>
+          <path d="m20 24 10 8 13-8m38 6 9 8 12-7" fill="none"/>
+        </g>
+        <path d="m234 164 12-21 9 6-2 19 19 11-7 9-20-11-17 8-7-8Z" fill="var(--cp-accent)"/>
+      </symbol>
+      <symbol id="art-garden" viewBox="0 0 400 240">
+        <rect width="400" height="240" fill="var(--cp-bg)"/>
+        <circle cx="200" cy="110" r="92" fill="var(--cp-highlight)"/>
+        <g stroke="var(--cp-text)" stroke-width="2" fill="var(--cp-surface)">
+          <path d="M155 216V105a45 45 0 0 1 90 0v111Z"/>
+          <path d="M169 216V106a31 31 0 0 1 62 0v110Z" fill="var(--cp-accent)"/>
+          <path d="M195 216v-54q-9-13 4-28 18 9 11 25v57" fill="var(--cp-bg)"/>
+          <path d="M70 222V80m0 47C18 127 23 82 27 66c44 6 51 38 43 61Zm0 45c44-5 64-37 55-60-41 0-60 34-55 60ZM319 222V63m0 47c-39-6-49-34-45-55 38 0 52 32 45 55Zm0 52c45-10 58-43 48-63-39 6-54 37-48 63Z" fill="var(--cp-accent-soft)"/>
+          <path d="M0 230q80-40 160-10t240-6M130 39l5-10 5 10 10 5-10 5-5 10-5-10-10-5Z" fill="none"/>
+          <circle cx="215" cy="119" r="3" fill="var(--cp-bg)"/>
+        </g>
+      </symbol>
+    </defs>
+  </svg>
+  <aside class="sidebar" aria-label="Navigation principale">
+    <div class="brand"><span class="brand-mark">m</span><span class="brand-text">MAI Studio<small>LE STUDIO À HISTOIRES</small></span></div>
+    <button class="btn primary" data-action="new"><svg class="icon"><use href="#i-plus"/></svg>Nouvelle histoire</button>
+    <div class="nav-caption">Mon espace créatif</div>
+    <nav>
+      <button class="nav-item" data-action="home" aria-current="page" aria-label="Mon atelier"><svg class="icon"><use href="#i-grid"/></svg><span class="nav-label">Mon atelier</span></button>
+      <button class="nav-item" data-action="library" aria-label="Mes histoires"><svg class="icon"><use href="#i-book"/></svg><span class="nav-label">Mes histoires</span><span class="nav-count" id="project-count">3</span></button>
+      <button class="nav-item" data-action="inspire" aria-label="Boîte à idées"><svg class="icon"><use href="#i-spark"/></svg><span class="nav-label">Boîte à idées</span></button>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="tip"><svg class="icon"><use href="#i-spark"/></svg><strong>Une idée suffit.</strong><p>Pas besoin de savoir dessiner. Vous racontez, votre univers prend forme.</p></div>
+      <div class="profile"><span class="avatar">C</span><div><strong>Esprit créatif</strong><div class="muted">Espace de démonstration</div></div></div>
+    </div>
+  </aside>
+  <div class="app">
+    <header class="topbar">
+      <span class="mobile-brand">MAI Studio.</span>
+      <div class="breadcrumb">Mon espace <span aria-hidden="true"> / </span> <strong id="breadcrumb">Mon atelier</strong></div>
+      <div class="top-actions">
+        <span class="demo-badge">Prototype interactif</span>
+        <button class="btn icon-btn quiet" id="theme-toggle" aria-label="Changer le thème" title="Changer le thème"><svg class="icon"><use href="#i-moon"/></svg></button>
+        <button class="btn icon-btn quiet" data-action="help" aria-label="Aide et fonctionnement"><svg class="icon"><use href="#i-help"/></svg></button>
+      </div>
+    </header>
+    <main id="main" tabindex="-1">
+      <section id="dashboard" aria-label="Mon atelier">
+        <div class="page-heading"><div><h1>On écrit la suite ?</h1><p>Des idées plein la tête. Bientôt, plein les pages.</p></div><span class="edition">VOTRE ATELIER / VOL. 01</span></div>
+        <section class="hero" id="hero">
+          <div class="hero-copy"><span class="eyebrow">Petite idée, grande aventure</span><h2>Et si votre prochaine<br>histoire commençait<br>par <em>« et si… »</em> ?</h2><p>Une BD qui pétille ou un livre qui transporte.<br>Imaginez l'histoire. Créez la suite avec MAI.</p><button class="btn primary" data-action="new">Donner vie à mon idée<svg class="icon"><use href="#i-arrow"/></svg></button><span class="hero-footnote">Vous gardez la main, à chaque étape.</span></div>
+          <div class="hero-art" aria-label="Exemple illustré : un astronaute découvre une plante sur la Lune" role="img">
+            <span class="orbit" aria-hidden="true">✳</span>
+            <div class="mini-board"><strong>Un petit pas… pour une grande histoire.</strong><div class="mini-grid"><svg viewBox="0 0 400 240"><use href="#art-moon"/></svg><svg viewBox="0 0 400 240"><use href="#art-garden"/></svg><svg viewBox="0 0 400 240"><use href="#art-moon"/></svg></div></div><span class="sticker">100 % votre<br>imagination</span>
+          </div>
+        </section>
+        <div class="section-heading"><h2 id="library-heading">Vos histoires en cours <span class="muted small" id="visible-count">/ 3</span></h2><button class="link-btn" data-action="new">+ Une nouvelle histoire</button></div>
+        <div class="filters"><div class="segments" role="group" aria-label="Filtrer les histoires"><button class="segment" data-filter="all" aria-pressed="true">Tout</button><button class="segment" data-filter="comic" aria-pressed="false">Bandes dessinées</button><button class="segment" data-filter="book" aria-pressed="false">Livres illustrés</button></div><label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="search" type="search" aria-label="Rechercher une histoire" placeholder="Retrouver une histoire…"></label></div>
+        <div class="projects-grid" id="project-grid"></div>
+        <div class="empty" id="empty-search" hidden><h3>Aucune histoire par ici… pour l'instant.</h3><p>Essayez un autre titre ou inventez une nouvelle aventure.</p><button class="btn" data-action="reset-search">Réinitialiser les filtres</button></div>
+        <section class="idea-strip"><div><strong>La page blanche ? Même pas peur.</strong><p>Un facteur sur Mars, une ville endormie… piochez un début d'aventure.</p></div><button class="btn quiet" data-action="inspire"><svg class="icon"><use href="#i-spark"/></svg>Surprenez-moi</button></section>
+      </section>
+      <section id="comic-workspace" hidden aria-label="Atelier bande dessinée"></section>
+      <section id="book-workspace" hidden aria-label="Atelier livre illustré"></section>
+      <footer class="footer"><span>MAI Studio · L'imagination a trouvé son atelier.</span><span>Maquette locale · IA simulée · Modifications limitées à cette session</span></footer>
+    </main>
+  </div>
+  <dialog id="wizard" aria-labelledby="wizard-title">
+    <div class="dialog-header"><div><span class="eyebrow">À vous de jouer</span><h2 id="wizard-title">Une idée. Tout un univers.</h2></div><button class="btn icon-btn quiet" data-close="wizard" aria-label="Fermer la création"><svg class="icon"><use href="#i-close"/></svg></button></div>
+    <div class="dialog-body">
+      <ol class="steps" aria-label="Étapes de création"><li class="active"><b>1</b>L'idée</li><li><b>2</b>L'univers</li><li><b>3</b>C'est parti</li></ol>
+      <div id="wizard-step-1">
+        <p class="small muted">Choisissez votre terrain de jeu. On s'occupe du premier élan.</p>
+        <div class="choice-grid" role="group" aria-label="Format de l'histoire">
+          <button class="choice" data-type="comic" aria-pressed="true"><svg class="icon"><use href="#i-grid"/></svg><strong>Bande dessinée</strong><small>Des cases, du rythme et de l'action.</small></button>
+          <button class="choice" data-type="book" aria-pressed="false"><svg class="icon"><use href="#i-book"/></svg><strong>Livre illustré</strong><small>Des chapitres pour aller plus loin.</small></button>
+        </div>
+        <label class="field" for="idea">Et si… <span class="muted">(votre idée, en quelques mots)</span></label>
+        <textarea id="idea" rows="4" placeholder="Une astronaute découvre la dernière graine de la galaxie…"></textarea>
+        <button class="link-btn" id="wizard-inspire">Besoin d'un déclic ? Essayez une idée.</button>
+      </div>
+      <div id="wizard-step-2" hidden>
+        <label class="field" for="story-title">Un titre pour votre histoire</label><input class="text" id="story-title" maxlength="100" placeholder="Ex. Le jardin de la Lune">
+        <label class="field">Quelle ambiance visuelle ?</label>
+        <div class="choice-grid styles" role="group" aria-label="Direction artistique">
+          <button class="choice" data-style="Ligne claire" aria-pressed="true"><svg class="style-art" viewBox="0 0 400 240"><use href="#art-moon"/></svg><div><strong>Ligne claire</strong><small>Expressif et lumineux</small></div></button>
+          <button class="choice" data-style="Encre & mystère" aria-pressed="false"><svg class="style-art ink" viewBox="0 0 400 240"><use href="#art-city"/></svg><div><strong>Encre & mystère</strong><small>Contrastes et caractère</small></div></button>
+          <button class="choice" data-style="Rêve pastel" aria-pressed="false"><svg class="style-art soft" viewBox="0 0 400 240"><use href="#art-garden"/></svg><div><strong>Rêve pastel</strong><small>Doux et poétique</small></div></button>
+        </div>
+        <p class="hint">Illustrations de maquette : le style choisi devient une consigne artistique, pas une garantie de rendu.</p>
+        <div id="comic-options"><label class="field" for="new-template">Mise en page de la première planche</label><select id="new-template"><option value="standard">Classique · 6 cases</option><option value="storyline">Strip · 3 cases</option><option value="dynamic1">Dynamique · 5 cases, panorama au milieu</option><option value="dynamic2">Ouverture cinéma · 5 cases, panorama en haut</option></select></div>
+        <div id="book-options" hidden><label class="field" for="chapter-count">Nombre de chapitres</label><input class="text" id="chapter-count" type="number" min="1" max="30" value="4"></div>
+      </div>
+      <div id="wizard-step-3" hidden><svg class="icon"><use href="#i-spark"/></svg><div class="summary-box" id="wizard-summary"></div><p class="small muted">Vous pourrez modifier les scènes ou le plan avant de lancer les images et les textes.</p><p class="hint">Dans cette maquette, la préparation utilise des exemples locaux. Aucun appel à l'IA, aucun envoi de données.</p></div>
+      <p id="wizard-error" class="error" role="alert"></p>
+    </div>
+    <div class="dialog-footer"><button class="btn quiet" id="wizard-back">Annuler</button><button class="btn primary" id="wizard-next">Choisir mon univers<svg class="icon"><use href="#i-arrow"/></svg></button></div>
+  </dialog>
+  <dialog id="help" aria-labelledby="help-title">
+    <div class="dialog-header"><h2 id="help-title">Votre histoire, à votre rythme.</h2><button class="btn icon-btn" data-close="help" aria-label="Fermer l'aide"><svg class="icon"><use href="#i-close"/></svg></button></div>
+    <div class="dialog-body"><p><strong>1. Imaginez.</strong> Choisissez une BD ou un livre et décrivez votre idée.</p><p class="hint"><strong>2. Ajustez.</strong> Affinez les scènes, les personnages ou le plan des chapitres.</p><p class="hint"><strong>3. Donnez vie.</strong> Lancez la génération et suivez chaque étape.</p><div class="summary-box"><strong>Ceci est une proposition UX, pas l'application.</strong><p class="hint">Les projets et les illustrations sont fictifs. Les actions sont simulées et restent en mémoire jusqu'au rechargement. Les fichiers de référence ne sont pas envoyés. L'export fournit un SVG de démonstration, pas un résultat IA.</p></div><p class="small muted">Le front cible reste Blazor + Radzen. Aucun service ni aucune dépendance externe n'est utilisé ici.</p></div>
+  </dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script>
+    "use strict";
+    const $ = (selector, root = document) => root.querySelector(selector);
+    const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+    const icon = name => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+    const escapeHtml = text => String(text).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const art = (name, className = "") => `<svg class="${className}" viewBox="0 0 400 240" aria-hidden="true"><use href="#art-${name}"/></svg>`;
+    const templates = { standard: { count: 6, label: "Classique" }, storyline: { count: 3, label: "Strip" }, dynamic1: { count: 5, label: "Dynamique" }, dynamic2: { count: 5, label: "Ouverture cinéma" } };
+    const ideas = [
+      { title: "Le jardin de la Lune", idea: "Une astronaute découvre une graine sur la Lune. Avec son robot, elle tente de faire pousser le premier jardin de l'espace.", art: "moon" },
+      { title: "Le facteur des étoiles", idea: "Un facteur livre une lettre sur Mars. L'adresse n'existe plus, mais une petite créature connaît le chemin.", art: "city" },
+      { title: "La porte des saisons", idea: "Une jeune botaniste trouve une porte au fond de son jardin. De l'autre côté, chaque pas change la saison.", art: "garden" }
+    ];
+    const sceneExamples = [
+      "Plan large : notre héroïne découvre un lieu inconnu. Un détail inattendu attire son regard.",
+      "Gros plan sur sa découverte. Elle hésite, puis décide de s'approcher.",
+      "Son compagnon la rejoint. Ensemble, ils comprennent que leur aventure ne fait que commencer.",
+      "Un obstacle se dresse sur leur chemin. L'héroïne cherche une solution inattendue.",
+      "Les deux compagnons unissent leurs forces. La situation bascule.",
+      "Plan large final : leur découverte transforme le paysage. Une nouvelle aventure les attend."
+    ];
+    function panelsFor(template, ready = false) {
+      return Array.from({ length: templates[template].count }, (_, i) => ({ prompt: sceneExamples[i], status: ready ? "done" : "draft", characterIds: [] }));
+    }
+    function chaptersFor(count) {
+      return Array.from({ length: count }, (_, i) => ({ title: i === 0 ? "La porte oubliée" : `Une nouvelle découverte · ${i + 1}`, summary: i === 0 ? "L'héroïne découvre une porte qui semble apparaître uniquement au lever du jour." : "L'aventure progresse, un indice révèle une nouvelle facette de ce monde.", prose: "", image: false }));
+    }
+    const projects = [
+      { id: "moon", type: "comic", title: "Le jardin de la Lune", idea: ideas[0].idea, art: "moon", style: "Ligne claire", template: "dynamic2", panels: panelsFor("dynamic2", true), characters: [{ id: 1, name: "Nova", reference: "" }, { id: 2, name: "Pip, le robot", reference: "" }], boardNumber: 1, ready: true },
+      { id: "city", type: "comic", title: "Minuit sur les toits", idea: "Une messagère traverse une ville endormie pour livrer un secret avant le lever du soleil.", art: "city", style: "Encre & mystère", template: "standard", panels: panelsFor("standard"), characters: [{ id: 1, name: "Lou", reference: "" }], boardNumber: 1, ready: false },
+      { id: "garden", type: "book", title: "La porte des saisons", idea: ideas[2].idea, art: "garden", style: "Rêve pastel", chapters: chaptersFor(4), characters: [], ready: false }
+    ];
+    let filter = "all", activeProject = null, selectedPanel = 0, selectedChapter = 0, wizardStep = 1, draftType = "comic", draftStyle = "Ligne claire", ideaIndex = 0, toastTimer;
+    const runningJobs = new Set();
+    function toast(message) {
+      $("#toast").textContent = message; $("#toast").hidden = false;
+      clearTimeout(toastTimer); toastTimer = setTimeout(() => $("#toast").hidden = true, 5000);
+    }
+    function renderProjects() {
+      const query = $("#search").value.trim().toLocaleLowerCase("fr");
+      const visible = projects.filter(p => (filter === "all" || p.type === filter) && p.title.toLocaleLowerCase("fr").includes(query));
+      $("#project-count").textContent = projects.length;
+      $("#visible-count").textContent = `/ ${visible.length}`;
+      $("#empty-search").hidden = visible.length !== 0;
+      $("#project-grid").innerHTML = visible.map(p => `<button class="project-card" data-project="${p.id}" aria-label="Ouvrir ${escapeHtml(p.title)}">
+        <div class="cover">${p.type === "book" ? `<div class="cover-book"><small>Les histoires MAI</small><strong>${escapeHtml(p.title)}</strong>${icon("spark")}</div>` : art(p.art)}<span class="cover-label">${p.type === "book" ? "Livre illustré" : "Bande dessinée"}</span></div>
+        <div class="card-copy"><span class="eyebrow">${escapeHtml(p.style)}</span><h3>${escapeHtml(p.title)}</h3><div class="card-meta"><span>${p.type === "book" ? `${p.chapters.length} chapitres` : `${p.panels.length} cases · planche ${p.boardNumber}`}</span><span class="status ${p.ready ? "ready" : ""}">${p.ready ? "Prête à lire" : "À vous de jouer"}</span></div></div></button>`).join("");
+    }
+    function setView(view, title) {
+      $("#dashboard").hidden = view !== "dashboard";
+      $("#comic-workspace").hidden = view !== "comic";
+      $("#book-workspace").hidden = view !== "book";
+      $("#breadcrumb").textContent = title;
+      $$(".nav-item").forEach(item => item.removeAttribute("aria-current"));
+      $(`[data-action="${view === "dashboard" && !$("#hero").hidden ? "home" : "library"}"]`).setAttribute("aria-current", "page");
+    }
+    function focusMain() { $("#main").focus(); window.scrollTo({ top: 0, behavior: "instant" }); }
+    function showDashboard(library = false) {
+      $("#hero").hidden = library;
+      setView("dashboard", library ? "Mes histoires" : "Mon atelier");
+      renderProjects(); focusMain();
+    }
+    function openProject(id) {
+      activeProject = projects.find(p => p.id === id);
+      selectedPanel = 0; selectedChapter = 0;
+      if (activeProject.type === "comic") renderComic(); else renderBook();
+      focusMain();
+    }
+    function renderComic(tab = "scenes") {
+      const p = activeProject, busy = runningJobs.has(p.id);
+      setView("comic", p.title);
+      $("#comic-workspace").innerHTML = `
+        <div class="page-heading workspace-heading"><div><button class="link-btn" data-action="library">← Mes histoires</button><h1 style="margin-top:12px">${escapeHtml(p.title)}</h1><p>Votre idée, vos choix. Une planche à la fois.</p></div><button class="btn" id="export-board" ${!p.ready ? "disabled" : ""}>${icon("down")}Exporter l'exemple SVG</button></div>
+        <div class="workspace-layout"><aside class="project-tree" aria-label="Planches du projet"><span class="eyebrow">Le fil de l'histoire</span><span class="btn tree-current" aria-current="page">Planche ${p.boardNumber}</span><button class="btn quiet" id="new-board" ${busy ? "disabled" : ""}>${icon("plus")}Nouvelle planche</button><p>Les personnages sont communs à toutes les planches du projet.<br><br>Démo : une seule planche active par projet.</p></aside>
+        <div class="studio"><div class="segments studio-tabs" role="group" aria-label="Étapes de la planche"><button class="segment" data-tab="scenes" aria-pressed="${tab === "scenes"}">1. Les scènes</button><button class="segment" data-tab="characters" aria-pressed="${tab === "characters"}">2. Les personnages</button><button class="segment" data-tab="read" aria-pressed="${tab === "read"}">3. La planche</button></div>
+        ${tab === "characters" ? renderCharacters(p, busy) : `<div class="editor-layout"><div class="surface">${tab === "scenes" ? `
+          <span class="eyebrow">Le storyboard</span><h2 style="margin-top:8px">Chaque case raconte quelque chose.</h2><p class="small muted">Sélectionnez une case, puis ajustez sa scène.</p>
+          <div class="panel-picks" role="group" aria-label="Choisir une case">${p.panels.map((_, i) => `<button class="panel-pick" data-panel="${i}" aria-pressed="${selectedPanel === i}">0${i + 1}</button>`).join("")}</div>
+          <label class="field" for="panel-prompt">Que se passe-t-il dans la case ${selectedPanel + 1} ?</label><textarea id="panel-prompt" rows="5" ${busy ? "disabled" : ""}>${escapeHtml(p.panels[selectedPanel].prompt)}</textarea>
+          <label class="field" for="panel-character">Personnages présents</label><select id="panel-character" multiple size="3" ${busy ? "disabled" : ""}>${p.characters.map(c => `<option value="${c.id}" ${p.panels[selectedPanel].characterIds.includes(c.id) ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}</select><p class="hint">Ctrl / ⌘ + clic pour en choisir plusieurs. Facultatif.</p>
+          <div class="row" style="margin-top:16px"><button class="btn quiet" id="move-up" ${busy || selectedPanel === 0 ? "disabled" : ""}>← Avant</button><button class="btn quiet" id="move-down" ${busy || selectedPanel === p.panels.length - 1 ? "disabled" : ""}>Après →</button></div>
+          <details><summary>Direction artistique & réglages</summary><label class="field" for="art-direction">Ambiance commune</label><textarea id="art-direction" rows="2" ${busy ? "disabled" : ""}>${escapeHtml(p.style)}</textarea><label class="checkline"><input type="checkbox" id="rewrite" ${p.rewrite !== false ? "checked" : ""} ${busy ? "disabled" : ""}>Enrichir les consignes avec MAI</label><p class="hint">Mise en page : ${templates[p.template].label} · ${p.panels.length} cases.</p></details>` : `
+          <span class="eyebrow">Le grand aperçu</span><h2 style="margin-top:8px">${p.ready ? "Votre aventure prend forme." : "Tout commence par vos scènes."}</h2><p class="small muted">L'aperçu reprend la mise en page choisie. Revenez aux scènes pour ajuster votre histoire.</p><p class="hint">Les dessins sont des illustrations locales de démonstration, pas des images produites à partir de vos consignes.</p>`}
+          ${generationControls(p, busy)}
+        </div><div><div class="board-preview"><h2>${escapeHtml(p.title)}</h2><div class="board-grid ${p.template}">${p.panels.map((panel, i) => `<button class="board-cell" data-panel="${i}" aria-label="Modifier la case ${i + 1} : ${panel.status === "done" ? "illustrée" : panel.status === "error" ? "en erreur" : "à illustrer"}" aria-pressed="${selectedPanel === i}"><span class="cell-num">${i + 1}</span>${panel.status === "done" ? art(i % 3 === 1 ? "garden" : p.art) : `<span class="cell-draft">${panel.status === "error" ? "Image indisponible" : panel.status === "working" ? "En cours…" : "Votre scène, bientôt illustrée"}</span>`}</button>`).join("")}</div></div><p class="preview-caption">APERÇU · ${templates[p.template].label.toUpperCase()} · Illustrations de démonstration</p></div></div>`}</div></div>`;
+      wireComic();
+    }
+    function generationControls(p, busy) {
+      const done = p.panels.filter(panel => panel.status === "done").length;
+      return `<div class="generation-box"><strong class="small">${busy ? "Votre planche prend vie…" : p.failed ? "Une image n'a pas pu être créée." : p.ready ? "Votre planche est prête !" : "Prêt pour le premier coup de crayon ?"}</strong><p class="hint">${busy ? `${done} / ${p.panels.length} cases illustrées · Simulation` : "Démo locale : aucun appel à l'IA."}</p>${busy ? `<progress value="${done}" max="${p.panels.length}" aria-label="Progression de la planche"></progress><p class="hint">Vous pouvez consulter vos autres histoires pendant la simulation.</p>` : `<button class="btn primary" id="generate-board">${icon("spark")}${p.failed ? "Relancer la planche (démo)" : p.ready ? "Régénérer la planche (démo)" : "Illustrer ma planche (démo)"}</button><label class="checkline"><input type="checkbox" id="simulate-error">Simuler un incident sur la case 2</label>`}${p.failed ? '<p class="error" role="alert">Case 2 : génération indisponible dans ce scénario de démonstration. Les autres cases restent visibles. La relance porte sur la planche entière.</p>' : ""}</div>`;
+    }
+    function renderCharacters(p, busy) {
+      return `<div class="surface"><span class="eyebrow">Le casting de votre histoire</span><h2 style="margin-top:8px">Des héros qu'on reconnaît.</h2><p class="small muted">Des références communes pour garder le même univers d'une planche à l'autre.</p><div class="character-grid" style="margin-top:24px">${p.characters.map(c => `<article class="character-card"><span class="avatar">${escapeHtml(c.name[0])}</span><div><strong>${escapeHtml(c.name)}</strong><p class="hint">${c.reference ? escapeHtml(c.reference) : "Aucune image de référence"}</p><label class="field" for="ref-${c.id}">Choisir une référence (locale)</label><input id="ref-${c.id}" data-reference="${c.id}" type="file" accept="image/png,image/jpeg" ${busy ? "disabled" : ""}></div></article>`).join("")}</div><div class="row" style="margin-top:24px;flex-wrap:wrap"><label for="character-name" class="small">Nouveau personnage</label><input class="text" id="character-name" placeholder="Son petit nom" maxlength="60" style="max-width:220px" ${busy ? "disabled" : ""}><button class="btn" id="add-character" ${busy ? "disabled" : ""}>${icon("plus")}Ajouter</button></div><p class="error" id="character-error" role="alert"></p><p class="hint">Maquette : seul le nom du fichier est retenu en mémoire, sans lecture ni envoi. En production, les références passent par l'API authentifiée et restent privées.</p></div>`;
+    }
+    function wireComic() {
+      $$("[data-tab]").forEach(b => b.onclick = () => { renderComic(b.dataset.tab); $(`[data-tab="${b.dataset.tab}"]`).focus(); });
+      $$("[data-panel]").forEach(b => b.onclick = () => { selectedPanel = Number(b.dataset.panel); renderComic(); $(`[data-panel="${selectedPanel}"]`).focus(); });
+      if ($("#panel-prompt")) $("#panel-prompt").oninput = e => activeProject.panels[selectedPanel].prompt = e.target.value;
+      if ($("#panel-character")) $("#panel-character").onchange = e => activeProject.panels[selectedPanel].characterIds = [...e.target.selectedOptions].map(o => Number(o.value));
+      if ($("#art-direction")) $("#art-direction").oninput = e => activeProject.style = e.target.value;
+      if ($("#rewrite")) $("#rewrite").onchange = e => activeProject.rewrite = e.target.checked;
+      for (const [id, offset] of [["move-up", -1], ["move-down", 1]]) if ($(`#${id}`)) $(`#${id}`).onclick = () => {
+        const panels = activeProject.panels, next = selectedPanel + offset;
+        [panels[next], panels[selectedPanel]] = [panels[selectedPanel], panels[next]]; selectedPanel = next; renderComic(); $(`#${id}`).focus();
+      };
+      if ($("#generate-board")) $("#generate-board").onclick = generateBoard;
+      $("#export-board").onclick = exportBoard;
+      $("#new-board").onclick = () => {
+        if (!confirm("Dans cette maquette, la nouvelle planche remplace la planche active. Continuer ?")) return;
+        activeProject.boardNumber++; activeProject.panels = panelsFor(activeProject.template); activeProject.ready = false; activeProject.failed = false; selectedPanel = 0; renderComic();
+      };
+      if ($("#add-character")) $("#add-character").onclick = () => {
+        const name = $("#character-name").value.trim();
+        if (!name) { $("#character-error").textContent = "Donnez un nom à votre personnage."; $("#character-name").focus(); return; }
+        activeProject.characters.push({ id: Date.now(), name, reference: "" }); renderComic("characters"); toast("Personnage ajouté à cette session de démonstration.");
+      };
+      $$("[data-reference]").forEach(input => input.onchange = e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (!["image/png", "image/jpeg"].includes(file.type)) { $("#character-error").textContent = "Choisissez une image PNG ou JPEG."; input.value = ""; return; }
+        activeProject.characters.find(c => c.id === Number(input.dataset.reference)).reference = file.name; renderComic("characters"); toast("Nom du fichier retenu localement. Aucun fichier envoyé.");
+      });
+    }
+    async function generateBoard() {
+      const p = activeProject, fail = $("#simulate-error").checked;
+      if (p.panels.some(panel => !panel.prompt.trim())) { toast("Décrivez chaque scène avant d'illustrer votre planche."); return; }
+      if (p.ready && !confirm("Régénérer remplace les illustrations de cette planche de démonstration. Continuer ?")) return;
+      runningJobs.add(p.id); p.ready = false; p.failed = false;
+      p.panels.forEach(panel => panel.status = "draft");
+      for (let i = 0; i < p.panels.length; i++) {
+        p.panels[i].status = "working";
+        if (activeProject === p && !$("#comic-workspace").hidden) renderComic("read");
+        await new Promise(resolve => setTimeout(resolve, 650));
+        p.panels[i].status = fail && i === 1 ? "error" : "done";
+      }
+      p.failed = fail; p.ready = !fail; runningJobs.delete(p.id);
+      if (activeProject === p && !$("#comic-workspace").hidden) renderComic("read");
+      renderProjects(); toast(fail ? "Simulation terminée : incident sur la case 2. Ouvrez la planche pour relancer." : `« ${p.title} » : la planche de démonstration est prête.`);
+    }
+    function exportBoard() {
+      const p = activeProject, themeStyle = getComputedStyle(document.documentElement);
+      const vars = ["bg", "surface", "highlight", "text", "accent", "accent-soft"].map(v => `--cp-${v}:${themeStyle.getPropertyValue(`--cp-${v}`)};`).join("");
+      const columns = p.template === "storyline" ? 3 : 2;
+      const slots = p.template === "dynamic1" ? [[0,0,1],[1,0,1],[0,1,2],[0,2,1],[1,2,1]] : p.template === "dynamic2" ? [[0,0,2],[0,1,1],[1,1,1],[0,2,1],[1,2,1]] : p.panels.map((_, i) => [i % columns, Math.floor(i / columns), 1]);
+      const width = columns === 3 ? 940 : 640, height = columns === 3 ? 340 : 740;
+      const cells = slots.map(([x, y, span], i) => `<svg x="${20 + x * 300}" y="${100 + y * 200}" width="${span * 300 - 12}" height="188" viewBox="0 0 400 240"><use href="#art-${i % 3 === 1 ? "garden" : p.art}"/></svg>`).join("");
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" style="${vars}"><defs>${$(".symbols defs").innerHTML}</defs><rect width="100%" height="100%" fill="var(--cp-bg)"/><text x="20" y="38" fill="var(--cp-text)" font-family="Segoe UI,sans-serif" font-size="20">${escapeHtml(p.title)}</text><text x="20" y="66" fill="var(--cp-text)" font-family="Segoe UI,sans-serif" font-size="12">MAQUETTE UX · Illustrations de démonstration · Pas un résultat IA</text>${cells}</svg>`;
+      const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+      const a = document.createElement("a"); a.href = url; a.download = "mai-studio-maquette.svg"; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast("Exemple SVG exporté. L'application actuelle exporte ses planches en PNG.");
+    }
+    function renderBook() {
+      const p = activeProject, chapter = p.chapters[selectedChapter];
+      setView("book", p.title);
+      $("#book-workspace").innerHTML = `<div class="page-heading workspace-heading"><div><button class="link-btn" data-action="library">← Mes histoires</button><h1 style="margin-top:12px">${escapeHtml(p.title)}</h1><p>Un plan d'abord. Puis l'aventure, chapitre après chapitre.</p></div><button class="btn" id="save-book">Garder mes modifications (session)</button></div>
+        <div class="book-layout"><aside class="surface chapter-list"><span class="eyebrow">Le chemin de l'histoire</span><p class="hint">${p.chapters.length} chapitres · Plan d'exemple modifiable</p>${p.chapters.map((c, i) => `<button class="btn ${i === selectedChapter ? "tree-current" : "quiet"}" data-chapter="${i}" aria-pressed="${i === selectedChapter}"><span>0${i + 1} · ${escapeHtml(c.title)}</span></button>`).join("")}<p class="hint">Démo : textes et illustrations sont créés localement, sans IA.</p></aside>
+        <article class="surface"><span class="eyebrow">Chapitre ${selectedChapter + 1}</span><label class="field" for="chapter-title">Titre du chapitre</label><input class="text" id="chapter-title" value="${escapeHtml(chapter.title)}"><label class="field" for="chapter-summary">Ce qui se passe dans ce chapitre</label><textarea id="chapter-summary" rows="3">${escapeHtml(chapter.summary)}</textarea>
+        <details><summary>Personnages & continuité</summary><label class="field" for="chapter-continuity">Les détails à ne pas oublier</label><textarea id="chapter-continuity">${escapeHtml(chapter.continuity || "")}</textarea></details>
+        <div class="section-heading" style="margin-top:28px"><h2>Le récit</h2><span class="status ${chapter.prose ? "ready" : ""}">${chapter.prose ? "Texte prêt" : "À écrire"}</span></div>
+        <label class="field" for="chapter-prose">Votre texte, toujours modifiable</label><textarea id="chapter-prose" rows="7" placeholder="Votre récit apparaîtra ici. Vous pouvez aussi écrire directement.">${escapeHtml(chapter.prose)}</textarea><button class="btn primary" id="generate-prose" style="margin-top:12px">${icon("spark")}${chapter.prose ? "Réécrire" : "Écrire"} ce chapitre (démo)</button>
+        <div class="section-heading" style="margin-top:28px"><h2>L'illustration</h2><span class="status ${chapter.image ? "ready" : ""}">${chapter.image ? "Image prête" : "À illustrer"}</span></div>
+        <label class="field" for="chapter-image-prompt">La scène à illustrer <span class="muted">(facultatif)</span></label><textarea id="chapter-image-prompt" rows="2" placeholder="Laissez vide pour partir du résumé du chapitre.">${escapeHtml(chapter.imagePrompt || "")}</textarea>${chapter.image ? art("garden", "chapter-art") : '<p class="hint">Une illustration par chapitre. Le texte et l’image se génèrent séparément.</p>'}<button class="btn" id="generate-image" style="margin-top:12px">${icon("spark")}${chapter.image ? "Recréer l'image" : "Illustrer"} (démo)</button><p class="hint">Les textes saisis restent en mémoire pendant cette session uniquement.</p></article></div>`;
+      $$("[data-chapter]").forEach(b => b.onclick = () => { selectedChapter = Number(b.dataset.chapter); renderBook(); $(`[data-chapter="${selectedChapter}"]`).focus(); });
+      for (const [id, field] of [["chapter-title", "title"], ["chapter-summary", "summary"], ["chapter-prose", "prose"], ["chapter-continuity", "continuity"], ["chapter-image-prompt", "imagePrompt"]]) $(`#${id}`).oninput = e => { chapter[field] = e.target.value; };
+      $("#save-book").onclick = () => { renderBook(); toast("Modifications conservées en mémoire jusqu'au rechargement, sans sauvegarde serveur."); };
+      $("#generate-prose").onclick = () => {
+        if (!chapter.title.trim() || !chapter.summary.trim()) { toast("Ajoutez un titre et un résumé pour ce chapitre."); return; }
+        if (chapter.prose && !confirm("Remplacer le texte actuel par un texte de démonstration ?")) return;
+        chapter.prose = `${chapter.title}\n\n${chapter.summary}\n\nLe jour se levait à peine lorsque la porte apparut. Un parfum de terre mouillée flottait dans l'air. Elle posa la main sur la poignée : derrière le bois, quelque chose semblait respirer.\n\n« Et si on essayait ? » murmura-t-elle.\n\n[Texte d'exemple local — à remplacer par la génération MAI dans l'application.]`;
+        renderBook(); toast("Texte d'exemple ajouté. Vous pouvez le modifier.");
+      };
+      $("#generate-image").onclick = () => { chapter.image = true; renderBook(); toast("Illustration locale affichée. Aucun appel au modèle image."); };
+    }
+    function showWizard(inspired = false) {
+      wizardStep = 1; draftType = "comic"; draftStyle = "Ligne claire";
+      $("#idea").value = inspired ? ideas[ideaIndex].idea : "";
+      $("#story-title").value = inspired ? ideas[ideaIndex].title : "";
+      $("#chapter-count").value = 4; $("#new-template").value = "standard";
+      updateWizard(); $("#wizard").showModal();
+    }
+    function updateWizard() {
+      for (let step = 1; step <= 3; step++) $(`#wizard-step-${step}`).hidden = step !== wizardStep;
+      $$(".steps li").forEach((li, i) => { li.classList.toggle("active", i + 1 === wizardStep); if (i + 1 === wizardStep) li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current"); });
+      $$("[data-type]").forEach(b => b.setAttribute("aria-pressed", b.dataset.type === draftType));
+      $$("[data-style]").forEach(b => b.setAttribute("aria-pressed", b.dataset.style === draftStyle));
+      $("#comic-options").hidden = draftType !== "comic"; $("#book-options").hidden = draftType !== "book";
+      $("#wizard-back").textContent = wizardStep === 1 ? "Annuler" : "← Retour";
+      $("#wizard-next").innerHTML = `${wizardStep === 1 ? "Choisir mon univers" : wizardStep === 2 ? "Voir mon récapitulatif" : draftType === "comic" ? "Préparer mes scènes (démo)" : "Préparer mon plan (démo)"}${icon("arrow")}`;
+      $("#wizard-error").textContent = "";
+      if (wizardStep === 3) $("#wizard-summary").innerHTML = `<span class="eyebrow">${draftType === "comic" ? "Bande dessinée" : "Livre illustré"} · ${escapeHtml(draftStyle)}</span><h3 style="margin-top:12px">${escapeHtml($("#story-title").value.trim())}</h3><p>${escapeHtml($("#idea").value.trim())}</p><p class="hint">${draftType === "comic" ? `${templates[$("#new-template").value].label} · ${templates[$("#new-template").value].count} cases` : `${$("#chapter-count").value} chapitres`}</p>`;
+    }
+    $("#wizard-next").onclick = () => {
+      if (wizardStep === 1 && !$("#idea").value.trim()) { $("#wizard-error").textContent = "Racontez-nous votre idée en quelques mots pour commencer."; $("#idea").focus(); return; }
+      if (wizardStep === 2) {
+        if (!$("#story-title").value.trim()) { $("#wizard-error").textContent = "Donnez un titre à votre histoire. Vous pourrez le changer plus tard."; $("#story-title").focus(); return; }
+        if (draftType === "book" && (!$("#chapter-count").checkValidity() || !$("#chapter-count").value)) { $("#wizard-error").textContent = "Choisissez un nombre entier de chapitres entre 1 et 30."; $("#chapter-count").focus(); return; }
+      }
+      if (wizardStep < 3) { wizardStep++; updateWizard(); if (wizardStep === 2) $("#story-title").focus(); else $("#wizard-next").focus(); return; }
+      const matchingIdea = ideas.find(i => i.idea === $("#idea").value.trim());
+      const p = { id: `demo-${Date.now()}`, title: $("#story-title").value.trim(), idea: $("#idea").value.trim(), style: draftStyle, type: draftType, art: matchingIdea?.art || "moon", characters: [], ready: false, boardNumber: 1 };
+      if (p.type === "comic") { p.template = $("#new-template").value; p.panels = panelsFor(p.template); } else p.chapters = chaptersFor(Number($("#chapter-count").value));
+      projects.unshift(p); $("#wizard").close(); openProject(p.id); toast("Votre histoire de démonstration est prête à être personnalisée.");
+    };
+    $("#wizard-back").onclick = () => { if (wizardStep === 1) $("#wizard").close(); else { wizardStep--; updateWizard(); $("#wizard-next").focus(); } };
+    $$("[data-type]").forEach(b => b.onclick = () => { draftType = b.dataset.type; updateWizard(); });
+    $$("[data-style]").forEach(b => b.onclick = () => { draftStyle = b.dataset.style; updateWizard(); });
+    $("#wizard-inspire").onclick = () => { ideaIndex = (ideaIndex + 1) % ideas.length; $("#idea").value = ideas[ideaIndex].idea; $("#story-title").value = ideas[ideaIndex].title; };
+    $("#theme-toggle").onclick = () => { document.documentElement.dataset.theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; };
+    $$("[data-filter]").forEach(b => b.onclick = () => { filter = b.dataset.filter; $$("[data-filter]").forEach(item => item.setAttribute("aria-pressed", item === b)); renderProjects(); });
+    $("#search").oninput = renderProjects;
+    $$("dialog").forEach(dialog => dialog.addEventListener("keydown", e => {
+      if (e.key === "Escape") { e.preventDefault(); dialog.close(); }
+    }));
+    document.addEventListener("click", e => {
+      const project = e.target.closest("[data-project]");
+      if (project) { openProject(project.dataset.project); return; }
+      const close = e.target.closest("[data-close]");
+      if (close) { $(`#${close.dataset.close}`).close(); return; }
+      const action = e.target.closest("[data-action]")?.dataset.action;
+      if (action === "new") showWizard();
+      if (action === "home") showDashboard();
+      if (action === "library") showDashboard(true);
+      if (action === "inspire") { ideaIndex = (ideaIndex + 1) % ideas.length; showWizard(true); }
+      if (action === "help") $("#help").showModal();
+      if (action === "reset-search") { filter = "all"; $("#search").value = ""; $$("[data-filter]").forEach(b => b.setAttribute("aria-pressed", b.dataset.filter === "all")); renderProjects(); }
+    });
+    renderProjects();
+  </script>
+</body>
+</html>

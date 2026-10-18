@@ -1,35 +1,48 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@inject IJSRuntime JS
+@inject DialogService Dialogs
+@inject NavigationManager Navigation
 
-<RadzenLayout class="app-layout">
-	<RadzenHeader class="app-header">
-		<div class="app-header-content">
-			<div class="brand-block">
-				<span class="brand-mark" aria-hidden="true">M</span>
-				<div>
-					<span class="eyebrow">Microsoft Foundry / image lab</span>
-					<strong>MAI Studio</strong>
-				</div>
-			</div>
-			<AuthorizeView>
-				<Authorized>
-					<nav class="app-navigation" aria-label="Main navigation">
-						<NavLink href="" Match="NavLinkMatch.All">New board</NavLink>
-						<NavLink href="projects">My projects</NavLink>
-					</nav>
-				</Authorized>
-			</AuthorizeView>
-			<div class="connection-state">
-				<span class="status-dot" aria-hidden="true"></span>
-				Direct browser connection
-			</div>
-		</div>
-	</RadzenHeader>
-	<RadzenBody class="app-body">
-		@Body
-	</RadzenBody>
-	<RadzenFooter class="app-footer">
-		<span>MAI Studio</span>
-		<span>Comic board workspace</span>
-	</RadzenFooter>
-</RadzenLayout>
+<a class="skip-link" href="#main">Aller au contenu</a>
+<div class="studio-app">
+    <aside class="studio-sidebar" aria-label="Navigation principale">
+        <a class="brand" href="/"><span class="brand-mark">m</span><span class="brand-text">MAI Studio<small>LE STUDIO À HISTOIRES</small></span></a>
+        <AuthorizeView>
+            <Authorized Context="auth">
+                <a class="btn primary sidebar-create" href="/new"><RadzenIcon Icon="add" />Nouvelle histoire</a>
+                <span class="nav-caption">Mon espace créatif</span>
+                <NavMenu />
+                <div class="sidebar-bottom">
+                    <div class="creative-tip"><RadzenIcon Icon="auto_awesome" /><strong>Une idée suffit.</strong><p>Pas besoin de savoir dessiner. Vous racontez, votre univers prend forme.</p></div>
+                    <div class="profile"><span class="avatar"><RadzenIcon Icon="person_outline" /></span><div><strong>@(auth.User.Identity?.Name ?? "Esprit créatif")</strong><button class="link-btn" @onclick="SignOut">Se déconnecter</button></div></div>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+    </aside>
+    <div class="studio-content">
+        <header class="studio-topbar">
+            <span class="breadcrumb-copy">Mon espace <span aria-hidden="true">/</span> <strong>L'atelier à histoires</strong></span>
+            <a class="mobile-brand" href="/">MAI Studio.</a>
+            <div class="header-actions">
+                <a class="btn mobile-create" href="/new" aria-label="Nouvelle histoire"><RadzenIcon Icon="add" /></a>
+                <button class="btn icon-btn" @onclick="ToggleThemeAsync" aria-label="Changer le thème clair ou sombre" title="Changer le thème"><RadzenIcon Icon="contrast" /></button>
+                <button class="btn icon-btn" @onclick="ShowHelpAsync" aria-label="Aide et fonctionnement"><RadzenIcon Icon="help_outline" /></button>
+            </div>
+        </header>
+        <div class="page-content" id="main" tabindex="-1">
+            @Body
+            <footer class="studio-footer"><span>MAI Studio · L'imagination a trouvé son atelier.</span><span>Vos histoires, votre univers.</span></footer>
+        </div>
+    </div>
+</div>
 <RadzenComponents />
+
+@code {
+    private async Task ToggleThemeAsync() => await JS.InvokeVoidAsync("maiStudio.toggleTheme");
+
+    private Task ShowHelpAsync() => Dialogs.OpenAsync<StudioHelp>(
+        "Votre histoire, à votre rythme.",
+        options: new DialogOptions { Width = "560px", CloseDialogOnEsc = true, CloseDialogOnOverlayClick = true });
+
+    private void SignOut() => Navigation.NavigateToLogout("authentication/logout");
+}

@@ -1,209 +1,113 @@
+@page "/"
 @page "/projects"
 @attribute [Authorize]
 @implements IDisposable
 @inject GenerationApiClient GenerationClient
 @inject NavigationManager Navigation
 
-<PageTitle>My projects</PageTitle>
+<PageTitle>Mon atelier · MAI Studio</PageTitle>
 
-<main class="projects-shell">
-    <header class="projects-header">
-        <div>
-            <span class="eyebrow">Creative projects</span>
-            <h1>My projects</h1>
-            <p>Open a project to create and edit its boards.</p>
-        </div>
-        <button class="new-board" type="button" @onclick="ShowCreateProject">
-            <RadzenIcon Icon="add" />
-            New project
-        </button>
+<main>
+    <header class="page-heading">
+        <div><h1>@(IsLibrary ? "Mes histoires" : "On écrit la suite ?")</h1><p>Des idées plein la tête. Bientôt, plein les pages.</p></div>
+        <span class="edition">VOTRE ATELIER / VOL. 01</span>
     </header>
-
-    @if (isCreating)
+    @if (!IsLibrary)
     {
-        <section class="create-project" aria-label="Create project">
-            <RadzenDropDown @bind-Value="newProjectType"
-                            TValue="ProjectType"
-                            Data="projectTypes"
-                            Disabled="isSaving"
-                            Style="width: 100%" />
-            <RadzenTextBox @bind-Value="newProjectTitle"
-                           Name="project-title"
-                           Placeholder="Project title"
-                           Disabled="isSaving"
-                           Style="width: 100%" />
-            @if (newProjectType == ProjectType.Book)
-            {
-                <RadzenTextArea @bind-Value="newProjectIdea"
-                               Name="book-idea"
-                               Placeholder="Summarize the book idea, characters, setting, tone, and key events..."
-                               Rows="5"
-                               Disabled="isSaving"
-                               Style="width: 100%" />
-            }
-            <RadzenTextArea @bind-Value="newProjectContext"
-                            Name="project-context"
-                            Placeholder="Art direction (optional)"
-                            Rows="3"
-                            Disabled="isSaving"
-                            Style="width: 100%" />
-            <div class="create-project-actions">
-                <RadzenButton Text="Cancel"
-                              ButtonStyle="ButtonStyle.Light"
-                              Variant="Variant.Outlined"
-                              Disabled="isSaving"
-                              Click="@CancelCreateProject" />
-                <RadzenButton Text="Create project"
-                              Icon="add"
-                              IsBusy="isSaving"
-                              Click="@CreateProjectAsync" />
+        <section class="hero" aria-label="Créer une histoire">
+            <div class="hero-copy">
+                <span class="eyebrow">Petite idée, grande aventure</span>
+                <h2>Et si votre prochaine<br />histoire commençait<br />par <em>« et si… »</em> ?</h2>
+                <p>Une BD qui pétille ou un livre qui transporte.<br />Imaginez l'histoire. Créez la suite avec MAI.</p>
+                <a class="btn primary" href="/new">Donner vie à mon idée<RadzenIcon Icon="arrow_forward" /></a>
+                <span class="hero-footnote">Vous gardez la main, à chaque étape.</span>
+            </div>
+            <div class="hero-art">
+                <div class="mini-board"><strong>Un petit pas… pour une grande histoire.</strong><div class="mini-grid"><StoryIllustration /><StoryIllustration Book="true" /><StoryIllustration /></div></div>
+                <span class="sticker">100 % votre<br />imagination</span>
             </div>
         </section>
     }
-
+    <div class="section-heading"><h2>Vos histoires <span class="small muted">/ @FilteredProjects.Count()</span></h2><a class="link-btn" href="/new">+ Une nouvelle histoire</a></div>
+    <div class="filters">
+        <div class="segments" role="group" aria-label="Filtrer les histoires">
+            <button class="segment" aria-pressed="@(filter is null ? "true" : "false")" @onclick="() => filter = null">Tout</button>
+            <button class="segment" aria-pressed="@(filter == ProjectType.Comic ? "true" : "false")" @onclick="() => filter = ProjectType.Comic">Bandes dessinées</button>
+            <button class="segment" aria-pressed="@(filter == ProjectType.Book ? "true" : "false")" @onclick="() => filter = ProjectType.Book">Livres illustrés</button>
+        </div>
+        <label class="search-field"><RadzenIcon Icon="search" /><input type="search" @bind="search" @bind:event="oninput" aria-label="Rechercher une histoire" placeholder="Retrouver une histoire…" /></label>
+    </div>
     @if (isLoading)
     {
-        <div class="projects-state" role="status">
-            <RadzenProgressBarCircular ShowValue="false" />
-            <span>Loading projects…</span>
-        </div>
+        <div class="loading-state" role="status"><RadzenProgressBarCircular ShowValue="false" /><span>Vos histoires arrivent…</span></div>
     }
     else if (error is not null)
     {
-        <div class="projects-state error" role="alert">@error</div>
+        <div class="error" role="alert">@error</div><button class="btn" @onclick="LoadAsync">Réessayer</button>
     }
     else if (projects.Count == 0)
     {
-        <section class="empty-projects">
-            <RadzenIcon Icon="auto_stories" />
-            <h2>Create your first comic project</h2>
-            <p>Your projects and their boards will appear here.</p>
-            <button class="new-board" type="button" @onclick="ShowCreateProject">New project</button>
-        </section>
+        <section class="empty-state"><RadzenIcon Icon="auto_stories" /><h2>Votre première aventure vous attend.</h2><p>Une idée suffit pour commencer une BD ou un livre illustré.</p><a class="btn primary" href="/new">Créer ma première histoire</a><a class="btn" href="/boards/new">Composer une planche libre</a></section>
+    }
+    else if (!FilteredProjects.Any())
+    {
+        <section class="empty-state"><h2>Aucune histoire par ici… pour l'instant.</h2><p>Essayez un autre titre ou inventez une nouvelle aventure.</p><button class="btn" @onclick="ResetFilters">Réinitialiser les filtres</button></section>
     }
     else
     {
-        <section class="projects-grid" aria-label="Your projects">
-            @foreach (var project in projects)
+        <section class="projects-grid" aria-label="Vos histoires">
+            @foreach (var project in FilteredProjects)
             {
-                <a class="project-card" href="@ProjectUri(project)">
-                    <div class="project-thumbnail">
-                        <RadzenIcon Icon="auto_stories" />
-                    </div>
-                    <div class="project-details">
-                        <span class="status">@project.Type</span>
-                        <h2>@project.Title</h2>
-                        <time datetime="@project.UpdatedAt.ToString("O")">Updated @project.UpdatedAt.ToLocalTime().ToString("d MMM yyyy")</time>
-                    </div>
+                <a class="project-card" href="@ProjectUri(project)" @key="project.ProjectId">
+                    <div class="project-cover"><StoryIllustration Book="@(project.Type == ProjectType.Book)" Label="Illustration décorative du format, pas une couverture générée" /><span class="cover-label">@(project.Type == ProjectType.Book ? "Livre illustré" : "Bande dessinée")</span></div>
+                    <div class="project-card-copy"><span class="eyebrow">Votre univers</span><h3>@project.Title</h3><div class="card-meta"><span>@project.Characters.Count personnage(s)</span><time datetime="@project.UpdatedAt.ToString("O")">Modifié le @project.UpdatedAt.ToLocalTime().ToString("d MMM yyyy", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))</time></div></div>
                 </a>
             }
         </section>
     }
+    <section class="idea-strip"><div><strong>La page blanche ? Même pas peur.</strong><p class="hint">Un facteur sur Mars, une porte entre les saisons… piochez un début d'aventure.</p></div><a class="btn quiet" href="/new?inspire=true"><RadzenIcon Icon="auto_awesome" />Surprenez-moi</a></section>
+    <p class="hint"><a href="/boards/new">Composer une planche libre sans projet</a></p>
 </main>
 
 @code {
+    [SupplyParameterFromQuery(Name = "generationId")] public Guid? GenerationId { get; set; }
     private readonly CancellationTokenSource cancellation = new();
     private readonly List<ProjectResponse> projects = [];
-    private readonly ProjectType[] projectTypes = Enum.GetValues<ProjectType>();
+    private string search = string.Empty;
+    private ProjectType? filter;
     private bool isLoading = true;
-    private bool isCreating;
-    private bool isSaving;
-    private string newProjectTitle = string.Empty;
-    private string? newProjectContext;
-    private string? newProjectIdea;
-    private ProjectType newProjectType;
     private string? error;
+    private bool IsLibrary => new Uri(Navigation.Uri).AbsolutePath.TrimEnd('/').Equals("/projects", StringComparison.OrdinalIgnoreCase);
+    private IEnumerable<ProjectResponse> FilteredProjects => projects.Where(p =>
+        (filter is null || p.Type == filter) && p.Title.Contains(search.Trim(), StringComparison.CurrentCultureIgnoreCase));
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    protected override void OnParametersSet()
     {
-        try
-        {
-            projects.AddRange(await GenerationClient.ListProjectsAsync(cancellation.Token));
-        }
-        catch (AccessTokenNotAvailableException exception)
-        {
-            exception.Redirect();
-        }
-        catch (GenerationApiException exception)
-        {
-            error = exception.Message;
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        finally
-        {
-            isLoading = false;
-        }
+        if (GenerationId is Guid id) Navigation.NavigateTo($"/boards/new?generationId={id:D}", replace: true);
     }
 
-    private void ShowCreateProject()
+    private async Task LoadAsync()
     {
-        error = null;
-        isCreating = true;
-    }
-
-    private void CancelCreateProject()
-    {
-        isCreating = false;
-        newProjectTitle = string.Empty;
-        newProjectContext = null;
-        newProjectIdea = null;
-        newProjectType = ProjectType.Comic;
-    }
-
-    private async Task CreateProjectAsync()
-    {
-        if (string.IsNullOrWhiteSpace(newProjectTitle))
-        {
-            error = "Enter a project title.";
-            return;
-        }
-
-        if (newProjectType == ProjectType.Book && string.IsNullOrWhiteSpace(newProjectIdea))
-        {
-            error = "Describe your book idea.";
-            return;
-        }
-
-        isSaving = true;
+        isLoading = true;
         error = null;
         try
         {
-            var project = await GenerationClient.CreateProjectAsync(
-                new CreateProjectRequest(
-                    newProjectTitle.Trim(),
-                    newProjectContext?.Trim(),
-                    newProjectType,
-                    newProjectIdea?.Trim()),
-                cancellation.Token);
-            Navigation.NavigateTo(ProjectUri(project));
+            var loaded = await GenerationClient.ListProjectsAsync(cancellation.Token);
+            projects.Clear();
+            projects.AddRange(loaded);
         }
-
-        catch (AccessTokenNotAvailableException exception)
-        {
-            exception.Redirect();
-        }
-        catch (GenerationApiException exception)
-        {
-            error = exception.Message;
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        finally
-        {
-            isSaving = false;
-        }
+        catch (AccessTokenNotAvailableException exception) { exception.Redirect(); }
+        catch (Exception exception) when (exception is GenerationApiException or HttpRequestException) { error = exception.Message; }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        finally { isLoading = false; }
     }
 
+    private void ResetFilters() { search = string.Empty; filter = null; }
     private static string ProjectUri(ProjectResponse project) => project.Type == ProjectType.Book
         ? $"/projects/{project.ProjectId:D}/book"
         : $"/projects/{project.ProjectId:D}";
 
-    public void Dispose()
-    {
-        cancellation.Cancel();
-        cancellation.Dispose();
-    }
+    public void Dispose() { cancellation.Cancel(); cancellation.Dispose(); }
 }
