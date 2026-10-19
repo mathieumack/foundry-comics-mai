@@ -16,6 +16,8 @@ The deployment packages four services: `web`, `api`, `generationjob`, and `bookp
 
 GitHub Actions deploys the same `azd` resource graph using a federated deployment identity, separate from the application's runtime identity. Branch-scoped OIDC credentials authenticate both azd and Azure CLI; environment-variable mappings in `infra/main.parameters.json` support pipeline configuration while `infra/main.bicepparam` remains the provisioning parameter source. Runs targeting the same environment are serialized. See [deployment](deployment.md#configure-github-actions) for setup and permission boundaries.
 
+Authentication application management is conditional: without `EXISTING_ENTRA_CLIENT_ID`, two Microsoft Graph modules create/update the application and service principal, then configure the deployed SPA redirects. With an existing client ID, both modules are skipped without querying Graph; an administrator owns the application, scope/consent, and redirect configuration outside CD. The API and frontend use the same resolved client ID and `access_as_user` scope in either mode. An optional `EXISTING_ENTRA_API_AUDIENCE` overrides the conventional API identifier URI only in reuse mode. This separates Azure deployment/RBAC rights from Graph application-management rights without changing runtime authentication.
+
 ![Application-level component and processing overview](images/solution-architecture.svg)
 
 The [editable Excalidraw source](images/solution-architecture.excalidraw) accompanies this overview. It intentionally omits provisioning-only dependencies and detailed network boundaries.

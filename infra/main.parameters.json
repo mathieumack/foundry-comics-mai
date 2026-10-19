@@ -8,6 +8,12 @@
     "location": {
       "value": "${AZURE_LOCATION}"
     },
+    "existingEntraClientId": {
+      "value": "${EXISTING_ENTRA_CLIENT_ID=}"
+    },
+    "existingEntraApiAudience": {
+      "value": "${EXISTING_ENTRA_API_AUDIENCE=}"
+    },
     "apiContainerImage": {
       "value": "${SERVICE_API_IMAGE_NAME=mcr.microsoft.com/dotnet/samples:aspnetapp@sha256:b8e94412a96b19ac12c78a7064af1bb0a6f584e752b9de7cc31ca4d45ead36b0}"
     },

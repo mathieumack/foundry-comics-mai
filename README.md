@@ -60,7 +60,7 @@ See the [functional guide](docs/functional-guide.md) for user journeys, limits, 
 
 #### How to install or deploy
 
-Read [requirements and costs](docs/requirements.md) first. Verify model access and regional quota, deployment permissions, and permission to create Entra applications.
+Read [requirements and costs](docs/requirements.md) first. Verify model access and regional quota, deployment permissions, and either permission to manage Entra applications or a [preconfigured authentication application](docs/deployment.md#choose-authentication-application-management).
 
 From the repository root:
 
