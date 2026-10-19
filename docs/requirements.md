@@ -25,7 +25,11 @@ azd version
 
 ## Azure access
 
-You need an Azure subscription and a Microsoft Entra tenant where you can create the resources declared in `infra/main.bicep`, create role assignments, and create or update an Entra application through the Microsoft Graph Bicep extension. Organization policies may require an administrator to grant these capabilities. The deployment does not accept a client secret as a substitute.
+You need an Azure subscription and a Microsoft Entra tenant where you can create the resources declared in `infra/main.bicep` and create role assignments. By default, the deployment also creates or updates an Entra application through the Microsoft Graph Bicep extension, requiring the corresponding Graph permissions.
+
+Alternatively, set `EXISTING_ENTRA_CLIENT_ID` to reuse a preconfigured authentication application in the deployment tenant. Both Graph modules are then skipped, so the deployment identity does not need Graph application-management rights. An authorized administrator must configure the API scope, permissions/consent, and SPA redirect URIs separately. The API identifier URI defaults to `api://comics-<environment-name>`; use `EXISTING_ENTRA_API_AUDIENCE` for a different URI. See [authentication application management](deployment.md#choose-authentication-application-management) for the contract and CD setup.
+
+Organization policies may require an administrator to grant these capabilities. The deployment does not accept a client secret as a substitute.
 
 ## Region and model capacity
 

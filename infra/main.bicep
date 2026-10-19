@@ -18,6 +18,12 @@ param location string
 @description('Deploy the Foundry BYO connections and Agents capability host. These resources are immutable once created: after the first successful deployment the connections become owned by the capability host and can no longer be modified through the connections API. Set to false (via azd env set DEPLOY_FOUNDRY_CAPABILITY_HOST false) on subsequent re-provisions to avoid the "Connection is in use by the workspace capability host" error.')
 param deployFoundryCapabilityHost bool = true
 
+@description('Existing authentication application client ID. When nonempty, skip all Microsoft Graph application and redirect URI management.')
+param existingEntraClientId string = ''
+
+@description('API identifier URI exposed by the existing authentication application. When empty, use api://comics-<environmentName>. The application must expose access_as_user.')
+param existingEntraApiAudience string = ''
+
 @description('Container image for the API workload')
 param apiContainerImage string
 
@@ -52,7 +58,12 @@ var webTags = union(apiTags, {
 })
 
 var entraApiDisplayName = 'Comics API (${environmentName})'
-var entraApiAudience = 'api://comics-${environmentName}'
+var manageEntraApplication = empty(existingEntraClientId)
+var entraApiAudience = !manageEntraApplication && !empty(existingEntraApiAudience)
+  ? existingEntraApiAudience
+  : 'api://comics-${environmentName}'
+var entraClientId = manageEntraApplication ? entraApiRegistration!.outputs.clientId : existingEntraClientId
+var entraApiScope = '${entraApiAudience}/access_as_user'
 var generationJobsQueueName = 'generation-jobs'
 var generationJobsPoisonQueueName = 'generation-jobs-poison'
 var bookPlanJobsQueueName = 'book-plan-jobs'
@@ -347,7 +358,7 @@ module containerAppEnv 'modules/hosting/container-app-environment.bicep' = {
   ]
 }
 
-module entraApiRegistration 'modules/security/entra-api-registration.bicep' = {
+module entraApiRegistration 'modules/security/entra-api-registration.bicep' = if (manageEntraApplication) {
   name: 'comics-entra-api'
   params: {
     displayName: entraApiDisplayName
@@ -374,13 +385,13 @@ module staticWebApp 'br/public:avm/res/web/static-site:0.9.5' = {
   }
 }
 
-module entraApiRegistrationUpdate 'modules/security/entra-api-registration-update.bicep' = {
+module entraApiRegistrationUpdate 'modules/security/entra-api-registration-update.bicep' = if (manageEntraApplication) {
   name: 'comics-entra-api-update'
   params: {
     displayName: entraApiDisplayName
-    uniqueName: entraApiRegistration.outputs.uniqueName
+    uniqueName: entraApiRegistration!.outputs.uniqueName
     identifierUri: entraApiAudience
-    clientId: entraApiRegistration.outputs.clientId
+    clientId: entraClientId
     spaRedirectUris: [
       'https://${staticWebApp.outputs.defaultHostname}'
       'https://${staticWebApp.outputs.defaultHostname}/authentication/login-callback'
@@ -421,7 +432,7 @@ module apiContainerApp 'modules/hosting/container-app.bicep' = {
     minReplicas: 0
     maxReplicas: 3
     serviceName: 'api'
-    backendAppRegistrationClientId: entraApiRegistration.outputs.clientId
+    backendAppRegistrationClientId: entraClientId
     //backendAppRegistrationAudience: entraApiRegistration.outputs.audience
   }
   dependsOn: [
@@ -604,10 +615,10 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnv.
 
 output SERVICE_API_URI string = 'https://${apiContainerApp.outputs.fqdn}'
 output SERVICE_WEB_URI string = 'https://${staticWebApp.outputs.defaultHostname}'
-output AZURE_ENTRA_CLIENT_ID string = entraApiRegistration.outputs.clientId
-output AZURE_ENTRA_API_AUDIENCE string = entraApiRegistration.outputs.audience
-output AZURE_ENTRA_API_SCOPE string = entraApiRegistration.outputs.delegatedScope
-output VITE_ENTRA_CLIENT_ID string = entraApiRegistration.outputs.clientId
+output AZURE_ENTRA_CLIENT_ID string = entraClientId
+output AZURE_ENTRA_API_AUDIENCE string = entraApiAudience
+output AZURE_ENTRA_API_SCOPE string = entraApiScope
+output VITE_ENTRA_CLIENT_ID string = entraClientId
 output VITE_ENTRA_TENANT_ID string = tenant().tenantId
-output VITE_API_SCOPE string = entraApiRegistration.outputs.delegatedScope
+output VITE_API_SCOPE string = entraApiScope
 output VITE_API_BASE_URL string = 'https://${apiContainerApp.outputs.fqdn}'

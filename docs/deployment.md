@@ -28,7 +28,7 @@ Choose a short environment name because it contributes to Azure resource names. 
 
 ## 3. Validate prerequisites
 
-Confirm the model names, versions, capacities, regional availability, and quota listed in [requirements](requirements.md). Confirm permission to create role assignments and Entra applications, then run:
+Confirm the model names, versions, capacities, regional availability, and quota listed in [requirements](requirements.md). Confirm permission to create role assignments and, unless reusing an existing authentication application below, Entra applications. Then run:
 
 ```powershell
 az bicep build --file .\infra\main.bicep --stdout > $null
@@ -37,6 +37,26 @@ dotnet build .\src\MaiImageGenerator.slnx
 ```
 
 Local compilation does not validate live permissions, model availability, quota, or policies. Review a preflight or what-if result in the intended subscription before provisioning; do not treat this sample as production-ready.
+
+### Choose authentication application management
+
+By default, provisioning creates or updates the Entra authentication application, its service principal, API scope, and SPA redirect URIs through Microsoft Graph. Leave `EXISTING_ENTRA_CLIENT_ID` empty to keep this behavior.
+
+To reuse an application without any Graph application lookup or modification, set its **application (client) ID**, not its object ID or the deployment identity's client ID:
+
+```powershell
+azd env set EXISTING_ENTRA_CLIENT_ID <authentication-application-client-id>
+```
+
+The existing application must be in the deployment tenant and support both the SPA and API: single-tenant sign-in, v2 access tokens, the delegated `access_as_user` scope, and the required delegated permissions/consent (Microsoft Graph `User.Read` and its own API scope, as in the managed application). Its default API identifier URI is `api://comics-<environment-name>`. If it exposes another URI, also set:
+
+```powershell
+azd env set EXISTING_ENTRA_API_AUDIENCE <existing-api-identifier-uri>
+```
+
+An administrator must configure SPA redirect URIs separately: `https://<static-web-app-hostname>` and `https://<static-web-app-hostname>/authentication/login-callback`. For local development, also include `http://localhost:5173`, `http://localhost:5173/authentication/login-callback`, and `https://localhost:7148/authentication/login-callback`. Obtain the deployed origin from `SERVICE_WEB_URI`; update redirects if that origin changes.
+
+In reuse mode, neither Graph module runs, including redirect updates and service-principal creation. API authentication and frontend configuration still receive the selected client ID, audience, and scope through the usual outputs. `AZURE_ENTRA_CLIENT_ID` remains an **output**, not the input that selects this mode, so a previous deployment cannot silently disable application management. To return to managed mode, set `EXISTING_ENTRA_CLIENT_ID` to an empty string; only do this for an application managed by this deployment, since it does not adopt arbitrary existing registrations.
 
 ## 4. Provision and deploy
 
@@ -47,7 +67,7 @@ azd up
 The command performs these operations:
 
 1. The `preprovision` hook checks for an existing Foundry capability host and sets `DEPLOY_FOUNDRY_CAPABILITY_HOST`.
-2. Bicep creates the resources, private networking, identities, application registration, and RBAC assignments, including Azure SignalR Service in Default mode.
+2. Bicep creates the resources, private networking, identities, and RBAC assignments, including Azure SignalR Service in Default mode. It manages the authentication application and redirects only when no existing client ID is supplied.
 3. `azd` remotely builds and deploys the API, board-generation job, and book-plan-generation job containers.
 4. The web `prepackage` hook writes `appsettings.Production.json` from Bicep outputs and publishes the Blazor application.
 5. `azd` deploys the frontend to Static Web Apps.
@@ -106,6 +126,8 @@ Check repository Actions variables after configuration:
 | `AZURE_SUBSCRIPTION_ID` | The target subscription ID. |
 | `AZURE_TENANT_ID` | The tenant containing the deployment identity. |
 | `AZURE_CLIENT_ID` | The deployment identity's client/application ID. |
+| `EXISTING_ENTRA_CLIENT_ID` | Optional authentication application client ID. When set, skip both Graph modules and manage redirects outside CD. |
+| `EXISTING_ENTRA_API_AUDIENCE` | Optional existing API identifier URI; defaults to `api://comics-<environment-name>`. Only used with an existing client ID. |
 
 For example, copy the existing resource group without writing deployment identifiers into tracked files:
 
@@ -122,7 +144,22 @@ The workflow passes these variables to `azd`, installs .NET 10, and authenticate
 
 The workflow runs on pushes to `main` and manual dispatches, not on pull requests. A manual dispatch from another branch requires a matching federated credential. Commit and push the workflow and infrastructure mapping only when ready: a push to `main` provisions billable resources and deploys the application.
 
-The pipeline identity needs Azure deployment/RBAC permissions and Microsoft Graph permissions for the Entra application module. Azure Contributor/User Access Administrator assignments do not grant Microsoft Graph application permissions. See [requirements](requirements.md).
+The pipeline identity always needs Azure deployment/RBAC permissions. It only needs Microsoft Graph permissions when `EXISTING_ENTRA_CLIENT_ID` is empty. Azure Contributor/User Access Administrator assignments do not grant Microsoft Graph application permissions. To keep Graph rights out of CD after an initial privileged deployment, copy the authentication outputs into the optional repository Actions variables:
+
+```powershell
+$authenticationClientId = azd env get-value AZURE_ENTRA_CLIENT_ID
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($authenticationClientId)) {
+    throw 'Provision or refresh the selected environment before reading its authentication client ID.'
+}
+$authenticationAudience = azd env get-value AZURE_ENTRA_API_AUDIENCE
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($authenticationAudience)) {
+    throw 'Provision or refresh the selected environment before reading its authentication audience.'
+}
+gh variable set EXISTING_ENTRA_CLIENT_ID --body $authenticationClientId
+gh variable set EXISTING_ENTRA_API_AUDIENCE --body $authenticationAudience
+```
+
+These are public identifiers, not secrets. The workflow passes them to azd; it never uses `AZURE_CLIENT_ID` as the application's authentication ID. Redirects and consent must already be configured by an authorized administrator. See [requirements](requirements.md).
 
 Updating azd to the available stable version is recommended, but do not rely on an upgrade alone to repair missing parameter mappings.
 
@@ -155,6 +192,12 @@ Run `azd provision` from the repository root so the preprovision hook executes. 
 ### Frontend authentication fails
 
 Run `azd env refresh`, confirm the Entra outputs exist, and redeploy the `web` service. Do not commit generated production values.
+
+When reusing an application, verify `EXISTING_ENTRA_CLIENT_ID`, its tenant, API identifier URI, the `access_as_user` scope/consent, and the SPA login-callback redirect for `SERVICE_WEB_URI`. Provisioning intentionally does not read or repair the registration in this mode.
+
+### Provisioning fails with a Microsoft Graph permission error
+
+If the deployment reports `Authorization_RequestDenied` or insufficient Graph privileges, either use an authorized principal for managed mode or supply `EXISTING_ENTRA_CLIENT_ID` with a preconfigured authentication application. In GitHub Actions, set the repository variable, not just the local azd environment. This only bypasses Graph application management; other failures, including Foundry capability-host errors, must be investigated independently.
 
 ### Private service access fails
 
