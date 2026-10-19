@@ -240,22 +240,29 @@ summary { cursor: pointer; font-weight: 650; }
 .board-link.active { border-color: var(--cp-accent); background: var(--cp-accent-soft); color: var(--cp-accent); }
 .board-link small { color: var(--cp-text-muted); }
 .studio-workspace { min-width: 0; }
-.studio-tabs { margin-bottom: 20px; padding: 8px; background: var(--cp-panel-strong); border: 1px solid var(--cp-border); border-radius: 12px; }
+.studio-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 20px; padding: 8px; background: var(--cp-panel-strong); border: 1px solid var(--cp-border); border-radius: 12px; }
+.studio-tabs .segment { width: 100%; }
+.studio-tabs .segment:last-child { grid-column: 1 / -1; text-align: center; }
 .editor-layout { display: grid; grid-template-columns: minmax(250px, .9fr) minmax(250px, 1fr); gap: 24px; align-items: start; }
 .panel-picks { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
 .panel-pick { border: 1px solid var(--cp-border); border-radius: 8px; background: var(--cp-bg-elevated); padding: 8px 12px; color: var(--cp-text); font-size: 12px; }
 .panel-pick[aria-pressed="true"] { border-color: var(--cp-accent); background: var(--cp-accent-soft); color: var(--cp-accent); }
-.board-draft, .board-frame { padding: 16px; background: var(--cp-surface); border: 1px solid var(--cp-border); border-radius: 4px; }
+.board-draft { padding: 16px; background: var(--cp-surface); border: 1px solid var(--cp-border); border-radius: 4px; }
 .board-title-preview { text-align: center; text-transform: uppercase; font-size: 17px; font-weight: 750; margin: 4px 0 12px; overflow-wrap: anywhere; }
 .board-grid { display: grid; gap: 8px; }
 .panel-preview { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; position: relative; min-height: 130px; padding: 12px; border: 1px solid var(--cp-text); background: var(--cp-bg-elevated); color: var(--cp-text-muted); width: 100%; }
-.panel-preview img { width: 100%; height: 100%; object-fit: cover; position: absolute; inset: 0; }
 .panel-preview[aria-pressed="true"] { outline: 3px solid var(--cp-accent); outline-offset: -3px; }
 .panel-number { position: absolute; z-index: 1; top: 6px; left: 6px; background: var(--cp-surface); padding: 0 6px; border-radius: 4px; color: var(--cp-text); font-size: 10px; }
 .panel-preview small { font-size: 11px; }
 .panel-preview.is-generating { border-color: var(--cp-accent); }
 .panel-preview.has-error { border-color: var(--cp-danger); color: var(--cp-danger); }
-.board-frame img { display: block; width: 100%; }
+.board-images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.board-image { display: block; width: 100%; padding: 0; overflow: hidden; border: 1px solid var(--cp-border); border-radius: 12px; background: var(--cp-surface); box-shadow: var(--cp-shadow); }
+.board-image-composite { grid-column: 1 / -1; width: min(100%, 760px); justify-self: center; }
+.board-image img { display: block; width: 100%; height: auto; }
+.image-viewer { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; padding: 72px 24px 24px; background: var(--cp-overlay); }
+.image-viewer img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.image-viewer-close { position: absolute; top: 20px; right: 24px; }
 .generation-box { margin-top: 24px; padding: 16px; border-radius: 12px; background: var(--cp-bg-elevated); border: 1px solid var(--cp-border); }
 .generation-box .btn { margin-top: 12px; }
 .generation-box progress { width: 100%; accent-color: var(--cp-accent); height: 8px; }
@@ -316,7 +323,8 @@ summary { cursor: pointer; font-weight: 650; }
     .hero h2 { font-size: 40px; }
     .hero-art { min-height: 230px; }
     .mini-board { width: 220px; }
-    .projects-grid, .editor-layout, .character-grid { grid-template-columns: 1fr; }
+    .projects-grid, .editor-layout, .character-grid, .board-images, .studio-tabs { grid-template-columns: 1fr; }
+    .studio-tabs .segment:last-child { grid-column: auto; }
     .project-cover { height: 200px; }
     .project-card-copy { padding: 20px; }
     .idea-strip { align-items: flex-start; flex-direction: column; }

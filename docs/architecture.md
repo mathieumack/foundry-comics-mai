@@ -66,7 +66,7 @@ flowchart TB
     PlanJob -. telemetry .-> Monitor
 ```
 
-The browser runs Blazor and calls the API directly; Static Web Apps is not an API proxy. Static Web Apps is deployed in West Europe, independently of the primary region. The Container Apps environment has external API ingress and VNet integration for private backend access. Storage, Cosmos DB, AI Search, and Foundry use private endpoints. Container Registry is public in the reference deployment and also has a private endpoint.
+The browser runs Blazor and calls the API directly; Static Web Apps is not an API proxy. In the comic editor, generated images are confined to the final board tab, whose responsive image grid opens source images in a full-screen viewer. Static Web Apps is deployed in West Europe, independently of the primary region. The Container Apps environment has external API ingress and VNet integration for private backend access. Storage, Cosmos DB, AI Search, and Foundry use private endpoints. Container Registry is public in the reference deployment and also has a private endpoint.
 
 SignalR runs in Default mode: the API hosts the server-push-only hub while the service handles client connections. Negotiation binds the authenticated user's identifier to the connection. Static Web Apps, the authenticated API, and SignalR remain public entry points.
 

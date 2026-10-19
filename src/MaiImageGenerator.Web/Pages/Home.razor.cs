@@ -4,6 +4,7 @@ using MaiImageGenerator.Web.Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Components.Routing;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
@@ -33,7 +34,7 @@ public partial class Home : IAsyncDisposable
     private Guid? activeGenerationId, loadedProjectId, loadedGenerationId;
     private ProjectResponse? project;
     private string boardTitle = "Nouvelle planche", newCharacterName = string.Empty;
-    private string? storyDescription, projectDescription, context, boardDataUrl, progressMessage, projectError, workspaceError;
+    private string? storyDescription, projectDescription, context, boardDataUrl, progressMessage, projectError, workspaceError, viewerImageUrl, viewerImageAlt;
     private string baseline = string.Empty, characterBaseline = string.Empty;
     private int generatedPanelCount, selectedPanel;
     private BoardTemplate selectedTemplate;
@@ -356,6 +357,24 @@ public partial class Home : IAsyncDisposable
     {
         var slot = DisplayTemplateDefinition.Slots[index];
         return $"grid-column:{slot.Column + 1}/span {slot.ColumnSpan};grid-row:{slot.Row + 1}/span {slot.RowSpan};";
+    }
+    private void OpenImageViewer(string imageUrl, string alt)
+    {
+        viewerImageUrl = imageUrl;
+        viewerImageAlt = alt;
+    }
+    private void OpenBoardImageViewer()
+    {
+        if (boardDataUrl is not null) OpenImageViewer(boardDataUrl, "Planche de bande dessinée générée");
+    }
+    private void OpenPanelImageViewer(int index)
+    {
+        if (panels[index].ImageDataUrl is { } imageDataUrl) OpenImageViewer(imageDataUrl, $"Case {index + 1} générée");
+    }
+    private void CloseImageViewer() => viewerImageUrl = viewerImageAlt = null;
+    private void HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape") CloseImageViewer();
     }
     private void SelectPanel(int index) { selectedPanel = index; activeTab = StudioTab.Scenes; }
     private void MovePanel(int offset)
