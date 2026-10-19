@@ -5,7 +5,7 @@
 
 <PageTitle>@(project?.Title ?? "Atelier BD") · MAI Studio</PageTitle>
 <NavigationLock ConfirmExternalNavigation="@HasUnsavedChanges" OnBeforeInternalNavigation="BeforeNavigationAsync" />
-<main @onkeydown="HandleKeyDown">
+<main>
     <header class="page-heading workspace-heading">
         <div><a class="link-btn" href="/projects">← Mes histoires</a><h1>@(project?.Title ?? "Votre prochaine aventure")</h1><p>Votre idée, vos choix. Une planche à la fois.</p></div>
         <div class="header-actions">
@@ -182,9 +182,11 @@
     }
     @if (viewerImageUrl is not null)
     {
-        <div class="image-viewer" role="dialog" aria-modal="true" aria-label="Image en plein écran">
-            <button type="button" class="btn image-viewer-close" @onclick="CloseImageViewer" aria-label="Fermer l'image en plein écran" autofocus><RadzenIcon Icon="close" />Fermer</button>
+        <dialog @ref="imageViewerDialog" class="image-viewer" @onclose="CloseImageViewer" aria-label="Image en plein écran">
+            <form method="dialog">
+                <button type="submit" class="btn image-viewer-close" aria-label="Fermer l'image en plein écran" autofocus><RadzenIcon Icon="close" />Fermer</button>
+            </form>
             <img src="@viewerImageUrl" alt="@viewerImageAlt" />
-        </div>
+        </dialog>
     }
 </main>

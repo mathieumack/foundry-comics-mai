@@ -260,7 +260,9 @@ summary { cursor: pointer; font-weight: 650; }
 .board-image { display: block; width: 100%; padding: 0; overflow: hidden; border: 1px solid var(--cp-border); border-radius: 12px; background: var(--cp-surface); box-shadow: var(--cp-shadow); }
 .board-image-composite { grid-column: 1 / -1; width: min(100%, 760px); justify-self: center; }
 .board-image img { display: block; width: 100%; height: auto; }
-.image-viewer { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; padding: 72px 24px 24px; background: var(--cp-overlay); }
+.image-viewer { width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; padding: 72px 24px 24px; border: 0; background: var(--cp-overlay); }
+.image-viewer[open] { display: grid; place-items: center; }
+.image-viewer::backdrop { background: transparent; }
 .image-viewer img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
 .image-viewer-close { position: absolute; top: 20px; right: 24px; }
 .generation-box { margin-top: 24px; padding: 16px; border-radius: 12px; background: var(--cp-bg-elevated); border: 1px solid var(--cp-border); }

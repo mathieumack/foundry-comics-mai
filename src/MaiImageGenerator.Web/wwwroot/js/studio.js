@@ -11,6 +11,11 @@ window.maiStudio = {
         } catch (error) {
             console.warn("The theme preference could not be stored.", error);
         }
+    },
+    showModal(dialog) {
+        if (dialog && !dialog.open) {
+            dialog.showModal();
+        }
     }
 };
 (() => {
