@@ -87,6 +87,7 @@ public partial class Home : IAsyncDisposable
     {
         var requestedId = BoardId ?? GenerationId;
         if (initialized && loadedProjectId == ProjectId && loadedGenerationId == requestedId) return;
+        CloseImageViewer();
         boardCancellation?.Cancel();
         boardCancellation?.Dispose();
         boardCancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
