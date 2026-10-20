@@ -74,52 +74,64 @@
                         @if (isCharacterSaving) { <p role="status" class="hint">Enregistrement du personnage…</p> }
                     </section>
                 }
-                else
+                else if (activeTab == StudioTab.Scenes)
                 {
                     <div class="editor-layout">
                         <section class="surface">
-                            @if (activeTab == StudioTab.Scenes)
-                            {
-                                <span class="eyebrow">Le storyboard</span><h2>Chaque case raconte quelque chose.</h2>
-                                <details open="@(panels.All(p => string.IsNullOrWhiteSpace(p.Prompt)))">
-                                    <summary>Partir d'une idée</summary>
-                                    <label class="field" for="story-description">Racontez l'aventure</label>
-                                    <textarea class="text" id="story-description" @bind="storyDescription" rows="4" disabled="@EditingLocked" placeholder="Personnages, lieu, ton, rebondissements…"></textarea>
-                                    <button class="btn" style="margin-top:12px" @onclick="CreateScaffoldAsync" disabled="@EditingLocked"><RadzenIcon Icon="auto_fix_high" />@(isScaffolding ? "MAI imagine vos scènes…" : "Proposer mes scènes")</button>
-                                </details>
-                                <label class="field" for="board-title">Titre de la planche</label><input class="text" id="board-title" @bind="boardTitle" @bind:event="oninput" disabled="@EditingLocked" />
-                                <div class="panel-picks" role="group" aria-label="Choisir une case">
-                                    @for (var index = 0; index < panels.Count; index++)
-                                    {
-                                        var panelIndex = index;
-                                        <button class="panel-pick" aria-pressed="@(selectedPanel == panelIndex ? "true" : "false")" @onclick="() => selectedPanel = panelIndex">@((index + 1).ToString("D2"))</button>
-                                    }
-                                </div>
-                                @if (panels.Count > 0)
+                            <span class="eyebrow">Le storyboard</span><h2>Chaque case raconte quelque chose.</h2>
+                            <details open="@(panels.All(p => string.IsNullOrWhiteSpace(p.Prompt)))">
+                                <summary>Partir d'une idée</summary>
+                                <label class="field" for="story-description">Racontez l'aventure</label>
+                                <textarea class="text" id="story-description" @bind="storyDescription" rows="4" disabled="@EditingLocked" placeholder="Personnages, lieu, ton, rebondissements…"></textarea>
+                                <button class="btn" style="margin-top:12px" @onclick="CreateScaffoldAsync" disabled="@EditingLocked"><RadzenIcon Icon="auto_fix_high" />@(isScaffolding ? "MAI imagine vos scènes…" : "Proposer mes scènes")</button>
+                            </details>
+                            <label class="field" for="board-title">Titre de la planche</label><input class="text" id="board-title" @bind="boardTitle" @bind:event="oninput" disabled="@EditingLocked" />
+                            <div class="panel-picks" role="group" aria-label="Choisir une case">
+                                @for (var index = 0; index < panels.Count; index++)
                                 {
-                                    var panel = panels[selectedPanel];
-                                    <label class="field" for="panel-prompt">Que se passe-t-il dans la case @(selectedPanel + 1) ?</label>
-                                    <textarea @key="panel.Id" class="text" id="panel-prompt" @bind="panel.Prompt" @bind:event="oninput" rows="5" disabled="@EditingLocked" placeholder="Cadrage, action, décor, dialogue…"></textarea>
-                                    @if (characters.Count > 0)
-                                    {
-                                        <label class="field" for="panel-characters">Personnages présents</label>
-                                        <RadzenDropDown @bind-Value="panel.CharacterIds" TValue="IEnumerable<string>" Data="characters" TextProperty="Name" ValueProperty="Id" Multiple="true" Name="panel-characters" aria-label="Personnages présents dans la case" Disabled="EditingLocked" Style="width:100%" />
-                                    }
-                                    <div class="row-actions" style="margin-top:16px"><button class="btn quiet" disabled="@(EditingLocked || selectedPanel == 0)" @onclick="() => MovePanel(-1)">← Avant</button><button class="btn quiet" disabled="@(EditingLocked || selectedPanel == panels.Count - 1)" @onclick="() => MovePanel(1)">Après →</button></div>
+                                    var panelIndex = index;
+                                    <button class="panel-pick" aria-pressed="@(selectedPanel == panelIndex ? "true" : "false")" @onclick="() => selectedPanel = panelIndex">@((index + 1).ToString("D2"))</button>
                                 }
-                                <details><summary>Direction artistique & réglages</summary>
-                                    <label class="field" for="description">Résumé du projet</label><textarea class="text" id="description" @bind="projectDescription" rows="3" disabled="@EditingLocked"></textarea>
-                                    <label class="field" for="context">Ambiance commune</label><textarea class="text" id="context" @bind="context" rows="3" disabled="@EditingLocked"></textarea>
-                                    <label class="field" for="board-template">Mise en page</label>
-                                    <select class="text" id="board-template" value="@selectedTemplate" @onchange="ChangeTemplateAsync" disabled="@EditingLocked"><option value="@BoardTemplate.Standard">Classique · 6 cases</option><option value="@BoardTemplate.Storyline">Strip · 3 cases</option><option value="@BoardTemplate.Dynamic1">Dynamique · 5 cases</option><option value="@BoardTemplate.Dynamic2">Ouverture cinéma · 5 cases</option></select>
-                                    <label class="checkline"><input type="checkbox" @bind="rewritePrompt" disabled="@EditingLocked" />Enrichir les consignes avec MAI</label>
-                                </details>
-                            }
-                            else
+                            </div>
+                            @if (panels.Count > 0)
                             {
-                                <span class="eyebrow">Le grand aperçu</span><h2>@(boardDataUrl is not null ? "Votre aventure prend forme." : "Tout commence par vos scènes.")</h2>
-                                <p class="hint">Les images apparaissent case par case. Vous pouvez revenir aux scènes pour préparer une nouvelle version.</p>
+                                var panel = panels[selectedPanel];
+                                <figure class="scene-illustration">
+                                    @if (panel.ImageDataUrl is not null)
+                                    {
+                                        <button type="button" class="board-image" @onclick="() => OpenPanelImageViewer(selectedPanel)" aria-label="@($"Agrandir la case {selectedPanel + 1}")">
+                                            <img src="@panel.ImageDataUrl" alt="@($"Case {selectedPanel + 1} générée")" />
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <div class="scene-placeholder @PanelStatusClass(panel.Status)" role="status">
+                                            <RadzenIcon Icon="@(panel.Status == PanelUiStatus.Generating ? "hourglass_top" : "image")" />
+                                            <span>@PanelStatusLabel(panel.Status)</span>
+                                        </div>
+                                    }
+                                    <figcaption>Case @(selectedPanel + 1) · @PanelStatusLabel(panel.Status)@(panel.ImageDataUrl is not null ? " · Cliquez pour agrandir" : "")</figcaption>
+                                </figure>
+                                @if (panel.Status == PanelUiStatus.Error)
+                                {
+                                    <p class="error" role="alert">@panel.Error</p>
+                                }
+                                <label class="field" for="panel-prompt">Que se passe-t-il dans la case @(selectedPanel + 1) ?</label>
+                                <textarea @key="panel.Id" class="text" id="panel-prompt" @bind="panel.Prompt" @bind:event="oninput" rows="5" disabled="@EditingLocked" placeholder="Cadrage, action, décor, dialogue…"></textarea>
+                                @if (characters.Count > 0)
+                                {
+                                    <label class="field" for="panel-characters">Personnages présents</label>
+                                    <RadzenDropDown @bind-Value="panel.CharacterIds" TValue="IEnumerable<string>" Data="characters" TextProperty="Name" ValueProperty="Id" Multiple="true" Name="panel-characters" aria-label="Personnages présents dans la case" Disabled="EditingLocked" Style="width:100%" />
+                                }
+                                <div class="row-actions" style="margin-top:16px"><button class="btn quiet" disabled="@(EditingLocked || selectedPanel == 0)" @onclick="() => MovePanel(-1)">← Avant</button><button class="btn quiet" disabled="@(EditingLocked || selectedPanel == panels.Count - 1)" @onclick="() => MovePanel(1)">Après →</button></div>
                             }
+                            <details><summary>Direction artistique & réglages</summary>
+                                <label class="field" for="description">Résumé du projet</label><textarea class="text" id="description" @bind="projectDescription" rows="3" disabled="@EditingLocked"></textarea>
+                                <label class="field" for="context">Ambiance commune</label><textarea class="text" id="context" @bind="context" rows="3" disabled="@EditingLocked"></textarea>
+                                <label class="field" for="board-template">Mise en page</label>
+                                <select class="text" id="board-template" value="@selectedTemplate" @onchange="ChangeTemplateAsync" disabled="@EditingLocked"><option value="@BoardTemplate.Standard">Classique · 6 cases</option><option value="@BoardTemplate.Storyline">Strip · 3 cases</option><option value="@BoardTemplate.Dynamic1">Dynamique · 5 cases</option><option value="@BoardTemplate.Dynamic2">Ouverture cinéma · 5 cases</option></select>
+                                <label class="checkline"><input type="checkbox" @bind="rewritePrompt" disabled="@EditingLocked" />Enrichir les consignes avec MAI</label>
+                            </details>
                             <div class="generation-box">
                                 @if (isGenerating)
                                 {
@@ -138,26 +150,26 @@
                             </div>
                         </section>
                         <section aria-label="Aperçu de la planche">
-                            @if (boardDataUrl is not null && activeTab == StudioTab.Preview)
-                            {
-                                <div class="board-frame"><img src="@boardDataUrl" alt="Planche de bande dessinée générée" /></div>
-                            }
-                            else
-                            {
-                                <div class="board-draft"><div class="board-title-preview">@boardTitle</div><div class="board-grid" style="@BoardGridStyle">
-                                    @for (var index = 0; index < panels.Count; index++)
-                                    {
-                                        var panelIndex = index;
-                                        var panel = panels[index];
-                                        <button class="panel-preview @PanelStatusClass(panel.Status)" style="@PanelSlotStyle(index)" aria-label="@($"Modifier la case {index + 1} : {PanelStatusLabel(panel.Status)}")" aria-pressed="@(selectedPanel == index ? "true" : "false")" @onclick="() => SelectPanel(panelIndex)">
-                                            <span class="panel-number">@(index + 1)</span>
-                                            @if (panel.ImageDataUrl is not null) { <img src="@panel.ImageDataUrl" alt="@($"Case {index + 1} générée")" /> }
-                                            else { <RadzenIcon Icon="@(panel.Status == PanelUiStatus.Generating ? "hourglass_top" : "image")" /><small>@PanelStatusLabel(panel.Status)</small> }
-                                        </button>
-                                    }
-                                </div></div>
-                            }
-                            <p class="hint" style="text-align:center">APERÇU · @panels.Count cases · @(boardDataUrl is not null && activeTab == StudioTab.Preview ? "Revenez aux scènes pour préparer une nouvelle version." : "Cliquez sur une case pour la modifier.")</p>
+                            <div class="board-draft"><div class="board-title-preview">@boardTitle</div><div class="board-grid" style="@BoardGridStyle">
+                                @for (var index = 0; index < panels.Count; index++)
+                                {
+                                    var panelIndex = index;
+                                    var panel = panels[index];
+                                    <button class="panel-preview @PanelStatusClass(panel.Status)" style="@PanelSlotStyle(index)" aria-label="@($"Modifier la case {index + 1} : {PanelStatusLabel(panel.Status)}")" aria-pressed="@(selectedPanel == index ? "true" : "false")" @onclick="() => SelectPanel(panelIndex)">
+                                        <span class="panel-number">@(index + 1)</span>
+                                        @if (panel.ImageDataUrl is not null)
+                                        {
+                                            <img src="@panel.ImageDataUrl" alt="@($"Case {index + 1} générée")" />
+                                        }
+                                        else
+                                        {
+                                            <RadzenIcon Icon="@(panel.Status == PanelUiStatus.Generating ? "hourglass_top" : "image")" />
+                                        }
+                                        <small>@PanelStatusLabel(panel.Status)</small>
+                                    </button>
+                                }
+                            </div></div>
+                            <p class="hint" style="text-align:center">APERÇU · @panels.Count cases · Cliquez sur une case pour la modifier.</p>
                             @if (panels.Any(panel => panel.Status == PanelUiStatus.Error))
                             {
                                 <div class="error" role="alert"><strong>Certaines images n'ont pas pu être créées.</strong><ul>
@@ -171,7 +183,35 @@
                         </section>
                     </div>
                 }
+                else
+                {
+                    <section class="board-images" aria-label="Planche assemblée">
+                        @if (boardDataUrl is not null)
+                        {
+                            <button type="button" class="board-image board-image-composite" @onclick="OpenBoardImageViewer" aria-label="Agrandir la planche générée">
+                                <img src="@boardDataUrl" alt="Planche de bande dessinée générée" />
+                            </button>
+                        }
+                        else
+                        {
+                            <div class="surface" role="status">
+                                <h2>@(isGenerating ? "Votre planche prend vie…" : "La planche assemblée n'est pas encore disponible.")</h2>
+                                <p class="hint">@(isGenerating ? progressMessage : "Retrouvez vos scènes et les images déjà créées dans l'onglet « 1. Les scènes ».")</p>
+                                <button class="btn" @onclick="() => activeTab = StudioTab.Scenes">Voir les scènes</button>
+                            </div>
+                        }
+                    </section>
+                }
             </div>
         </div>
+    }
+    @if (viewerImageUrl is not null)
+    {
+        <dialog @ref="imageViewerDialog" class="image-viewer" @onclose="CloseImageViewer" aria-label="Image en plein écran">
+            <form method="dialog">
+                <button type="submit" class="btn image-viewer-close" aria-label="Fermer l'image en plein écran" autofocus><RadzenIcon Icon="close" />Fermer</button>
+            </form>
+            <img src="@viewerImageUrl" alt="@viewerImageAlt" />
+        </dialog>
     }
 </main>

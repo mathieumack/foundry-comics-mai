@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Components.Routing;
 using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.JSInterop;
 using Radzen;
 
 namespace MaiImageGenerator.Web.Pages;
@@ -20,6 +21,7 @@ public partial class Home : IAsyncDisposable
     [Inject] private NavigationManager Navigation { get; set; } = default!;
     [Inject] private NotificationService NotificationService { get; set; } = default!;
     [Inject] private DialogService Dialogs { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
     [Parameter] public Guid? ProjectId { get; set; }
     [Parameter] public Guid? BoardId { get; set; }
     [SupplyParameterFromQuery(Name = "generationId")] public Guid? GenerationId { get; set; }
@@ -31,15 +33,16 @@ public partial class Home : IAsyncDisposable
     private HubConnection? notificationConnection;
     private CancellationTokenSource? boardCancellation;
     private Guid? activeGenerationId, loadedProjectId, loadedGenerationId;
+    private ElementReference imageViewerDialog;
     private ProjectResponse? project;
     private string boardTitle = "Nouvelle planche", newCharacterName = string.Empty;
-    private string? storyDescription, projectDescription, context, boardDataUrl, progressMessage, projectError, workspaceError;
+    private string? storyDescription, projectDescription, context, boardDataUrl, progressMessage, projectError, workspaceError, viewerImageUrl, viewerImageAlt;
     private string baseline = string.Empty, characterBaseline = string.Empty;
     private int generatedPanelCount, selectedPanel;
     private BoardTemplate selectedTemplate;
     private StudioTab activeTab;
     private bool initialized, rewritePrompt = true, isGenerating, isSubmitting, isRefreshing, isScaffolding, isProjectLoading, isBoardLoading = true, isCharacterSaving;
-    private bool refreshRequested, allowNavigation;
+    private bool refreshRequested, allowNavigation, viewerOpening;
     private bool EditingLocked => isGenerating || isSubmitting || isScaffolding || isCharacterSaving || isBoardLoading;
     private bool HasUnsavedChanges => !allowNavigation && initialized && (isScaffolding || isCharacterSaving || !string.IsNullOrWhiteSpace(newCharacterName) || CaptureDraft() != baseline || CaptureCharacters() != characterBaseline);
     private BoardTemplateDefinition DisplayTemplateDefinition => BoardTemplateDefinitions.Resolve(selectedTemplate, panels.Count);
@@ -84,6 +87,7 @@ public partial class Home : IAsyncDisposable
     {
         var requestedId = BoardId ?? GenerationId;
         if (initialized && loadedProjectId == ProjectId && loadedGenerationId == requestedId) return;
+        CloseImageViewer();
         boardCancellation?.Cancel();
         boardCancellation?.Dispose();
         boardCancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
@@ -157,11 +161,19 @@ public partial class Home : IAsyncDisposable
         finally { isProjectLoading = isBoardLoading = false; }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!viewerOpening) return;
+        viewerOpening = false;
+        await JS.InvokeVoidAsync("maiStudio.showModal", imageViewerDialog);
+    }
+
     private void ResetBoard()
     {
         activeGenerationId = null;
         boardTitle = "Nouvelle planche";
-        projectDescription = context = storyDescription = boardDataUrl = progressMessage = null;
+        projectDescription = context = storyDescription = boardDataUrl = progressMessage = viewerImageUrl = viewerImageAlt = null;
+        viewerOpening = false;
         generatedPanelCount = selectedPanel = 0;
         selectedTemplate = BoardTemplate.Standard;
         rewritePrompt = true;
@@ -356,6 +368,25 @@ public partial class Home : IAsyncDisposable
     {
         var slot = DisplayTemplateDefinition.Slots[index];
         return $"grid-column:{slot.Column + 1}/span {slot.ColumnSpan};grid-row:{slot.Row + 1}/span {slot.RowSpan};";
+    }
+    private void OpenImageViewer(string imageUrl, string alt)
+    {
+        viewerImageUrl = imageUrl;
+        viewerImageAlt = alt;
+        viewerOpening = true;
+    }
+    private void OpenBoardImageViewer()
+    {
+        if (boardDataUrl is not null) OpenImageViewer(boardDataUrl, "Planche de bande dessinée générée");
+    }
+    private void OpenPanelImageViewer(int index)
+    {
+        if (panels[index].ImageDataUrl is { } imageDataUrl) OpenImageViewer(imageDataUrl, $"Case {index + 1} générée");
+    }
+    private void CloseImageViewer()
+    {
+        viewerImageUrl = viewerImageAlt = null;
+        viewerOpening = false;
     }
     private void SelectPanel(int index) { selectedPanel = index; activeTab = StudioTab.Scenes; }
     private void MovePanel(int offset)
