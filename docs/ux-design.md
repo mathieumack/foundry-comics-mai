@@ -16,6 +16,8 @@ The Blazor frontend now implements the responsive workshop and library, three-st
 
 Drafts are not autosaved. Navigation guards protect unsaved edits, and save/generation labels reflect successful API operations. The book editor retains separate chapter text/image actions, missing-content generation, plan regeneration and explicit error feedback. See [the frontend architecture](architecture.md#frontend-workshop) for routes and persistence boundaries.
 
+The comic detail workspace keeps its three step buttons on one row above 650px and stacks them on narrow screens. In **Scenes**, numbered selectors and the compact layout preview select the active panel; its generated image appears at full editor width above its description and opens in the full-screen viewer. Missing images retain explicit pending, generating or error feedback. Successful panel images remain accessible after a partial generation failure. **The board** shows only the assembled board, or a waiting/unavailable message with a link back to the scenes; individual panel images are not repeated there.
+
 Validation includes the Web build, theme-script syntax and browser scenarios with mocked authentication/API responses: creation, character persistence, scene navigation guards, partial board failures and manual recovery, book editing/save failures, chapter actions, integer validation and narrow layouts. Live Entra, SignalR reconnection and Azure generation still require integration testing; no usability or full accessibility audit is claimed.
 
 ## Findings before the redesign

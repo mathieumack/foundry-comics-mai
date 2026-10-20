@@ -96,6 +96,26 @@
                             @if (panels.Count > 0)
                             {
                                 var panel = panels[selectedPanel];
+                                <figure class="scene-illustration">
+                                    @if (panel.ImageDataUrl is not null)
+                                    {
+                                        <button type="button" class="board-image" @onclick="() => OpenPanelImageViewer(selectedPanel)" aria-label="@($"Agrandir la case {selectedPanel + 1}")">
+                                            <img src="@panel.ImageDataUrl" alt="@($"Case {selectedPanel + 1} générée")" />
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <div class="scene-placeholder @PanelStatusClass(panel.Status)" role="status">
+                                            <RadzenIcon Icon="@(panel.Status == PanelUiStatus.Generating ? "hourglass_top" : "image")" />
+                                            <span>@PanelStatusLabel(panel.Status)</span>
+                                        </div>
+                                    }
+                                    <figcaption>Case @(selectedPanel + 1) · @PanelStatusLabel(panel.Status)@(panel.ImageDataUrl is not null ? " · Cliquez pour agrandir" : "")</figcaption>
+                                </figure>
+                                @if (panel.Status == PanelUiStatus.Error)
+                                {
+                                    <p class="error" role="alert">@panel.Error</p>
+                                }
                                 <label class="field" for="panel-prompt">Que se passe-t-il dans la case @(selectedPanel + 1) ?</label>
                                 <textarea @key="panel.Id" class="text" id="panel-prompt" @bind="panel.Prompt" @bind:event="oninput" rows="5" disabled="@EditingLocked" placeholder="Cadrage, action, décor, dialogue…"></textarea>
                                 @if (characters.Count > 0)
@@ -137,7 +157,15 @@
                                     var panel = panels[index];
                                     <button class="panel-preview @PanelStatusClass(panel.Status)" style="@PanelSlotStyle(index)" aria-label="@($"Modifier la case {index + 1} : {PanelStatusLabel(panel.Status)}")" aria-pressed="@(selectedPanel == index ? "true" : "false")" @onclick="() => SelectPanel(panelIndex)">
                                         <span class="panel-number">@(index + 1)</span>
-                                        <RadzenIcon Icon="@(panel.Status == PanelUiStatus.Generating ? "hourglass_top" : "image")" /><small>@PanelStatusLabel(panel.Status)</small>
+                                        @if (panel.ImageDataUrl is not null)
+                                        {
+                                            <img src="@panel.ImageDataUrl" alt="@($"Case {index + 1} générée")" />
+                                        }
+                                        else
+                                        {
+                                            <RadzenIcon Icon="@(panel.Status == PanelUiStatus.Generating ? "hourglass_top" : "image")" />
+                                        }
+                                        <small>@PanelStatusLabel(panel.Status)</small>
                                     </button>
                                 }
                             </div></div>
@@ -157,23 +185,20 @@
                 }
                 else
                 {
-                    <section class="board-images" aria-label="Images de la planche">
+                    <section class="board-images" aria-label="Planche assemblée">
                         @if (boardDataUrl is not null)
                         {
                             <button type="button" class="board-image board-image-composite" @onclick="OpenBoardImageViewer" aria-label="Agrandir la planche générée">
                                 <img src="@boardDataUrl" alt="Planche de bande dessinée générée" />
                             </button>
                         }
-                        @for (var index = 0; index < panels.Count; index++)
+                        else
                         {
-                            var panelIndex = index;
-                            var imageDataUrl = panels[index].ImageDataUrl;
-                            if (imageDataUrl is not null)
-                            {
-                                <button type="button" class="board-image" @onclick="() => OpenPanelImageViewer(panelIndex)" aria-label="@($"Agrandir la case {panelIndex + 1}")">
-                                    <img src="@imageDataUrl" alt="@($"Case {panelIndex + 1} générée")" />
-                                </button>
-                            }
+                            <div class="surface" role="status">
+                                <h2>@(isGenerating ? "Votre planche prend vie…" : "La planche assemblée n'est pas encore disponible.")</h2>
+                                <p class="hint">@(isGenerating ? progressMessage : "Retrouvez vos scènes et les images déjà créées dans l'onglet « 1. Les scènes ».")</p>
+                                <button class="btn" @onclick="() => activeTab = StudioTab.Scenes">Voir les scènes</button>
+                            </div>
                         }
                     </section>
                 }
