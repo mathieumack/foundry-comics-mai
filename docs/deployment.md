@@ -126,7 +126,7 @@ Check repository Actions variables after configuration:
 | `AZURE_SUBSCRIPTION_ID` | The target subscription ID. |
 | `AZURE_TENANT_ID` | The tenant containing the deployment identity. |
 | `AZURE_CLIENT_ID` | The deployment identity's client/application ID. |
-| `EXISTING_ENTRA_CLIENT_ID` | Optional authentication application client ID. When set, skip both Graph modules and manage redirects outside CD. |
+| `EXISTING_ENTRA_CLIENT_ID` | Optional repository secret containing the authentication application client ID. When set, skip both Graph modules and manage redirects outside CD. |
 | `EXISTING_ENTRA_API_AUDIENCE` | Optional existing API identifier URI; defaults to `api://comics-<environment-name>`. Only used with an existing client ID. |
 
 For example, copy the existing resource group without writing deployment identifiers into tracked files:
@@ -142,9 +142,9 @@ gh variable list
 
 The workflow passes these variables to `azd`, installs .NET 10, and authenticates both `azd` and Azure CLI using OIDC. Azure CLI authentication is required by the preprovision hook; `azd auth login` alone does not authenticate `az`. Deployments to the same environment are serialized to protect capability-host provisioning.
 
-The workflow runs on pushes to `main` and manual dispatches, not on pull requests. A manual dispatch from another branch requires a matching federated credential. Commit and push the workflow and infrastructure mapping only when ready: a push to `main` provisions billable resources and deploys the application.
+The workflow runs on pushes to `main` and manual dispatches, not on pull requests. The configured federated credential is branch-scoped, so dispatch the workflow from `main`. A dispatch from another branch fails Azure login with `AADSTS700213` unless that exact branch also has a federated credential. Commit and push the workflow and infrastructure mapping only when ready: a push to `main` provisions billable resources and deploys the application.
 
-The pipeline identity always needs Azure deployment/RBAC permissions. It only needs Microsoft Graph permissions when `EXISTING_ENTRA_CLIENT_ID` is empty. Azure Contributor/User Access Administrator assignments do not grant Microsoft Graph application permissions. To keep Graph rights out of CD after an initial privileged deployment, copy the authentication outputs into the optional repository Actions variables:
+The pipeline identity always needs Azure deployment/RBAC permissions. It only needs Microsoft Graph permissions when `EXISTING_ENTRA_CLIENT_ID` is empty. Azure Contributor/User Access Administrator assignments do not grant Microsoft Graph application permissions. To keep Graph rights out of CD after an initial privileged deployment, copy the authentication client ID into the repository Actions secret and the audience into the optional repository variable:
 
 ```powershell
 $authenticationClientId = azd env get-value AZURE_ENTRA_CLIENT_ID
@@ -155,11 +155,11 @@ $authenticationAudience = azd env get-value AZURE_ENTRA_API_AUDIENCE
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($authenticationAudience)) {
     throw 'Provision or refresh the selected environment before reading its authentication audience.'
 }
-gh variable set EXISTING_ENTRA_CLIENT_ID --body $authenticationClientId
+gh secret set EXISTING_ENTRA_CLIENT_ID --body $authenticationClientId
 gh variable set EXISTING_ENTRA_API_AUDIENCE --body $authenticationAudience
 ```
 
-These are public identifiers, not secrets. The workflow passes them to azd; it never uses `AZURE_CLIENT_ID` as the application's authentication ID. Redirects and consent must already be configured by an authorized administrator. See [requirements](requirements.md).
+These values are public identifiers, but the client ID is stored as a secret to match the repository's deployment configuration. The workflow passes them to azd; it never uses `AZURE_CLIENT_ID` as the application's authentication ID. Redirects and consent must already be configured by an authorized administrator. See [requirements](requirements.md).
 
 Updating azd to the available stable version is recommended, but do not rely on an upgrade alone to repair missing parameter mappings.
 
@@ -197,7 +197,7 @@ When reusing an application, verify `EXISTING_ENTRA_CLIENT_ID`, its tenant, API 
 
 ### Provisioning fails with a Microsoft Graph permission error
 
-If the deployment reports `Authorization_RequestDenied` or insufficient Graph privileges, either use an authorized principal for managed mode or supply `EXISTING_ENTRA_CLIENT_ID` with a preconfigured authentication application. In GitHub Actions, set the repository variable, not just the local azd environment. This only bypasses Graph application management; other failures, including Foundry capability-host errors, must be investigated independently.
+If the deployment reports `Authorization_RequestDenied` or insufficient Graph privileges, either use an authorized principal for managed mode or supply `EXISTING_ENTRA_CLIENT_ID` with a preconfigured authentication application. In GitHub Actions, set the repository secret, not just the local azd environment. This only bypasses Graph application management; other failures, including Foundry capability-host errors, must be investigated independently.
 
 ### Private service access fails
 
