@@ -51,6 +51,12 @@ jobs:
             --tenant-id "$Env:AZURE_TENANT_ID"
         shell: pwsh
 
+      - name: Detect existing Foundry capability host
+        run: |
+          azd env new "$Env:AZURE_ENV_NAME" --no-prompt
+          ./scripts/set-caphost-idempotency-flag.ps1
+        shell: pwsh
+
       - name: Provision Infrastructure
         run: azd provision --no-prompt
 

@@ -140,7 +140,9 @@ gh variable set AZURE_RESOURCE_GROUP --body $resourceGroup
 gh variable list
 ```
 
-The workflow passes these variables to `azd`, installs .NET 10, and authenticates both `azd` and Azure CLI using OIDC. Azure CLI authentication is required by the preprovision hook; `azd auth login` alone does not authenticate `az`. Deployments to the same environment are serialized to protect capability-host provisioning.
+The workflow passes these variables to `azd`, installs .NET 10, and authenticates both `azd` and Azure CLI using OIDC. Azure CLI authentication is required by the capability-host detection script; `azd auth login` alone does not authenticate `az`. Deployments to the same environment are serialized to protect capability-host provisioning.
+
+Before provisioning, the workflow creates the local azd environment and runs the capability-host detection script in a separate process. This is required because GitHub-hosted runners do not retain `.azure` state and `azd` loads environment values when a command starts: a value written by a `preprovision` hook is available only to the next `azd` command. Local environments retain that value between commands, which is why a subsequent local `azd up` can succeed while a fresh CI runner otherwise attempts to update the immutable capability host.
 
 The workflow runs on pushes to `main` and manual dispatches, not on pull requests. The configured federated credential is branch-scoped, so dispatch the workflow from `main`. A dispatch from another branch fails Azure login with `AADSTS700213` unless that exact branch also has a federated credential. Commit and push the workflow and infrastructure mapping only when ready: a push to `main` provisions billable resources and deploys the application.
 
