@@ -40,6 +40,13 @@ $subscriptionId = (azd env get-value AZURE_SUBSCRIPTION_ID 2>$null)
 $resourceGroup = (azd env get-value AZURE_RESOURCE_GROUP 2>$null)
 $envName = (azd env get-value AZURE_ENV_NAME 2>$null)
 
+# In CI (e.g. GitHub Actions) the azd environment is created from scratch on every run, so these
+# values only exist as process environment variables. Fall back to them, then to the Azure CLI context.
+if ([string]::IsNullOrWhiteSpace($subscriptionId)) { $subscriptionId = $env:AZURE_SUBSCRIPTION_ID }
+if ([string]::IsNullOrWhiteSpace($subscriptionId)) { $subscriptionId = (az account show --query id -o tsv 2>$null) }
+if ([string]::IsNullOrWhiteSpace($resourceGroup)) { $resourceGroup = $env:AZURE_RESOURCE_GROUP }
+if ([string]::IsNullOrWhiteSpace($envName)) { $envName = $env:AZURE_ENV_NAME }
+
 if ([string]::IsNullOrWhiteSpace($resourceGroup) -and -not [string]::IsNullOrWhiteSpace($envName)) {
     # azd default resource group naming convention.
     $resourceGroup = "rg-$envName"
