@@ -5,7 +5,7 @@ namespace MaiImageGenerator.Shared.Services;
 public static class BookImageGenerationLease
 {
     public static readonly TimeSpan Duration = TimeSpan.FromMinutes(30);
-    public static readonly TimeSpan BatchTimeout = TimeSpan.FromMinutes(25);
+    public static readonly TimeSpan BatchTimeout = TimeSpan.FromMinutes(3);
 
     public static bool IsActive(ProjectDocument project, DateTimeOffset now) =>
         project.BookPlan?.ImageGenerationRequestId is not null &&

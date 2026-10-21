@@ -358,7 +358,12 @@ public sealed class BookService
             project.BookPlan!.ImageGenerationRequestId = null;
             project.BookPlan.ImageGenerationStartedAt = null;
             await SaveAsync(project, CancellationToken.None);
-            throw;
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            return ToResponse(project);
         }
 
         return ToResponse(project);
