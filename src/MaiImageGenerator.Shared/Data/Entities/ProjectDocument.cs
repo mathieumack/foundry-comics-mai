@@ -47,6 +47,8 @@ public sealed class BookChapter
     public string? ImageBlobName { get; set; }
     public GenerationStatus ImageStatus { get; set; }
     public string? ImageError { get; set; }
+    public string? ImageGenerationRequestId { get; set; }
+    public DateTimeOffset? ImageGenerationStartedAt { get; set; }
 }
 
 public sealed class ProjectCharacter

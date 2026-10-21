@@ -201,7 +201,7 @@ sequenceDiagram
 
 Books are `ProjectDocument` values with `Type=Book`. The embedded plan retains its request ID, prompt, status, stable ordered chapters, planning fields, prose, illustration prompt/reference, and independent prose/image states. Planning is durable and browser-polled; prose/images are foreground API operations coordinated explicitly by Web. Generate-missing keeps continuity-dependent prose sequential, then batches missing illustrations with bounded concurrency and polling. Keeping Cosmos checkpoints does not make those calls durable workflow activities.
 
-A fresh persisted chapter `Processing` state acts as an image-generation lease: duplicate requests do not issue another provider call, and the project ETag arbitrates simultaneous lease acquisition. The lease expires after 30 minutes so work interrupted by process loss can be resumed; normal cancellation resets unfinished chapters to `Pending` immediately.
+A fresh persisted chapter `Processing` state, request ID, and start timestamp act as an image-generation lease: duplicate requests do not save or issue another provider call, and the project ETag arbitrates simultaneous lease acquisition. The per-chapter lease expires after 30 minutes so work interrupted by process loss can be resumed; normal cancellation resets unfinished chapters to `Pending` immediately.
 
 The plan worker accepts textual notes and normalizes nested objects or lists of text into editable multiline fields, retaining labels/order. Empty, null, non-text notes and incorrect chapter counts fail validation; invalid responses do not replace saved chapters.
 

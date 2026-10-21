@@ -69,6 +69,8 @@ public sealed class MaiImageGeneratorDbContext(
                 chapter.ToJsonProperty("chapters");
                 chapter.Property(item => item.ProseStatus).HasConversion<string>();
                 chapter.Property(item => item.ImageStatus).HasConversion<string>();
+                chapter.Property(item => item.ImageGenerationRequestId).ToJsonProperty("imageGenerationRequestId");
+                chapter.Property(item => item.ImageGenerationStartedAt).ToJsonProperty("imageGenerationStartedAt");
             });
         });
 
