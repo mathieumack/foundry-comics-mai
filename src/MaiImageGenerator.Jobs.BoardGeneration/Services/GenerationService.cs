@@ -117,7 +117,8 @@ public sealed class GenerationService(
                         referenceSheet,
                         slot.ColumnSpan > slot.RowSpan));
                 }
-                catch (Exception exception) when (exception is not OperationCanceledException)
+                catch (Exception exception) when (
+                    exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
                 {
                     panel.Status = PanelGenerationStatus.Failed;
                     panel.ImageBlobName = null;
@@ -155,7 +156,8 @@ public sealed class GenerationService(
                             $"panel-{workItem.Panel.Number:00}.png");
                         await UploadPngAsync(blobName, image, token);
                     }
-                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    catch (Exception exception) when (
+                        exception is not OperationCanceledException || !token.IsCancellationRequested)
                     {
                         error = GetPanelError(exception);
                     }
@@ -206,7 +208,7 @@ public sealed class GenerationService(
             document.UpdatedAt = DateTimeOffset.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             document.Status = GenerationStatus.Pending;
             foreach (var panel in document.Panels.Where(panel => panel.Status == PanelGenerationStatus.Processing))
@@ -286,7 +288,8 @@ public sealed class GenerationService(
         {
             await notifier.NotifyStartedAsync(request.OwnerId, request.BoardId, panelNumber, cancellationToken);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (
+            exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(exception, "Could not publish the started notification for panel {PanelNumber}.", panelNumber);
         }
@@ -301,7 +304,8 @@ public sealed class GenerationService(
         {
             await notifier.NotifyCompletedAsync(request.OwnerId, request.BoardId, panelNumber, cancellationToken);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (
+            exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(exception, "Could not publish the completed notification for panel {PanelNumber}.", panelNumber);
         }

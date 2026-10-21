@@ -252,7 +252,8 @@ public sealed class BookService
                         await _container.GetBlobClient(blobName)
                             .UploadAsync(BinaryData.FromBytes(image), overwrite: true, token);
                     }
-                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    catch (Exception exception) when (
+                        exception is not OperationCanceledException || !token.IsCancellationRequested)
                     {
                         error = exception.GetType().Name;
                     }
@@ -281,7 +282,7 @@ public sealed class BookService
                 },
                 cancellationToken);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             foreach (var chapter in chapters.Where(chapter => chapter.ImageStatus == GenerationStatus.Processing))
             {
