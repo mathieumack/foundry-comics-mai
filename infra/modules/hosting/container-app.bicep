@@ -58,6 +58,11 @@ param bookPlanJobsQueueName string
 @description('Azure Foundry endpoint')
 param azureFoundryEndpoint string
 
+@description('Maximum number of concurrent image provider requests')
+@minValue(1)
+@maxValue(16)
+param maxParallelImages int = 3
+
 @description('AI Search endpoint')
 param azureAISearchEndpoint string
 
@@ -173,6 +178,10 @@ resource containerApp 'Microsoft.App/containerApps@2025-07-01' = {
               {
                 name: 'Foundry__ImageSize'
                 value: '1024'
+              }
+              {
+                name: 'Foundry__MaxParallelImages'
+                value: string(maxParallelImages)
               }
               {
                 name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'

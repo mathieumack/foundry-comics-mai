@@ -20,11 +20,14 @@ For GitHub Actions, see [Configure GitHub Actions](#configure-github-actions) af
 ```powershell
 azd env new
 azd env set AZURE_LOCATION swedencentral
+azd env set IMAGE_GENERATION_MAX_PARALLELISM 3
 $principalId = az ad signed-in-user show --query id --output tsv
 azd env set DEPLOYER_PRINCIPAL_ID $principalId
 ```
 
 Choose a short environment name because it contributes to Azure resource names. `AZURE_SUBSCRIPTION_ID` is selected by `azd env new` and stored only in the ignored `.azure` directory.
+
+`IMAGE_GENERATION_MAX_PARALLELISM` bounds image-provider requests within each board or book batch (1 to 16, default 3). Lower it when provider quota is constrained.
 
 ## 3. Validate prerequisites
 

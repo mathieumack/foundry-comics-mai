@@ -66,6 +66,11 @@ public partial class Home : IAsyncDisposable
         {
             if (TryGetNotifiedPanel(n, out var panel))
             {
+                if (panel.Status is PanelUiStatus.Ready or PanelUiStatus.Error)
+                {
+                    return;
+                }
+
                 panel.Status = PanelUiStatus.Generating;
                 isGenerating = true;
                 progressMessage = $"Illustration de la case {n.PanelNumber} sur {panels.Count}";

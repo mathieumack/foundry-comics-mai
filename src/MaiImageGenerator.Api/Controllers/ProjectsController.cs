@@ -390,6 +390,27 @@ public sealed class ProjectsController(
             }
         }
 
+        [HttpPost("{projectId:guid}/book/images/generate")]
+        public async Task<ActionResult<BookPlanResponse>> GenerateRemainingChapterImages(
+            Guid projectId,
+            CancellationToken cancellationToken)
+        {
+            var result = await GetProjectAsync(projectId, cancellationToken);
+            if (result.Result is not null)
+            {
+                return result.Result;
+            }
+
+            try
+            {
+                return Ok(await bookService.GenerateRemainingImagesAsync(result.Project!, cancellationToken));
+            }
+            catch (ArgumentException exception)
+            {
+                return InvalidBook(exception);
+            }
+        }
+
         [HttpGet("{projectId:guid}/book/chapters/{chapterId}/image")]
         public async Task<IActionResult> GetChapterImage(
             Guid projectId,

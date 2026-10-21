@@ -141,6 +141,13 @@ public sealed class GenerationApiClient(HttpClient httpClient)
             $"api/projects/{projectId:D}/book/chapters/{Uri.EscapeDataString(chapterId)}/image/generate",
             cancellationToken);
 
+    public Task<BookPlanResponse> GenerateRemainingChapterImagesAsync(
+        Guid projectId,
+        CancellationToken cancellationToken) =>
+        GenerateBookPartAsync(
+            $"api/projects/{projectId:D}/book/images/generate",
+            cancellationToken);
+
     public async Task<IReadOnlyList<GenerationSummaryResponse>> ListBoardsAsync(
         Guid projectId,
         CancellationToken cancellationToken)

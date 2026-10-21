@@ -33,6 +33,11 @@ param generationJobContainerImage string
 @description('Container image for the book plan generation job')
 param bookPlanGenerationJobContainerImage string
 
+@minValue(1)
+@maxValue(16)
+@description('Maximum number of image provider requests per board or book batch')
+param imageGenerationMaxParallelism int = 3
+
 // Generate unique suffix based on resource group
 var suffix = substring(uniqueString(resourceGroup().id, environmentName), 0, 3)
 
@@ -426,6 +431,7 @@ module apiContainerApp 'modules/hosting/container-app.bicep' = {
     jobsQueueName: generationJobsQueueName
     bookPlanJobsQueueName: bookPlanJobsQueueName
     azureFoundryEndpoint: foundry.outputs.foundryEndpoint
+    maxParallelImages: imageGenerationMaxParallelism
     azureAISearchEndpoint: aiSearch.outputs.searchServiceEndpoint
     azureContentUnderstandingEndpoint: 'https://${foundry.outputs.foundryName}.services.ai.azure.com'
     signalREndpoint: signalR.outputs.endpoint
@@ -460,6 +466,7 @@ module boardGenerationJob 'modules/hosting/container-app-job.bicep' = {
     jobsQueueName: generationJobsQueueName
     poisonQueueName: generationJobsPoisonQueueName
     foundryEndpoint: foundry.outputs.foundryEndpoint
+    maxParallelImages: imageGenerationMaxParallelism
     serviceName: 'generationjob'
   }
   dependsOn: [

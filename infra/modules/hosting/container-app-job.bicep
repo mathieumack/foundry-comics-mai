@@ -49,6 +49,11 @@ param poisonQueueName string
 @description('Microsoft Foundry account endpoint')
 param foundryEndpoint string
 
+@description('Maximum number of concurrent image provider requests')
+@minValue(1)
+@maxValue(16)
+param maxParallelImages int = 3
+
 @description('azd service name')
 param serviceName string = 'generationjob'
 
@@ -155,6 +160,10 @@ resource job 'Microsoft.App/jobs@2025-07-01' = {
             {
               name: 'Foundry__ImageSize'
               value: '1024'
+            }
+            {
+              name: 'Foundry__MaxParallelImages'
+              value: string(maxParallelImages)
             }
           ]
           resources: {
