@@ -483,6 +483,7 @@
                     await generationTask,
                     markSaved: true,
                     refreshImageIds: imageIds);
+                await PollActiveImagesAsync(imageIds);
             }
         }
         catch (AccessTokenNotAvailableException exception)
@@ -564,6 +565,7 @@
                 await GenerationClient.GenerateChapterImageAsync(ProjectId, chapterId, cancellation.Token),
                 markSaved: true,
                 refreshImageIds: [chapterId]);
+            await PollActiveImagesAsync([chapterId]);
         }
         catch (AccessTokenNotAvailableException exception)
         {
@@ -593,6 +595,21 @@
                 CancelButtonText = "Annuler",
                 CloseDialogOnOverlayClick = false
             }) == true;
+    }
+
+    private async Task PollActiveImagesAsync(HashSet<string> chapterIds)
+    {
+        for (var attempt = 0;
+             attempt < 240 && chapters.Any(chapter =>
+                 chapterIds.Contains(chapter.Id) &&
+                 chapter.ImageStatus == GenerationStatus.Processing);
+             attempt++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellation.Token);
+            ApplyPlan(
+                await GenerationClient.GetBookPlanAsync(ProjectId, cancellation.Token),
+                markSaved: true);
+        }
     }
 
     private async Task ConfirmNavigationAsync(LocationChangingContext context)

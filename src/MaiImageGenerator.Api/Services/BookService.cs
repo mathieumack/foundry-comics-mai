@@ -271,6 +271,13 @@ public sealed class BookService
                 return ToResponse(current);
             }
 
+            if (current?.BookPlan?.Chapters.Any(chapter =>
+                    chapter.ProseStatus == GenerationStatus.Processing) == true)
+            {
+                throw new ArgumentException(
+                    "Chapter prose generation must finish before chapter images can be generated.");
+            }
+
             throw;
         }
 
@@ -393,6 +400,13 @@ public sealed class BookService
         if (project.BookPlan?.Status is GenerationStatus.Pending or GenerationStatus.Processing)
         {
             throw new ArgumentException("The book plan must finish before chapter images can be generated.");
+        }
+
+        if (project.BookPlan?.Chapters.Any(chapter =>
+                chapter.ProseStatus == GenerationStatus.Processing) == true)
+        {
+            throw new ArgumentException(
+                "Chapter prose generation must finish before chapter images can be generated.");
         }
     }
 
