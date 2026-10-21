@@ -90,7 +90,7 @@ builder.Services.AddScoped<IImageGenerator, FoundryImageGenerator>();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient(
     FoundryImageGenerator.HttpClientName,
-    client => client.Timeout = TimeSpan.FromMinutes(10));
+    client => client.Timeout = TimeSpan.FromMinutes(9));
 builder.Services.AddDaprClient();
 builder.Services.AddScoped<ReferenceService>();
 builder.Services.AddScoped<ImageComposer>();
