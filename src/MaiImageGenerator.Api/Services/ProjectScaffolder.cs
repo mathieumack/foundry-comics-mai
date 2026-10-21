@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.ClientModel;
 using System.Text.Json;
 using MaiImageGenerator.Api.Configuration;
@@ -22,9 +23,16 @@ public sealed class ProjectScaffolder
         """;
 
     private readonly AIAgent _agent;
+    private readonly FoundryOptions _options;
+    private readonly ILogger<ProjectScaffolder> _logger;
 
-    public ProjectScaffolder(OpenAIClient client, IOptions<FoundryOptions> options)
+    public ProjectScaffolder(
+        OpenAIClient client,
+        IOptions<FoundryOptions> options,
+        ILogger<ProjectScaffolder> logger)
     {
+        _options = options.Value;
+        _logger = logger;
         _agent = client.GetChatClient(options.Value.PromptModel).AsAIAgent(
             instructions: Instructions,
             name: "ProjectScaffolder");
@@ -44,21 +52,65 @@ public sealed class ProjectScaffolder
             throw new ArgumentException("A project scaffold requires between 1 and 8 panels.");
         }
 
+        var stopwatch = Stopwatch.StartNew();
+        var endpoint = new Uri(_options.Endpoint).GetLeftPart(UriPartial.Authority);
+        _logger.LogInformation(
+            "AI operation {OperationName} started for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint}.",
+            "CreateProjectScaffold",
+            "AzureFoundry",
+            _options.PromptModel,
+            "ProjectScaffold",
+            endpoint);
         try
         {
             var response = await _agent.RunAsync(
                 $"Panel count: {request.PanelCount}\n\nStory description:\n{request.StoryDescription.Trim()}",
                 cancellationToken: cancellationToken);
-            return Parse(response.ToString(), request.PanelCount);
+            var result = Parse(response.ToString(), request.PanelCount);
+            _logger.LogInformation(
+                "AI operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "CreateProjectScaffold",
+                "Succeeded",
+                stopwatch.ElapsedMilliseconds);
+            return result;
+        }
+        catch (OperationCanceledException exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "AI operation {OperationName} ended with outcome {Outcome} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "CreateProjectScaffold",
+                cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                "ProjectScaffold",
+                stopwatch.ElapsedMilliseconds);
+            throw;
         }
         catch (ClientResultException exception)
         {
-            throw new FoundryGenerationException(
-                $"Project scaffolding failed with HTTP status {exception.Status}.",
-                exception);
+            var safeException = new FoundryGenerationException(
+                $"Project scaffolding failed with HTTP status {exception.Status}.");
+            _logger.LogError(
+                safeException,
+                "AI operation {OperationName} failed for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint} with status {UpstreamStatus} and code {SafeErrorCode} after {ElapsedMs} ms.",
+                "CreateProjectScaffold",
+                "AzureFoundry",
+                _options.PromptModel,
+                "ProjectScaffold",
+                endpoint,
+                exception.Status,
+                "ClientResult",
+                stopwatch.ElapsedMilliseconds);
+            throw safeException;
         }
         catch (JsonException exception)
         {
+            _logger.LogError(
+                exception,
+                "AI operation {OperationName} failed at stage {GenerationStage} with code {SafeErrorCode} after {ElapsedMs} ms.",
+                "CreateProjectScaffold",
+                "ResponseValidation",
+                "InvalidResponse",
+                stopwatch.ElapsedMilliseconds);
             throw new FoundryGenerationException("The prompt model returned an invalid project scaffold.", exception);
         }
     }

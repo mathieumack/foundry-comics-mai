@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
@@ -8,7 +9,8 @@ namespace MaiImageGenerator.Api.Services;
 
 public sealed class ReferenceService(
     MaiImageGeneratorDbContext dbContext,
-    BlobServiceClient blobServiceClient)
+    BlobServiceClient blobServiceClient,
+    ILogger<ReferenceService> logger)
 {
     public const long MaximumFileLength = 10 * 1024 * 1024;
 
@@ -40,34 +42,63 @@ public sealed class ReferenceService(
         var blobName = ArtifactPathBuilder.GetReferenceBlobName(ownerId, id, extension);
         var blob = _container.GetBlobClient(blobName);
         await using var content = file.OpenReadStream();
-
-        await blob.UploadAsync(content, new BlobUploadOptions
-        {
-            HttpHeaders = new BlobHttpHeaders { ContentType = file.ContentType }
-        }, cancellationToken);
-
-        var now = DateTimeOffset.UtcNow;
-        var document = new ReferenceDocument
-        {
-            Id = id,
-            OwnerId = ownerId,
-            FileName = file.FileName,
-            ContentType = file.ContentType,
-            Length = file.Length,
-            BlobName = blobName,
-            CreatedAt = now,
-            UpdatedAt = now
-        };
+        using var scope = logger.BeginScope("OperationId:{OperationId} ReferenceId:{ReferenceId}", id, id);
+        var stopwatch = Stopwatch.StartNew();
+        logger.LogInformation(
+            "Async operation {OperationName} started at stage {GenerationStage}.",
+            "UploadReference",
+            "BlobUpload");
 
         try
         {
+            await blob.UploadAsync(content, new BlobUploadOptions
+            {
+                HttpHeaders = new BlobHttpHeaders { ContentType = file.ContentType }
+            }, cancellationToken);
+
+            var now = DateTimeOffset.UtcNow;
+            var document = new ReferenceDocument
+            {
+                Id = id,
+                OwnerId = ownerId,
+                FileName = file.FileName,
+                ContentType = file.ContentType,
+                Length = file.Length,
+                BlobName = blobName,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+
             dbContext.References.Add(document);
             await dbContext.SaveChangesAsync(cancellationToken);
+            logger.LogInformation(
+                "Async operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "UploadReference",
+                "Succeeded",
+                stopwatch.ElapsedMilliseconds);
             return document;
         }
-        catch
+        catch (OperationCanceledException exception)
         {
-            await blob.DeleteIfExistsAsync(cancellationToken: cancellationToken);
+            await blob.DeleteIfExistsAsync(cancellationToken: CancellationToken.None);
+            logger.LogWarning(
+                exception,
+                "Async operation {OperationName} ended with outcome {Outcome} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "UploadReference",
+                cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                "BlobOrDatabase",
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await blob.DeleteIfExistsAsync(cancellationToken: CancellationToken.None);
+            logger.LogError(
+                exception,
+                "Async operation {OperationName} failed at stage {GenerationStage} after {ElapsedMs} ms.",
+                "UploadReference",
+                "BlobOrDatabase",
+                stopwatch.ElapsedMilliseconds);
             throw;
         }
     }

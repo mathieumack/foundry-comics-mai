@@ -10,4 +10,5 @@ public sealed record BookPlanGenerationRequestMessage
     public string ProjectId { get; init; } = string.Empty;
     public string OwnerId { get; init; } = string.Empty;
     public int ChapterCount { get; init; }
+    public string? TraceParent { get; init; }
 }

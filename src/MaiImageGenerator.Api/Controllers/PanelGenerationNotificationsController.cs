@@ -1,12 +1,15 @@
+using System.Diagnostics;
 using Dapr.Client;
 using MaiImageGenerator.Shared.Messages;
+using MaiImageGenerator.Shared.Telemetry;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MaiImageGenerator.Api.Controllers;
 
 [ApiController]
 public sealed class PanelGenerationNotificationsController(
-    DaprClient daprClient) : ControllerBase
+    DaprClient daprClient,
+    ILogger<PanelGenerationNotificationsController> logger) : ControllerBase
 {
     private const string SignalRBindingName = "signalr";
 
@@ -22,6 +25,9 @@ public sealed class PanelGenerationNotificationsController(
 
         await SendToUserAsync(
             notification.OwnerId,
+            notification.BoardId,
+            notification.PanelNumber,
+            notification.TraceParent,
             nameof(PanelGenerationStarted),
             notification,
             cancellationToken);
@@ -40,6 +46,9 @@ public sealed class PanelGenerationNotificationsController(
 
         await SendToUserAsync(
             notification.OwnerId,
+            notification.BoardId,
+            notification.PanelNumber,
+            notification.TraceParent,
             nameof(PanelGenerationCompleted),
             notification,
             cancellationToken);
@@ -51,23 +60,68 @@ public sealed class PanelGenerationNotificationsController(
         Guid.TryParse(boardId, out _) &&
         panelNumber > 0;
 
-    private Task SendToUserAsync(
+    private async Task SendToUserAsync(
         string ownerId,
+        string boardId,
+        int panelNumber,
+        string? traceParent,
         string target,
         object notification,
         CancellationToken cancellationToken)
     {
+        using var activity = OperationTelemetry.StartConsumerActivity("Deliver panel notification", traceParent);
+        using var scope = logger.BeginScope(
+            "OperationId:{OperationId} GenerationId:{GenerationId} PanelNumber:{PanelNumber}",
+            boardId,
+            boardId,
+            panelNumber);
+        var stopwatch = Stopwatch.StartNew();
+        logger.LogInformation(
+            "Async dependency {DependencyType} started at stage {GenerationStage} for notification {NotificationType}.",
+            "DaprSignalR",
+            "NotificationDelivery",
+            target);
         var message = new
         {
             Target = target,
             Arguments = new[] { notification }
         };
 
-        return daprClient.InvokeBindingAsync(
-            SignalRBindingName,
-            "create",
-            message,
-            new Dictionary<string, string> { ["user"] = ownerId },
-            cancellationToken);
+        try
+        {
+            await daprClient.InvokeBindingAsync(
+                SignalRBindingName,
+                "create",
+                message,
+                new Dictionary<string, string> { ["user"] = ownerId },
+                cancellationToken);
+            logger.LogInformation(
+                "Async dependency {DependencyType} completed with outcome {Outcome} for notification {NotificationType} in {ElapsedMs} ms.",
+                "DaprSignalR",
+                "Succeeded",
+                target,
+                stopwatch.ElapsedMilliseconds);
+        }
+        catch (OperationCanceledException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Async dependency {DependencyType} ended with outcome {Outcome} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "DaprSignalR",
+                cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                "NotificationDelivery",
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Async dependency {DependencyType} failed at stage {GenerationStage} after {ElapsedMs} ms.",
+                "DaprSignalR",
+                "NotificationDelivery",
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
     }
 }

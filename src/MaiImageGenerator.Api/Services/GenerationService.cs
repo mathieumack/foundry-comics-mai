@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
 using MaiImageGenerator.Api.Contracts;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Data.Entities;
 using MaiImageGenerator.Shared.Messages;
+using MaiImageGenerator.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace MaiImageGenerator.Api.Services;
@@ -12,7 +14,8 @@ public sealed class GenerationService(
     MaiImageGeneratorDbContext dbContext,
     ReferenceService referenceService,
     BlobServiceClient blobServiceClient,
-    QueueClient jobsQueue)
+    QueueClient jobsQueue,
+    ILogger<GenerationService> logger)
 {
     private readonly BlobContainerClient _container = blobServiceClient.GetBlobContainerClient("generations");
 
@@ -54,10 +57,48 @@ public sealed class GenerationService(
             }).ToList()
         };
 
-        dbContext.Generations.Add(document);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await QueueAsync(document, project, cancellationToken);
-        return ToResponse(document, project);
+        using var scope = logger.BeginScope(
+            "OperationId:{OperationId} GenerationId:{GenerationId} ProjectId:{ProjectId}",
+            document.Id,
+            document.Id,
+            project.Id);
+        var stopwatch = Stopwatch.StartNew();
+        logger.LogInformation(
+            "Async operation {OperationName} started at stage {GenerationStage}.",
+            "CreateBoard",
+            "DatabasePersist");
+        try
+        {
+            dbContext.Generations.Add(document);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await QueueAsync(document, project, cancellationToken);
+            logger.LogInformation(
+                "Async operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "CreateBoard",
+                "Succeeded",
+                stopwatch.ElapsedMilliseconds);
+            return ToResponse(document, project);
+        }
+        catch (OperationCanceledException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Async operation {OperationName} canceled at stage {GenerationStage} after {ElapsedMs} ms.",
+                "CreateBoard",
+                "DatabaseOrQueue",
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Async operation {OperationName} failed at stage {GenerationStage} after {ElapsedMs} ms.",
+                "CreateBoard",
+                "DatabaseOrQueue",
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
     }
 
     public async Task<GenerationResponse> GenerateAsync(
@@ -115,13 +156,49 @@ public sealed class GenerationService(
             }).ToList()
         };
 
-        dbContext.Projects.Add(project);
-        dbContext.Generations.Add(document);
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        await QueueAsync(document, project, cancellationToken);
-
-        return ToResponse(document, project);
+        using var scope = logger.BeginScope(
+            "OperationId:{OperationId} GenerationId:{GenerationId} ProjectId:{ProjectId}",
+            document.Id,
+            document.Id,
+            project.Id);
+        var stopwatch = Stopwatch.StartNew();
+        logger.LogInformation(
+            "Async operation {OperationName} started at stage {GenerationStage}.",
+            "CreateLegacyGeneration",
+            "DatabasePersist");
+        try
+        {
+            dbContext.Projects.Add(project);
+            dbContext.Generations.Add(document);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await QueueAsync(document, project, cancellationToken);
+            logger.LogInformation(
+                "Async operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "CreateLegacyGeneration",
+                "Succeeded",
+                stopwatch.ElapsedMilliseconds);
+            return ToResponse(document, project);
+        }
+        catch (OperationCanceledException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Async operation {OperationName} canceled at stage {GenerationStage} after {ElapsedMs} ms.",
+                "CreateLegacyGeneration",
+                "DatabaseOrQueue",
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Async operation {OperationName} failed at stage {GenerationStage} after {ElapsedMs} ms.",
+                "CreateLegacyGeneration",
+                "DatabaseOrQueue",
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
     }
 
     public async Task<GenerationResponse?> GetAsync(
@@ -210,6 +287,11 @@ public sealed class GenerationService(
         ProjectDocument project,
         CancellationToken cancellationToken)
     {
+        var stopwatch = Stopwatch.StartNew();
+        logger.LogInformation(
+            "Async dependency {DependencyType} started at stage {GenerationStage}.",
+            "Queue",
+            "EnqueueBoard");
         try
         {
             var message = new BoardGenerationRequestMessage
@@ -217,12 +299,38 @@ public sealed class GenerationService(
                 BoardId = document.Id,
                 OwnerId = document.OwnerId,
                 ProjectId = project.Id,
-                RewritePrompt = document.RewritePrompt
+                RewritePrompt = document.RewritePrompt,
+                TraceParent = OperationTelemetry.CurrentTraceParent
             };
             await jobsQueue.SendMessageAsync(BinaryData.FromObjectAsJson(message).ToString(), cancellationToken);
+            logger.LogInformation(
+                "Async dependency {DependencyType} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "Queue",
+                "Succeeded",
+                stopwatch.ElapsedMilliseconds);
         }
-        catch
+        catch (OperationCanceledException exception)
         {
+            logger.LogWarning(
+                exception,
+                "Async dependency {DependencyType} canceled at stage {GenerationStage} after {ElapsedMs} ms.",
+                "Queue",
+                "EnqueueBoard",
+                stopwatch.ElapsedMilliseconds);
+            document.Status = GenerationStatus.Failed;
+            document.Error = "The generation could not be queued.";
+            document.UpdatedAt = DateTimeOffset.UtcNow;
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Async dependency {DependencyType} failed at stage {GenerationStage} after {ElapsedMs} ms.",
+                "Queue",
+                "EnqueueBoard",
+                stopwatch.ElapsedMilliseconds);
             document.Status = GenerationStatus.Failed;
             document.Error = "The generation could not be queued.";
             document.UpdatedAt = DateTimeOffset.UtcNow;

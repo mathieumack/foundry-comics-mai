@@ -5,6 +5,7 @@ using MaiImageGenerator.Jobs.BoardGeneration.Hosting;
 using MaiImageGenerator.Jobs.BoardGeneration.Services;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Messages;
+using MaiImageGenerator.Shared.Telemetry;
 using MDev.Dotnet.AspNetCore.Apis.Extensions;
 using MDev.Dotnet.Azure.CosmosDb.Startup;
 using MDev.Dotnet.Azure.StorageAccount.Settings;
@@ -17,6 +18,7 @@ using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenAI.Chat;
 using OpenAI.Images;
+using System.Diagnostics;
 using System.ClientModel.Primitives;
 
 const int maximumDequeueCount = 5;
@@ -82,7 +84,7 @@ var notificationQueueOptions = new QueueClientOptions
         ? QueueMessageEncoding.Base64
         : QueueMessageEncoding.None
 };
-builder.Services.AddSingleton(new PanelGenerationNotifier(
+builder.Services.AddSingleton(serviceProvider => new PanelGenerationNotifier(
     new QueueClient(
         new Uri($"{storageSettings.QueuesEndpoint.TrimEnd('/')}/{PanelGenerationNotifications.Started}"),
         credential,
@@ -90,7 +92,8 @@ builder.Services.AddSingleton(new PanelGenerationNotifier(
     new QueueClient(
         new Uri($"{storageSettings.QueuesEndpoint.TrimEnd('/')}/{PanelGenerationNotifications.Completed}"),
         credential,
-        notificationQueueOptions)));
+        notificationQueueOptions),
+    serviceProvider.GetRequiredService<ILogger<PanelGenerationNotifier>>()));
 builder.Services.AddScoped<ReferenceService>();
 builder.Services.AddScoped<ImageComposer>();
 builder.Services.AddScoped<GenerationService>();
@@ -110,35 +113,111 @@ var jobsQueue = new QueueClient(
     credential,
     queueClientOptions);
 
+var receiveStopwatch = Stopwatch.StartNew();
+logger.LogInformation(
+    "Async dependency {DependencyType} started at stage {GenerationStage}.",
+    "Queue",
+    "ReceiveBoard");
 var received = await jobsQueue.ReceiveMessageAsync(TimeSpan.FromHours(6));
 if (received.Value is null)
 {
-    logger.LogInformation("No board generation message is available.");
+    logger.LogInformation(
+        "Async dependency {DependencyType} completed with outcome {Outcome} in {ElapsedMs} ms.",
+        "Queue",
+        "NoMessage",
+        receiveStopwatch.ElapsedMilliseconds);
     await host.StopAsync();
     return 0;
 }
 
 var queueMessage = received.Value;
+logger.LogInformation(
+    "Async dependency {DependencyType} completed with outcome {Outcome} in {ElapsedMs} ms.",
+    "Queue",
+    "MessageReceived",
+    receiveStopwatch.ElapsedMilliseconds);
+BoardGenerationRequestMessage? request = null;
 try
 {
-    var request = queueMessage.Body.ToObjectFromJson<BoardGenerationRequestMessage>()
+    request = queueMessage.Body.ToObjectFromJson<BoardGenerationRequestMessage>()
         ?? throw new InvalidDataException("The queue message body is empty.");
+    using var activity = OperationTelemetry.StartConsumerActivity("Process board generation message", request.TraceParent);
+    using var operationScope = logger.BeginScope(
+        "OperationId:{OperationId} GenerationId:{GenerationId} ProjectId:{ProjectId} QueueMessageId:{QueueMessageId} Attempt:{Attempt}",
+        request.BoardId,
+        request.BoardId,
+        request.ProjectId,
+        queueMessage.MessageId,
+        queueMessage.DequeueCount);
+    var operationStopwatch = Stopwatch.StartNew();
+    logger.LogInformation(
+        "Async operation {OperationName} started at stage {GenerationStage}.",
+        "ProcessBoardMessage",
+        "GenerateBoard");
     using var scope = host.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<GenerationService>()
         .ProcessAsync(request, CancellationToken.None);
     await jobsQueue.DeleteMessageAsync(queueMessage.MessageId, queueMessage.PopReceipt);
-    logger.LogInformation("Generated board {BoardId} for owner {OwnerId}.", request.BoardId, request.OwnerId);
+    logger.LogInformation(
+        "Async operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+        "ProcessBoardMessage",
+        "Succeeded",
+        operationStopwatch.ElapsedMilliseconds);
     await host.StopAsync();
     return 0;
 }
+catch (OperationCanceledException exception)
+{
+    logger.LogWarning(
+        exception,
+        "Async operation {OperationName} ended with outcome {Outcome} at stage {GenerationStage} for operation {OperationId}, generation {GenerationId}, project {ProjectId}, queue message {QueueMessageId}, and attempt {Attempt}.",
+        "ProcessBoardMessage",
+        "TimedOut",
+        "GenerateBoard",
+        request?.BoardId,
+        request?.BoardId,
+        request?.ProjectId,
+        queueMessage.MessageId,
+        queueMessage.DequeueCount);
+    await host.StopAsync();
+    return 1;
+}
 catch (Exception exception)
 {
-    logger.LogError(exception, "Board generation failed for queue message {MessageId} on attempt {Attempt}.",
-        queueMessage.MessageId, queueMessage.DequeueCount);
     if (queueMessage.DequeueCount >= maximumDequeueCount)
     {
+        logger.LogError(
+            exception,
+            "Async operation {OperationName} failed with outcome {Outcome} at stage {GenerationStage} for operation {OperationId}, generation {GenerationId}, project {ProjectId}, queue message {QueueMessageId}, and attempt {Attempt}.",
+            "ProcessBoardMessage",
+            "TerminalFailure",
+            "GenerateBoard",
+            request?.BoardId,
+            request?.BoardId,
+            request?.ProjectId,
+            queueMessage.MessageId,
+            queueMessage.DequeueCount);
         await jobsQueue.DeleteMessageAsync(queueMessage.MessageId, queueMessage.PopReceipt);
-        logger.LogError("Deleted queue message {MessageId} after {Attempt} attempts.", queueMessage.MessageId, queueMessage.DequeueCount);
+        logger.LogError(
+            "Async dependency {DependencyType} completed with outcome {Outcome} for queue message {QueueMessageId} after {Attempt} attempts.",
+            "Queue",
+            "DeletedAfterTerminalFailure",
+            queueMessage.MessageId,
+            queueMessage.DequeueCount);
+    }
+    else
+    {
+        logger.LogWarning(
+            exception,
+            "Async operation {OperationName} failed with outcome {Outcome} at stage {GenerationStage} for operation {OperationId}, generation {GenerationId}, project {ProjectId}, queue message {QueueMessageId}, and attempt {Attempt}; queue redelivery will retry it.",
+            "ProcessBoardMessage",
+            "RetryScheduled",
+            "GenerateBoard",
+            request?.BoardId,
+            request?.BoardId,
+            request?.ProjectId,
+            queueMessage.MessageId,
+            queueMessage.DequeueCount);
     }
 
     await host.StopAsync();

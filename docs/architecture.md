@@ -230,6 +230,21 @@ Generation states are `Pending`, `Processing`, `Completed`, `Failed`, and `Cance
 
 Cosmos persistence and enqueue are separate operations, not a transaction/outbox. Book-plan enqueue failure records `Failed`; board enqueue failure can leave a persisted `Pending` record. Diagnose stuck work using both durable metadata and queue/job telemetry.
 
+### Async telemetry conventions
+
+Generation and integration workflows emit structured start and terminal events. Use the same property names when adding telemetry:
+
+- `OperationName`, `OperationId`, `GenerationId`, `ProjectId`, `ChapterId`, and `PanelNumber` identify work without including prompts or content.
+- `GenerationStage`, `DependencyType`, `Provider`, `Model`, and `UpstreamEndpoint` identify the failing boundary. Endpoints are limited to scheme and authority.
+- `Outcome` is one of the explicit workflow results, such as `Succeeded`, `Canceled`, `TimedOut`, `RetryScheduled`, `TerminalFailure`, or `ContentSafetyRejected`.
+- `ElapsedMs`, `Attempt`, `UpstreamStatus`, `ProviderRequestId`, and `SafeErrorCode` provide diagnostic context when available.
+
+Log start before awaiting a significant database, queue, storage, notification, or AI operation, and log exactly one success or classified terminal event with elapsed time. Pass the caught exception to server-side warning/error logs before converting it to a durable failure state or client-safe message. Cancellation requested by the caller is `Canceled`; an `OperationCanceledException` without caller cancellation is `TimedOut`. Queue failures below the dequeue limit are `RetryScheduled`; the final attempt is `TerminalFailure`.
+
+Board and book-plan queue contracts carry an optional W3C `TraceParent`. Consumers restore it as the parent of their processing activity, and panel notifications carry the current trace context into the API's Dapr/SignalR callback. The field is optional so messages from an older producer remain valid during rolling deployments.
+
+Never log owner identifiers, access tokens, authorization headers, prompts, generated text, image bytes/base64, blob names, signed image URLs, or provider response bodies. Provider request IDs and error codes must be length- and character-limited before logging. If a provider exception can embed a response body or signed URL in its message, log and propagate a sanitized exception while retaining safe status, request ID, and error-code properties. Keep user-facing errors concise; other exception objects and inner exceptions belong only in server telemetry.
+
 ## Identity and secrets
 
 - Web obtains an Entra token for the generated API scope.
