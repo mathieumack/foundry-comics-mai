@@ -70,10 +70,11 @@ public sealed class PanelGenerationNotificationsController(
         CancellationToken cancellationToken)
     {
         using var activity = OperationTelemetry.StartConsumerActivity("Deliver panel notification", traceParent);
+        var generationId = Guid.Parse(boardId).ToString("D");
         using var scope = logger.BeginScope(
             "OperationId:{OperationId} GenerationId:{GenerationId} PanelNumber:{PanelNumber}",
-            boardId,
-            boardId,
+            generationId,
+            generationId,
             panelNumber);
         var stopwatch = Stopwatch.StartNew();
         logger.LogInformation(

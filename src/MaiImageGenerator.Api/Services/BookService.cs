@@ -197,11 +197,13 @@ public sealed class BookService
         CancellationToken cancellationToken)
     {
         var chapter = FindChapter(project, chapterId);
+        var telemetryProjectId = Guid.Parse(project.Id).ToString("D");
+        var telemetryChapterId = Guid.ParseExact(chapter.Id, "N").ToString("N");
         using var scope = _logger.BeginScope(
             "OperationId:{OperationId} ProjectId:{ProjectId} ChapterId:{ChapterId}",
-            chapterId,
-            project.Id,
-            chapterId);
+            telemetryChapterId,
+            telemetryProjectId,
+            telemetryChapterId);
         var stopwatch = Stopwatch.StartNew();
         _logger.LogInformation(
             "AI operation {OperationName} started for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint}.",
@@ -287,11 +289,13 @@ public sealed class BookService
         CancellationToken cancellationToken)
     {
         var chapter = FindChapter(project, chapterId);
+        var telemetryProjectId = Guid.Parse(project.Id).ToString("D");
+        var telemetryChapterId = Guid.ParseExact(chapter.Id, "N").ToString("N");
         using var scope = _logger.BeginScope(
             "OperationId:{OperationId} ProjectId:{ProjectId} ChapterId:{ChapterId}",
-            chapterId,
-            project.Id,
-            chapterId);
+            telemetryChapterId,
+            telemetryProjectId,
+            telemetryChapterId);
         var stopwatch = Stopwatch.StartNew();
         _logger.LogInformation(
             "Async operation {OperationName} started at stage {GenerationStage}.",
