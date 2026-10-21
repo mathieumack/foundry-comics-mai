@@ -88,7 +88,7 @@ Avoid sharing the complete environment output in issues because it contains depl
 | Close and reopen the board page | The background execution continues and saved progress can be retrieved. |
 | View panel progress | SignalR targets the signed-in owner, and completion refreshes stored state/artifacts. |
 | Create a book and request a short plan | API returns `202`; only the book-plan job consumes it; polling restores the completed plan. |
-| Save chapter edits and generate prose, then an image | Separate stage states and one chapter image are saved; keep the page open for these foreground requests. |
+| Save chapter edits and generate prose, then an image | The image dependency uses `/mai/v1/images/generations`; the response is `Completed`, and the owner-scoped PNG is retrievable. |
 | Reopen the book | Saved plan, prose, image, and stage errors survive navigation. |
 | Use a second authorized test account | The first account's project/artifact IDs do not expose its data. |
 
@@ -215,7 +215,7 @@ Confirm that the API identity has both SignalR App Server and SignalR REST API O
 
 Inspect the correct queue, job execution history, and Application Insights logs. Each worker takes one message with six hours of visibility and the job allows one concurrent execution, so a technical failure may wait for visibility expiry before a retry. The fifth dequeue deletes the failed message after logging it. The provisioned poison queues are not currently populated by the workers.
 
-Check Cosmos status together with queue submission logs: persistence and enqueue are separate operations. A board can remain `Pending` if enqueue fails after persistence. For chapter prose/images, check the returned stage status and error even when the HTTP response is successful; those operations are not queued.
+Check Cosmos status together with queue submission logs: persistence and enqueue are separate operations. A board can remain `Pending` if enqueue fails after persistence. Chapter prose/images are not queued. For a chapter image failure, correlate the API request with its dependency in Application Insights: the dependency path must be `/mai/v1/images/generations`; the API persists `ImageStatus=Failed` and returns sanitized `502` problem details without the prompt or provider response body.
 
 ## Remove an environment
 

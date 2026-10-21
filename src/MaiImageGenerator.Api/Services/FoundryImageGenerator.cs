@@ -1,18 +1,28 @@
+using Azure.Core;
 using MaiImageGenerator.Api.Configuration;
 using Microsoft.Extensions.Options;
 using OpenAI.Images;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Net.Http.Headers;
+using System.Text.Json;
 
 namespace MaiImageGenerator.Api.Services;
 
 public sealed class FoundryImageGenerator(
     ImageClient imageClient,
     IHttpClientFactory httpClientFactory,
+    TokenCredential credential,
     IOptions<FoundryOptions> options) : IImageGenerator
 {
+    internal const string HttpClientName = "MaiImageGeneration";
+    private static readonly string[] CognitiveServicesScopes = ["https://cognitiveservices.azure.com/.default"];
+    private readonly FoundryOptions _options = options.Value;
+    private readonly Uri _generationsEndpoint = GetGenerationsEndpoint(options.Value.Endpoint);
     private readonly string _imageModel = options.Value.ImageModel;
+    private readonly int _squareImageSize = options.Value.ImageSize == 1024
+        ? options.Value.ImageSize
+        : throw new InvalidOperationException("MAI image generation supports ImageSize=1024 for square images.");
     private readonly GeneratedImageSize _imageSize = options.Value.ImageSize switch
     {
         1024 => GeneratedImageSize.W1024xH1024,
@@ -29,14 +39,7 @@ public sealed class FoundryImageGenerator(
             GeneratedImage image;
             if (referenceSheet is null)
             {
-                var result = await imageClient.GenerateImageAsync(
-                    prompt,
-                    new ImageGenerationOptions
-                    {
-                        Size = _imageSize
-                    },
-                    cancellationToken);
-                image = result.Value;
+                return await GenerateFromPromptAsync(prompt, cancellationToken);
             }
             else
             {
@@ -79,11 +82,93 @@ public sealed class FoundryImageGenerator(
 
             throw new FoundryGenerationException("The image model returned no image.");
         }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new FoundryGenerationException("Image generation request timed out.", exception);
+        }
+        catch (HttpRequestException exception)
+        {
+            throw new FoundryGenerationException("Image generation request failed.", exception);
+        }
+        catch (JsonException exception)
+        {
+            throw new FoundryGenerationException("The image model returned an invalid response.", exception);
+        }
+        catch (FormatException exception)
+        {
+            throw new FoundryGenerationException("The image model returned invalid image data.", exception);
+        }
         catch (ClientResultException exception)
         {
             throw new FoundryGenerationException(
                 $"Image generation failed with HTTP status {exception.Status}.",
-                exception);
+                exception,
+                exception.Status);
         }
+    }
+
+    private async Task<byte[]> GenerateFromPromptAsync(
+        string prompt,
+        CancellationToken cancellationToken)
+    {
+        var token = await credential.GetTokenAsync(
+            new TokenRequestContext(CognitiveServicesScopes),
+            cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Post, _generationsEndpoint);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+        var requestBody = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            model = _options.ImageModel,
+            prompt,
+            width = _squareImageSize,
+            height = _squareImageSize
+        });
+        request.Content = new ByteArrayContent(requestBody);
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        request.Content.Headers.ContentLength = requestBody.Length;
+
+        using var response = await httpClientFactory.CreateClient(HttpClientName)
+            .SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new FoundryGenerationException(
+                $"Image generation failed with HTTP status {(int)response.StatusCode}.",
+                (int)response.StatusCode);
+        }
+
+        await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(
+            responseStream,
+            cancellationToken: cancellationToken);
+        if (document.RootElement.TryGetProperty("data", out var data) &&
+            data.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in data.EnumerateArray())
+            {
+                if (item.TryGetProperty("b64_json", out var value) &&
+                    value.ValueKind == JsonValueKind.String &&
+                    value.GetString() is { } imageBase64)
+                {
+                    return Convert.FromBase64String(imageBase64);
+                }
+            }
+        }
+
+        throw new FoundryGenerationException("The image model returned no image.");
+    }
+
+    private static Uri GetGenerationsEndpoint(string endpoint)
+    {
+        var builder = new UriBuilder(endpoint);
+        const string cognitiveServicesSuffix = ".cognitiveservices.azure.com";
+        if (builder.Host.EndsWith(cognitiveServicesSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            builder.Host = $"{builder.Host[..^cognitiveServicesSuffix.Length]}.services.ai.azure.com";
+        }
+
+        builder.Path = "/mai/v1/images/generations";
+        builder.Query = string.Empty;
+        builder.Fragment = string.Empty;
+        return builder.Uri;
     }
 }
