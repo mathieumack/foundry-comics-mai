@@ -63,7 +63,7 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         project.Context = request.Context?.Trim();
         project.SourceIdea = request.SourceIdea?.Trim() ?? project.SourceIdea;
         project.UpdatedAt = DateTimeOffset.UtcNow;
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await SaveAsync(project, cancellationToken);
         return ToResponse(project);
     }
 
@@ -81,7 +81,7 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         };
         project.Characters.Add(character);
         project.UpdatedAt = DateTimeOffset.UtcNow;
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await SaveAsync(project, cancellationToken);
         return ToResponse(character);
     }
 
@@ -101,7 +101,7 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
 
         character.Name = request.Name.Trim();
         project.UpdatedAt = DateTimeOffset.UtcNow;
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await SaveAsync(project, cancellationToken);
         return ToResponse(character);
     }
 
@@ -119,7 +119,7 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
 
         project.Characters.Remove(character);
         project.UpdatedAt = DateTimeOffset.UtcNow;
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await SaveAsync(project, cancellationToken);
         return true;
     }
 
@@ -136,8 +136,32 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
             FileName = reference.FileName
         });
         project.UpdatedAt = DateTimeOffset.UtcNow;
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await SaveAsync(project, cancellationToken);
         return ToResponse(character);
+    }
+
+    private async Task SaveAsync(ProjectDocument project, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            var current = await dbContext.Projects
+                .AsNoTracking()
+                .WithPartitionKey(project.OwnerId)
+                .SingleOrDefaultAsync(
+                    item => item.Id == project.Id && item.OwnerId == project.OwnerId,
+                    cancellationToken);
+            if (current is not null && BookImageGenerationLease.IsActive(current, DateTimeOffset.UtcNow))
+            {
+                throw new ArgumentException(
+                    "Chapter images are currently being generated. Retry after the image batch completes.");
+            }
+
+            throw;
+        }
     }
 
     public static ProjectCharacter? FindCharacter(ProjectDocument project, string characterId) =>

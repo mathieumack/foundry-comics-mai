@@ -7,6 +7,7 @@ using MaiImageGenerator.Shared.Data.Entities;
 using MaiImageGenerator.Shared.Messages;
 using MaiImageGenerator.Shared.Services;
 using Microsoft.Agents.AI;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenAI.Chat;
@@ -63,8 +64,7 @@ public sealed class BookService
         project.BookPlan.Status = GenerationStatus.Pending;
         project.BookPlan.Prompt = null;
         project.BookPlan.Error = null;
-        project.UpdatedAt = DateTimeOffset.UtcNow;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveAsync(project, cancellationToken);
 
         try
         {
@@ -145,8 +145,7 @@ public sealed class BookService
         project.BookPlan.Chapters = chapters;
         project.BookPlan.Status = GenerationStatus.Completed;
         project.BookPlan.Error = null;
-        project.UpdatedAt = DateTimeOffset.UtcNow;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveAsync(project, cancellationToken);
         return ToResponse(project);
     }
 
@@ -259,7 +258,22 @@ public sealed class BookService
                 : chapter.ImagePrompt.Trim();
         }
 
-        await SaveAsync(project, cancellationToken);
+        project.UpdatedAt = DateTimeOffset.UtcNow;
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            var current = await LoadCurrentProjectAsync(project, cancellationToken);
+            if (current is not null && BookImageGenerationLease.IsActive(current, DateTimeOffset.UtcNow))
+            {
+                return ToResponse(current);
+            }
+
+            throw;
+        }
+
         using var persistenceLock = new SemaphoreSlim(1, 1);
         try
         {
@@ -393,8 +407,32 @@ public sealed class BookService
     private async Task SaveAsync(ProjectDocument project, CancellationToken cancellationToken)
     {
         project.UpdatedAt = DateTimeOffset.UtcNow;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            var current = await LoadCurrentProjectAsync(project, cancellationToken);
+            if (current is not null && BookImageGenerationLease.IsActive(current, DateTimeOffset.UtcNow))
+            {
+                throw new ArgumentException(
+                    "Chapter images are currently being generated. Retry after the image batch completes.");
+            }
+
+            throw;
+        }
     }
+
+    private Task<ProjectDocument?> LoadCurrentProjectAsync(
+        ProjectDocument project,
+        CancellationToken cancellationToken) =>
+        _dbContext.Projects
+            .AsNoTracking()
+            .WithPartitionKey(project.OwnerId)
+            .SingleOrDefaultAsync(
+                item => item.Id == project.Id && item.OwnerId == project.OwnerId,
+                cancellationToken);
 
     private static void EnsureBook(ProjectDocument project)
     {
