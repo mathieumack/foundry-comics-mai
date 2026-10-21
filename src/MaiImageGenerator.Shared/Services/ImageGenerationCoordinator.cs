@@ -108,6 +108,7 @@ public sealed class ImageGenerationCoordinator
         for (var attempt = 0; ; attempt++)
         {
             var generationStarted = Stopwatch.GetTimestamp();
+            TimeSpan? retryDelay = null;
             ActiveRequests.Add(1, new KeyValuePair<string, object?>("workflow", workflow));
             try
             {
@@ -130,10 +131,9 @@ public sealed class ImageGenerationCoordinator
                     1,
                     new KeyValuePair<string, object?>("workflow", workflow),
                     new KeyValuePair<string, object?>("attempt", attempt + 1));
-                var delay = Math.Min(
+                retryDelay = TimeSpan.FromMilliseconds(Math.Min(
                     _retryBaseDelayMilliseconds * Math.Pow(2, attempt),
-                    MaximumBackoffMilliseconds);
-                await Task.Delay(TimeSpan.FromMilliseconds(delay), cancellationToken);
+                    MaximumBackoffMilliseconds));
             }
             finally
             {
@@ -143,6 +143,8 @@ public sealed class ImageGenerationCoordinator
                     new KeyValuePair<string, object?>("workflow", workflow),
                     new KeyValuePair<string, object?>("attempt", attempt + 1));
             }
+
+            await Task.Delay(retryDelay!.Value, cancellationToken);
         }
     }
 }

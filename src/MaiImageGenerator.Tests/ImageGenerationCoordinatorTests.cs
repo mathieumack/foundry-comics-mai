@@ -1,5 +1,6 @@
 using MaiImageGenerator.Api.Configuration;
 using MaiImageGenerator.Shared.Services;
+using System.Diagnostics;
 
 namespace MaiImageGenerator.Tests;
 
@@ -67,6 +68,18 @@ public sealed class ImageGenerationCoordinatorTests
 
         Assert.IsType<InvalidOperationException>(Assert.Single(exception.InnerExceptions));
         Assert.Equal([0, 2], completed.Order().ToArray());
+    }
+
+    [Fact]
+    public async Task RunAsync_ReducesBatchDurationForIndependentWork()
+    {
+        var items = Enumerable.Range(0, 4).ToArray();
+        var sequential = await MeasureBatchAsync(CreateCoordinator(maxParallelImages: 1), items);
+        var parallel = await MeasureBatchAsync(CreateCoordinator(maxParallelImages: 4), items);
+
+        Assert.True(
+            parallel < sequential * 0.6,
+            $"Expected parallel duration {parallel.TotalMilliseconds:F0}ms to be less than 60% of sequential duration {sequential.TotalMilliseconds:F0}ms.");
     }
 
     [Fact]
@@ -147,6 +160,19 @@ public sealed class ImageGenerationCoordinatorTests
             ImageRetryCount = retryCount,
             ImageRetryBaseDelayMilliseconds = retryDelayMilliseconds
         });
+
+    private static async Task<TimeSpan> MeasureBatchAsync(
+        ImageGenerationCoordinator coordinator,
+        IReadOnlyCollection<int> items)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        await coordinator.RunAsync(
+            items,
+            "performance-test",
+            (_, cancellationToken) => Task.Delay(TimeSpan.FromMilliseconds(75), cancellationToken),
+            CancellationToken.None);
+        return stopwatch.Elapsed;
+    }
 
     private static void UpdateMaximum(ref int maximum, int current)
     {
