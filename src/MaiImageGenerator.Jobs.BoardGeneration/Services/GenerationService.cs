@@ -42,7 +42,8 @@ public sealed class GenerationService(
                 $"Generation '{request.BoardId}' does not belong to project '{request.ProjectId}'.");
         }
 
-        if (document.Status == GenerationStatus.Completed)
+        if (document.Status is GenerationStatus.Completed or GenerationStatus.Canceled ||
+            project.DeletionRequestedAt is not null)
         {
             return;
         }
