@@ -12,7 +12,8 @@ public sealed class ProjectsController(
     ProjectService projectService,
     GenerationService generationService,
     ReferenceService referenceService,
-    BookService bookService) : ControllerBase
+    BookService bookService,
+    ProjectDeletionService projectDeletionService) : ControllerBase
 {
     [HttpPost]
     public async Task<ActionResult<ProjectResponse>> Create(
@@ -71,6 +72,37 @@ public sealed class ProjectsController(
         catch (ArgumentException exception)
         {
             return InvalidProject(exception);
+        }
+    }
+
+    [HttpDelete("{projectId:guid}")]
+    public async Task<IActionResult> Delete(Guid projectId, CancellationToken cancellationToken)
+    {
+        var ownerId = GetOwnerId();
+        if (ownerId is null)
+        {
+            return Unauthorized();
+        }
+
+        try
+        {
+            await projectDeletionService.DeleteAsync(ownerId, projectId, cancellationToken);
+            return NoContent();
+        }
+        catch (ProjectDeletionException)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Project deletion incomplete",
+                detail: "Some project data could not be removed. Retry deletion to finish the cleanup.");
+        }
+        catch (ProjectDeletionConflictException)
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Project generation is still running",
+                Detail = "Wait for the active generation to finish, then retry deletion."
+            });
         }
     }
 
@@ -428,6 +460,15 @@ public sealed class ProjectsController(
         }
 
         var project = await projectService.FindAsync(ownerId, projectId, cancellationToken);
+        if (project?.DeletionRequestedAt is not null)
+        {
+            return new(ownerId, null, Conflict(new ProblemDetails
+            {
+                Title = "Project deletion is pending",
+                Detail = "Retry deletion from history to finish the cleanup."
+            }));
+        }
+
         return project is null
             ? new(ownerId, null, NotFound())
             : new(ownerId, project, null);

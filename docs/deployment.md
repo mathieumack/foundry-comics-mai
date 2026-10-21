@@ -90,9 +90,12 @@ Avoid sharing the complete environment output in issues because it contains depl
 | Create a book and request a short plan | API returns `202`; only the book-plan job consumes it; polling restores the completed plan. |
 | Save chapter edits and generate prose, then an image | Separate stage states and one chapter image are saved; keep the page open for these foreground requests. |
 | Reopen the book | Saved plan, prose, image, and stage errors survive navigation. |
+| Delete a completed comic and book from history | Confirmation is required; the card disappears only after all owner-scoped records and blob versions are removed. |
 | Use a second authorized test account | The first account's project/artifact IDs do not expose its data. |
 
 Use synthetic inputs and a small chapter/panel count to limit cost. Do not deliberately submit harmful material to exercise safety paths. These are manual smoke checks; the repository has no automated end-to-end test suite.
+
+The storage account intentionally disables blob soft delete so confirmed project deletion is permanent. Blob versioning remains enabled for ordinary overwrites; the deletion API removes every version and snapshot under the project-owned prefixes before deleting Cosmos records. Re-provision the infrastructure before relying on this behavior in an existing environment.
 
 ## Redeploy
 
@@ -225,4 +228,4 @@ Run only when you intend to delete the selected environment and its saved traini
 azd down --purge
 ```
 
-Review the selected environment and resources before confirming. Entra application cleanup and soft-deleted resources may require separate tenant or service-specific handling. Verify remaining billable resources and any service retention behavior afterwards; the application has no per-project retention/deletion workflow.
+Review the selected environment and resources before confirming. Entra application cleanup and service-specific retention may require separate tenant or service-specific handling. Verify remaining billable resources afterwards. Individual comics and books can be permanently deleted from the authenticated project history.
