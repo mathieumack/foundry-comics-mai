@@ -20,6 +20,7 @@ public sealed class BookService
     private readonly IImageGenerator _imageGenerator;
     private readonly BlobContainerClient _container;
     private readonly BookPlanGenerationQueue _generationQueue;
+    private readonly ILogger<BookService> _logger;
 
     public BookService(
         OpenAIClient client,
@@ -27,7 +28,8 @@ public sealed class BookService
         MaiImageGeneratorDbContext dbContext,
         IImageGenerator imageGenerator,
         BlobServiceClient blobServiceClient,
-        BookPlanGenerationQueue generationQueue)
+        BookPlanGenerationQueue generationQueue,
+        ILogger<BookService> logger)
     {
         _agent = client.GetChatClient(options.Value.PromptModel).AsAIAgent(
             instructions: """
@@ -39,6 +41,7 @@ public sealed class BookService
         _imageGenerator = imageGenerator;
         _container = blobServiceClient.GetBlobContainerClient("generations");
         _generationQueue = generationQueue;
+        _logger = logger;
     }
 
     public async Task<BookPlanResponse> GeneratePlanAsync(
@@ -212,17 +215,25 @@ public sealed class BookService
             chapter.ImageBlobName = blobName;
             chapter.ImageStatus = GenerationStatus.Completed;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             chapter.ImageStatus = GenerationStatus.Pending;
             chapter.ImageError = "Chapter image generation was interrupted and can be retried.";
             await SaveAsync(project, CancellationToken.None);
             throw;
         }
-        catch (Exception)
+        catch (Exception exception)
         {
             chapter.ImageStatus = GenerationStatus.Failed;
             chapter.ImageError = "Chapter image generation failed. This image can be retried independently.";
+            await SaveAsync(project, CancellationToken.None);
+            _logger.LogError(
+                "Chapter image generation failed for project {ProjectId}, chapter {ChapterId}; failure type {FailureType}, upstream HTTP status {UpstreamStatusCode}.",
+                project.Id,
+                chapter.Id,
+                exception.GetType().Name,
+                (exception as FoundryGenerationException)?.UpstreamStatusCode);
+            throw;
         }
 
         await SaveAsync(project, CancellationToken.None);
