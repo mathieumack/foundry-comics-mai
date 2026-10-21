@@ -78,6 +78,8 @@ The checked-in production appsettings is only a neutral template. Never replace 
 
 Use `azd env get-values` locally to inspect deployment outputs. Open `SERVICE_WEB_URI` and sign in. Submit a small board and confirm that `generation-jobs` triggers only the board-generation job, panel notifications arrive, the job completes, and artifacts are downloadable. Then generate a book plan and confirm that `book-plan-jobs` triggers only the book-plan-generation job and that the page progresses from pending to completed. Verify that the browser acquires the API scope, the API accepts the token, both jobs use the managed identity, and telemetry reaches Application Insights.
 
+In the Azure portal, open the deployed Application Insights resource, select **Workbooks**, and open **Comics operations (<environment-name>)**. Select a time range and confirm that operation outcomes, latency, dependency/provider health, API requests, and runtime metrics populate after telemetry ingestion. Workbook viewers need read access to the workbook and query access to Application Insights and its Log Analytics workspace; **Monitoring Reader** is the simplest broad read-only role. Resource linkage does not grant data access, and the application managed identity does not need a workbook role.
+
 Avoid sharing the complete environment output in issues because it contains deployment-specific identifiers and endpoints.
 
 ### Functional smoke checks
@@ -213,7 +215,7 @@ Confirm that the API identity has both SignalR App Server and SignalR REST API O
 
 ### Generation remains pending or fails repeatedly
 
-Inspect the correct queue, job execution history, and Application Insights logs. Each worker takes one message with six hours of visibility and the job allows one concurrent execution, so a technical failure may wait for visibility expiry before a retry. The fifth dequeue deletes the failed message after logging it. The provisioned poison queues are not currently populated by the workers.
+Inspect the **Recent warnings, retries, and failures** panel in the Comics operations workbook, then correlate its operation ID with the correct queue, job execution history, and Application Insights logs. Each worker takes one message with six hours of visibility and the job allows one concurrent execution, so a technical failure may wait for visibility expiry before a retry. The fifth dequeue deletes the failed message after logging it. The provisioned poison queues are not currently populated by the workers.
 
 Check Cosmos status together with queue submission logs: persistence and enqueue are separate operations. A board can remain `Pending` if enqueue fails after persistence. For chapter prose/images, check the returned stage status and error even when the HTTP response is successful; those operations are not queued.
 

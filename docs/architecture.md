@@ -64,6 +64,7 @@ flowchart TB
     API -. telemetry .-> Monitor[Application Insights and Log Analytics]
     BoardJob -. telemetry .-> Monitor
     PlanJob -. telemetry .-> Monitor
+    Workbook[Azure Monitor Workbook] -->|Queries logs, requests, and metrics| Monitor
 ```
 
 The browser runs Blazor and calls the API directly; Static Web Apps is not an API proxy. In the comic editor, the scenes tab displays the selected panel image at large size beside a compact, clickable layout preview. The final board tab displays only the assembled board. Both panel and board images open in a full-screen viewer. Static Web Apps is deployed in West Europe, independently of the primary region. The Container Apps environment has external API ingress and VNet integration for private backend access. Storage, Cosmos DB, AI Search, and Foundry use private endpoints. Container Registry is public in the reference deployment and also has a private endpoint.
@@ -244,6 +245,8 @@ Log start before awaiting a significant database, queue, storage, notification, 
 Board and book-plan queue contracts carry an optional W3C `TraceParent`. Consumers restore it as the parent of their processing activity, and panel notifications carry the current trace context into the API's Dapr/SignalR callback. The field is optional so messages from an older producer remain valid during rolling deployments.
 
 Never log owner identifiers, access tokens, authorization headers, prompts, generated text, image bytes/base64, blob names, signed image URLs, or provider response bodies. Provider request IDs and error codes must be length- and character-limited before logging. If a provider exception can embed a response body or signed URL in its message, log and propagate a sanitized exception while retaining safe status, request ID, and error-code properties. Keep user-facing errors concise; other exception objects and inner exceptions belong only in server telemetry.
+
+The deployment creates a shared **Comics operations** Azure Monitor Workbook linked to the workspace-based Application Insights resource. It summarizes operation outcomes and latency, retries and failures, dependency/provider health, API requests, and .NET runtime metrics. Queries run under the signed-in viewer's identity and use the selected workbook time range; the workbook does not copy telemetry or grant access to it.
 
 ## Identity and secrets
 

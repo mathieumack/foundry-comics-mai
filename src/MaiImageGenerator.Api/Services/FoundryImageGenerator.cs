@@ -82,9 +82,11 @@ public sealed class FoundryImageGenerator(
             if (image.ImageBytes is not null)
             {
                 logger.LogInformation(
-                    "AI operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                    "AI operation {OperationName} completed with outcome {Outcome} for provider {Provider} model {Model} in {ElapsedMs} ms.",
                     "GenerateImage",
                     "Succeeded",
+                    "AzureFoundry",
+                    _imageModel,
                     stopwatch.ElapsedMilliseconds);
                 return image.ImageBytes.ToArray();
             }
@@ -103,9 +105,11 @@ public sealed class FoundryImageGenerator(
                 }
 
                 logger.LogInformation(
-                    "AI operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                    "AI operation {OperationName} completed with outcome {Outcome} for provider {Provider} model {Model} in {ElapsedMs} ms.",
                     "GenerateImage",
                     "Succeeded",
+                    "AzureFoundry",
+                    _imageModel,
                     stopwatch.ElapsedMilliseconds);
                 return bytes;
             }

@@ -112,9 +112,11 @@ public sealed class BookPlanGenerationService
             generationStage = "DatabasePersistCompleted";
             await _dbContext.SaveChangesAsync(CancellationToken.None);
             _logger.LogInformation(
-                "Async operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "AI operation {OperationName} completed with outcome {Outcome} for provider {Provider} model {Model} in {ElapsedMs} ms.",
                 "GenerateBookPlan",
                 "Succeeded",
+                "AzureFoundry",
+                _options.PromptModel,
                 stopwatch.ElapsedMilliseconds);
         }
         catch (OperationCanceledException exception)
@@ -125,9 +127,11 @@ public sealed class BookPlanGenerationService
             await _dbContext.SaveChangesAsync(CancellationToken.None);
             _logger.LogWarning(
                 exception,
-                "Async operation {OperationName} ended with outcome {Outcome} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "AI operation {OperationName} ended with outcome {Outcome} for provider {Provider} model {Model} at stage {GenerationStage} after {ElapsedMs} ms.",
                 "GenerateBookPlan",
                 cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                "AzureFoundry",
+                _options.PromptModel,
                 generationStage,
                 stopwatch.ElapsedMilliseconds);
             throw;

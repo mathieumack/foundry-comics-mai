@@ -68,9 +68,11 @@ public sealed class ProjectScaffolder
                 cancellationToken: cancellationToken);
             var result = Parse(response.ToString(), request.PanelCount);
             _logger.LogInformation(
-                "AI operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "AI operation {OperationName} completed with outcome {Outcome} for provider {Provider} model {Model} in {ElapsedMs} ms.",
                 "CreateProjectScaffold",
                 "Succeeded",
+                "AzureFoundry",
+                _options.PromptModel,
                 stopwatch.ElapsedMilliseconds);
             return result;
         }
@@ -78,9 +80,11 @@ public sealed class ProjectScaffolder
         {
             _logger.LogWarning(
                 exception,
-                "AI operation {OperationName} ended with outcome {Outcome} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "AI operation {OperationName} ended with outcome {Outcome} for provider {Provider} model {Model} at stage {GenerationStage} after {ElapsedMs} ms.",
                 "CreateProjectScaffold",
                 cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                "AzureFoundry",
+                _options.PromptModel,
                 "ProjectScaffold",
                 stopwatch.ElapsedMilliseconds);
             throw;
@@ -106,8 +110,10 @@ public sealed class ProjectScaffolder
         {
             _logger.LogError(
                 exception,
-                "AI operation {OperationName} failed at stage {GenerationStage} with code {SafeErrorCode} after {ElapsedMs} ms.",
+                "AI operation {OperationName} failed for provider {Provider} model {Model} at stage {GenerationStage} with code {SafeErrorCode} after {ElapsedMs} ms.",
                 "CreateProjectScaffold",
+                "AzureFoundry",
+                _options.PromptModel,
                 "ResponseValidation",
                 "InvalidResponse",
                 stopwatch.ElapsedMilliseconds);

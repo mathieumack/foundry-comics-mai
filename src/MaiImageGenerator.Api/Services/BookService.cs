@@ -229,9 +229,11 @@ public sealed class BookService
             chapter.Prose = prose;
             chapter.ProseStatus = GenerationStatus.Completed;
             _logger.LogInformation(
-                "Async operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "AI operation {OperationName} completed with outcome {Outcome} for provider {Provider} model {Model} in {ElapsedMs} ms.",
                 "GenerateChapterProse",
                 "Succeeded",
+                "AzureFoundry",
+                _options.PromptModel,
                 stopwatch.ElapsedMilliseconds);
         }
         catch (OperationCanceledException exception)
@@ -241,9 +243,11 @@ public sealed class BookService
             await SaveAsync(project, CancellationToken.None);
             _logger.LogWarning(
                 exception,
-                "Async operation {OperationName} ended with outcome {Outcome} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "AI operation {OperationName} ended with outcome {Outcome} for provider {Provider} model {Model} at stage {GenerationStage} after {ElapsedMs} ms.",
                 "GenerateChapterProse",
                 cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                "AzureFoundry",
+                _options.PromptModel,
                 "PromptModel",
                 stopwatch.ElapsedMilliseconds);
             throw;
@@ -273,8 +277,10 @@ public sealed class BookService
             chapter.ProseError = "Chapter prose generation failed. This chapter can be retried independently.";
             _logger.LogError(
                 exception,
-                "Async operation {OperationName} failed at stage {GenerationStage} after {ElapsedMs} ms.",
+                "AI operation {OperationName} failed for provider {Provider} model {Model} at stage {GenerationStage} after {ElapsedMs} ms.",
                 "GenerateChapterProse",
+                "AzureFoundry",
+                _options.PromptModel,
                 "PromptModel",
                 stopwatch.ElapsedMilliseconds);
         }

@@ -60,9 +60,11 @@ public sealed class FoundryImageClient(
                 ? throw new FoundryGenerationException("The prompt model returned no content.")
                 : rewrittenPrompt;
             logger.LogInformation(
-                "AI operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "AI operation {OperationName} completed with outcome {Outcome} for provider {Provider} model {Model} in {ElapsedMs} ms.",
                 "RewritePrompt",
                 "Succeeded",
+                "AzureFoundry",
+                _options.PromptModel,
                 stopwatch.ElapsedMilliseconds);
             return result;
         }
@@ -70,9 +72,11 @@ public sealed class FoundryImageClient(
         {
             logger.LogWarning(
                 exception,
-                "AI operation {OperationName} ended with outcome {Outcome} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "AI operation {OperationName} ended with outcome {Outcome} for provider {Provider} model {Model} at stage {GenerationStage} after {ElapsedMs} ms.",
                 "RewritePrompt",
                 cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                "AzureFoundry",
+                _options.PromptModel,
                 "PromptRewrite",
                 stopwatch.ElapsedMilliseconds);
             throw;
@@ -334,9 +338,11 @@ public sealed class FoundryImageClient(
 
     private void LogCompleted(Stopwatch stopwatch) =>
         logger.LogInformation(
-            "AI operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+            "AI operation {OperationName} completed with outcome {Outcome} for provider {Provider} model {Model} in {ElapsedMs} ms.",
             "GenerateImage",
             "Succeeded",
+            "AzureFoundry",
+            _options.ImageModel,
             stopwatch.ElapsedMilliseconds);
 
     private void LogFailure(

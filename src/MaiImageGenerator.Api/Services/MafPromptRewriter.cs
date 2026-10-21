@@ -41,9 +41,11 @@ public sealed class MafPromptRewriter(
                 ? throw new FoundryGenerationException("The prompt model returned no content.")
                 : rewrittenPrompt;
             logger.LogInformation(
-                "AI operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "AI operation {OperationName} completed with outcome {Outcome} for provider {Provider} model {Model} in {ElapsedMs} ms.",
                 "RewritePrompt",
                 "Succeeded",
+                "AzureFoundry",
+                options.Value.PromptModel,
                 stopwatch.ElapsedMilliseconds);
             return result;
         }
@@ -51,9 +53,11 @@ public sealed class MafPromptRewriter(
         {
             logger.LogWarning(
                 exception,
-                "AI operation {OperationName} ended with outcome {Outcome} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "AI operation {OperationName} ended with outcome {Outcome} for provider {Provider} model {Model} at stage {GenerationStage} after {ElapsedMs} ms.",
                 "RewritePrompt",
                 cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                "AzureFoundry",
+                options.Value.PromptModel,
                 "PromptRewrite",
                 stopwatch.ElapsedMilliseconds);
             throw;
@@ -79,8 +83,10 @@ public sealed class MafPromptRewriter(
         {
             logger.LogError(
                 exception,
-                "AI operation {OperationName} failed at stage {GenerationStage} with code {SafeErrorCode} after {ElapsedMs} ms.",
+                "AI operation {OperationName} failed for provider {Provider} model {Model} at stage {GenerationStage} with code {SafeErrorCode} after {ElapsedMs} ms.",
                 "RewritePrompt",
+                "AzureFoundry",
+                options.Value.PromptModel,
                 "PromptRewrite",
                 exception.GetType().Name,
                 stopwatch.ElapsedMilliseconds);
