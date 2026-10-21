@@ -52,6 +52,7 @@ public sealed class BookService
         CancellationToken cancellationToken)
     {
         EnsureBook(project);
+        EnsureNoActiveImageGeneration(project);
         if (chapterCount is < 1 or > MaximumChapterCount)
         {
             throw new ArgumentException($"A book plan requires between 1 and {MaximumChapterCount} chapters.");
@@ -95,6 +96,7 @@ public sealed class BookService
         CancellationToken cancellationToken)
     {
         EnsureBook(project);
+        EnsureNoActiveImageGeneration(project);
         if (request.Chapters.Count is < 1 or > MaximumChapterCount ||
             request.Chapters.Any(chapter =>
                 string.IsNullOrWhiteSpace(chapter.Title) ||
@@ -160,6 +162,7 @@ public sealed class BookService
         string chapterId,
         CancellationToken cancellationToken)
     {
+        EnsureNoActiveImageGeneration(project);
         var chapter = FindChapter(project, chapterId);
         chapter.ProseStatus = GenerationStatus.Processing;
         chapter.ProseError = null;
@@ -201,7 +204,7 @@ public sealed class BookService
         CancellationToken cancellationToken)
     {
         var chapter = FindChapter(project, chapterId);
-        if (HasActiveImageGenerationLease(chapter))
+        if (HasActiveImageBatchLease(project))
         {
             return ToResponse(project);
         }
@@ -214,6 +217,11 @@ public sealed class BookService
         CancellationToken cancellationToken)
     {
         EnsureBook(project);
+        if (HasActiveImageBatchLease(project))
+        {
+            return ToResponse(project);
+        }
+
         var chapters = project.BookPlan?.Chapters
             .Where(chapter =>
                 chapter.ImageStatus != GenerationStatus.Completed &&
@@ -234,6 +242,8 @@ public sealed class BookService
 
         var requestId = Guid.NewGuid().ToString("N");
         var startedAt = DateTimeOffset.UtcNow;
+        project.BookPlan!.ImageGenerationRequestId = requestId;
+        project.BookPlan.ImageGenerationStartedAt = startedAt;
         foreach (var chapter in chapters)
         {
             chapter.ImageStatus = GenerationStatus.Processing;
@@ -311,6 +321,9 @@ public sealed class BookService
                     }
                 },
                 cancellationToken);
+            project.BookPlan.ImageGenerationRequestId = null;
+            project.BookPlan.ImageGenerationStartedAt = null;
+            await SaveAsync(project, CancellationToken.None);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -324,6 +337,8 @@ public sealed class BookService
                 chapter.ImageGenerationStartedAt = null;
             }
 
+            project.BookPlan!.ImageGenerationRequestId = null;
+            project.BookPlan.ImageGenerationStartedAt = null;
             await SaveAsync(project, CancellationToken.None);
             throw;
         }
@@ -349,6 +364,18 @@ public sealed class BookService
         chapter.ImageStatus == GenerationStatus.Processing &&
         chapter.ImageGenerationRequestId is not null &&
         chapter.ImageGenerationStartedAt > DateTimeOffset.UtcNow - ImageGenerationLeaseDuration;
+
+    private static bool HasActiveImageBatchLease(ProjectDocument project) =>
+        project.BookPlan?.ImageGenerationRequestId is not null &&
+        project.BookPlan.ImageGenerationStartedAt > DateTimeOffset.UtcNow - ImageGenerationLeaseDuration;
+
+    private static void EnsureNoActiveImageGeneration(ProjectDocument project)
+    {
+        if (HasActiveImageBatchLease(project))
+        {
+            throw new ArgumentException("Chapter images are currently being generated. Retry after the image batch completes.");
+        }
+    }
 
     private sealed record ChapterImageWorkItem(BookChapter Chapter, string RequestId);
 
