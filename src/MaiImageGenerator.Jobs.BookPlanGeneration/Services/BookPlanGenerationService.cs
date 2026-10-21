@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using MaiImageGenerator.Api.Configuration;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
@@ -5,9 +6,11 @@ using MaiImageGenerator.Shared.Data.Entities;
 using MaiImageGenerator.Shared.Messages;
 using Microsoft.Agents.AI;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenAI.Chat;
+using System.ClientModel;
 
 namespace MaiImageGenerator.Jobs.BookPlanGeneration.Services;
 
@@ -16,11 +19,14 @@ public sealed class BookPlanGenerationService
     private const int MaximumChapterCount = 30;
     private readonly AIAgent _agent;
     private readonly MaiImageGeneratorDbContext _dbContext;
+    private readonly FoundryOptions _options;
+    private readonly ILogger<BookPlanGenerationService> _logger;
 
     public BookPlanGenerationService(
         OpenAIClient client,
         IOptions<FoundryOptions> options,
-        MaiImageGeneratorDbContext dbContext)
+        MaiImageGeneratorDbContext dbContext,
+        ILogger<BookPlanGenerationService> logger)
     {
         _agent = client.GetChatClient(options.Value.PromptModel).AsAIAgent(
             instructions: """
@@ -29,13 +35,26 @@ public sealed class BookPlanGenerationService
                 """,
             name: "BookPlanGenerationJob");
         _dbContext = dbContext;
+        _options = options.Value;
+        _logger = logger;
     }
 
     public async Task ProcessAsync(
         BookPlanGenerationRequestMessage request,
         CancellationToken cancellationToken)
     {
+        using var scope = _logger.BeginScope(
+            "OperationId:{OperationId} ProjectId:{ProjectId}",
+            request.RequestId,
+            request.ProjectId);
+        var stopwatch = Stopwatch.StartNew();
+        var generationStage = "Validation";
+        _logger.LogInformation(
+            "Async operation {OperationName} started at stage {GenerationStage}.",
+            "GenerateBookPlan",
+            generationStage);
         Validate(request);
+        generationStage = "DatabaseLoad";
         var project = await _dbContext.Projects
             .WithPartitionKey(request.OwnerId)
             .SingleOrDefaultAsync(
@@ -53,9 +72,15 @@ public sealed class BookPlanGenerationService
         if (!string.Equals(plan.GenerationRequestId, request.RequestId, StringComparison.Ordinal) ||
             plan.Status == GenerationStatus.Completed)
         {
+            _logger.LogInformation(
+                "Async operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "GenerateBookPlan",
+                "ObsoleteOrCompleted",
+                stopwatch.ElapsedMilliseconds);
             return;
         }
 
+        generationStage = "DatabasePersistProcessing";
         plan.Status = GenerationStatus.Processing;
         plan.Prompt = BuildPlanPrompt(project, request.ChapterCount);
         plan.Error = null;
@@ -64,7 +89,16 @@ public sealed class BookPlanGenerationService
 
         try
         {
+            generationStage = "PromptModel";
+            _logger.LogInformation(
+                "AI operation {OperationName} started for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint}.",
+                "GenerateBookPlan",
+                "AzureFoundry",
+                _options.PromptModel,
+                generationStage,
+                new Uri(_options.Endpoint).GetLeftPart(UriPartial.Authority));
             var response = await _agent.RunAsync(plan.Prompt, cancellationToken: cancellationToken);
+            generationStage = "ResponseValidation";
             var generatedChapters = ParsePlan(response.ToString(), request.ChapterCount);
             for (var index = 0; index < Math.Min(generatedChapters.Count, plan.Chapters.Count); index++)
             {
@@ -75,16 +109,89 @@ public sealed class BookPlanGenerationService
             plan.Status = GenerationStatus.Completed;
             plan.Error = null;
             project.UpdatedAt = DateTimeOffset.UtcNow;
+            generationStage = "DatabasePersistCompleted";
             await _dbContext.SaveChangesAsync(CancellationToken.None);
+            _logger.LogInformation(
+                "AI operation {OperationName} completed with outcome {Outcome} for provider {Provider} model {Model} in {ElapsedMs} ms.",
+                "GenerateBookPlan",
+                "Succeeded",
+                "AzureFoundry",
+                _options.PromptModel,
+                stopwatch.ElapsedMilliseconds);
         }
-        catch (Exception)
+        catch (OperationCanceledException exception)
         {
             plan.Status = GenerationStatus.Failed;
             plan.Error = "The book plan could not be generated. Retry planning to try again.";
             project.UpdatedAt = DateTimeOffset.UtcNow;
             await _dbContext.SaveChangesAsync(CancellationToken.None);
+            _logger.LogWarning(
+                exception,
+                "AI operation {OperationName} ended with outcome {Outcome} for provider {Provider} model {Model} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "GenerateBookPlan",
+                cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                "AzureFoundry",
+                _options.PromptModel,
+                generationStage,
+                stopwatch.ElapsedMilliseconds);
             throw;
         }
+        catch (ClientResultException exception)
+        {
+            plan.Status = GenerationStatus.Failed;
+            plan.Error = "The book plan could not be generated. Retry planning to try again.";
+            project.UpdatedAt = DateTimeOffset.UtcNow;
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
+            var safeException = new InvalidOperationException(
+                $"Book plan generation failed with HTTP status {exception.Status}.");
+            _logger.LogError(
+                safeException,
+                "AI operation {OperationName} failed for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint} with status {UpstreamStatus}, request {ProviderRequestId}, and code {SafeErrorCode} after {ElapsedMs} ms.",
+                "GenerateBookPlan",
+                "AzureFoundry",
+                _options.PromptModel,
+                generationStage,
+                new Uri(_options.Endpoint).GetLeftPart(UriPartial.Authority),
+                exception.Status,
+                GetProviderRequestId(exception),
+                "ClientResult",
+                stopwatch.ElapsedMilliseconds);
+            throw safeException;
+        }
+        catch (Exception exception)
+        {
+            plan.Status = GenerationStatus.Failed;
+            plan.Error = "The book plan could not be generated. Retry planning to try again.";
+            project.UpdatedAt = DateTimeOffset.UtcNow;
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
+            _logger.LogError(
+                exception,
+                "Async operation {OperationName} failed for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint} with code {SafeErrorCode} after {ElapsedMs} ms.",
+                "GenerateBookPlan",
+                "AzureFoundry",
+                _options.PromptModel,
+                generationStage,
+                new Uri(_options.Endpoint).GetLeftPart(UriPartial.Authority),
+                exception.GetType().Name,
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+    }
+
+    private static string? GetProviderRequestId(ClientResultException exception)
+    {
+        var response = exception.GetRawResponse();
+        foreach (var headerName in new[] { "x-ms-request-id", "apim-request-id", "request-id" })
+        {
+            if (response?.Headers.TryGetValue(headerName, out var value) == true &&
+                value is { Length: > 0 and <= 128 } &&
+                value.All(character => char.IsLetterOrDigit(character) || character is '_' or '-' or '.'))
+            {
+                return value;
+            }
+        }
+
+        return null;
     }
 
     private static void Validate(BookPlanGenerationRequestMessage request)

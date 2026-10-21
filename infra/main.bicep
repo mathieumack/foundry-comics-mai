@@ -94,6 +94,17 @@ module appInsights 'modules/monitoring/application-insights.bicep' = {
   }
 }
 
+module operationsWorkbook 'modules/monitoring/workbook.bicep' = {
+  name: 'operations-workbook'
+  params: {
+    name: 'comics-operations-${environmentName}'
+    displayName: 'Comics operations (${environmentName})'
+    location: location
+    tags: tags
+    applicationInsightsResourceId: appInsights.outputs.id
+  }
+}
+
 // =============================================================================
 // SECURITY & IDENTITY
 // =============================================================================
@@ -599,6 +610,7 @@ output AZURE_FOUNDRY_NAME string = foundry.outputs.foundryName
 @secure()
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.outputs.connectionString
 output APPLICATIONINSIGHTS_RESOURCE_ID string = appInsights.outputs.id
+output AZURE_MONITOR_WORKBOOK_ID string = operationsWorkbook.outputs.id
 
 // AI Project
 output AZURE_AI_ACCOUNT_NAME string = foundry.outputs.foundryName

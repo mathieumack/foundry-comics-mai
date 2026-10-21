@@ -7,4 +7,5 @@ public sealed record BoardGenerationRequestMessage
     public string OwnerId { get; init; } = string.Empty;
     public string ProjectId { get; init; } = string.Empty;
     public bool RewritePrompt { get; init; }
+    public string? TraceParent { get; init; }
 }

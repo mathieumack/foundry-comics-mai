@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
@@ -5,6 +6,7 @@ using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Data.Entities;
 using MaiImageGenerator.Shared.Messages;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace MaiImageGenerator.Jobs.BoardGeneration.Services;
 
@@ -14,7 +16,8 @@ public sealed class GenerationService(
     BlobServiceClient blobServiceClient,
     FoundryImageClient foundryClient,
     ImageComposer imageComposer,
-    PanelGenerationNotifier notifier)
+    PanelGenerationNotifier notifier,
+    ILogger<GenerationService> logger)
 {
     private readonly BlobContainerClient _container = blobServiceClient.GetBlobContainerClient("generations");
 
@@ -22,7 +25,19 @@ public sealed class GenerationService(
         BoardGenerationRequestMessage request,
         CancellationToken cancellationToken)
     {
+        using var operationScope = logger.BeginScope(
+            "OperationId:{OperationId} GenerationId:{GenerationId} ProjectId:{ProjectId}",
+            request.BoardId,
+            request.BoardId,
+            request.ProjectId);
+        var operationStopwatch = Stopwatch.StartNew();
+        var generationStage = "Validation";
+        logger.LogInformation(
+            "Async operation {OperationName} started at stage {GenerationStage}.",
+            "GenerateBoard",
+            generationStage);
         Validate(request);
+        generationStage = "DatabaseLoad";
         var document = await dbContext.Generations
             .WithPartitionKey(request.OwnerId)
             .SingleOrDefaultAsync(
@@ -44,9 +59,15 @@ public sealed class GenerationService(
 
         if (document.Status == GenerationStatus.Completed)
         {
+            logger.LogInformation(
+                "Async operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "GenerateBoard",
+                "AlreadyCompleted",
+                operationStopwatch.ElapsedMilliseconds);
             return;
         }
 
+        generationStage = "DatabasePersistProcessing";
         document.Status = GenerationStatus.Processing;
         document.Error = null;
         foreach (var failedPanel in document.Panels.Where(panel => panel.Status == PanelGenerationStatus.Failed))
@@ -64,6 +85,13 @@ public sealed class GenerationService(
             for (var panelIndex = 0; panelIndex < document.Panels.Count; panelIndex++)
             {
                 var panel = document.Panels[panelIndex];
+                using var panelScope = logger.BeginScope("PanelNumber:{PanelNumber}", panel.Number);
+                var panelStopwatch = Stopwatch.StartNew();
+                generationStage = "PanelLoadOrGenerate";
+                logger.LogInformation(
+                    "Async operation {OperationName} started at stage {GenerationStage}.",
+                    "GeneratePanel",
+                    generationStage);
                 if (panel.Status == PanelGenerationStatus.Completed && panel.ImageBlobName is not null)
                 {
                     try
@@ -75,16 +103,29 @@ public sealed class GenerationService(
                             request.BoardId,
                             panel.Number,
                             cancellationToken);
+                        logger.LogInformation(
+                            "Async operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                            "GeneratePanel",
+                            "Reused",
+                            panelStopwatch.ElapsedMilliseconds);
                         continue;
                     }
                     catch (RequestFailedException exception) when (exception.Status == 404)
                     {
+                        logger.LogWarning(
+                            exception,
+                            "Async dependency {DependencyType} completed with outcome {Outcome} at stage {GenerationStage} after {ElapsedMs} ms.",
+                            "BlobStorage",
+                            "NotFoundRegenerate",
+                            "PanelDownload",
+                            panelStopwatch.ElapsedMilliseconds);
                         panel.Status = PanelGenerationStatus.Pending;
                     }
                 }
 
                 panel.Status = PanelGenerationStatus.Processing;
                 panel.Error = null;
+                generationStage = "PromptRewrite";
                 panel.EffectivePrompt = request.RewritePrompt
                     ? await foundryClient.RewritePromptAsync(document.Context, panel.Prompt, cancellationToken)
                     : panel.Prompt;
@@ -104,6 +145,7 @@ public sealed class GenerationService(
                 var generationStarted = false;
                 try
                 {
+                    generationStage = "ReferenceDownload";
                     foreach (var referenceId in selectedCharacters
                                  .SelectMany(character => character.References)
                                  .Select(reference => reference.Id)
@@ -128,6 +170,7 @@ public sealed class GenerationService(
                         panel.Number,
                         cancellationToken);
                     generationStarted = true;
+                    generationStage = "ImageGeneration";
                     var image = await foundryClient.GenerateAsync(
                         prompt!,
                         referenceSheet,
@@ -138,10 +181,17 @@ public sealed class GenerationService(
                         request.OwnerId,
                         Guid.Parse(document.Id),
                         $"panel-{panel.Number:00}.png");
+                    generationStage = "PanelUpload";
                     await UploadPngAsync(panel.ImageBlobName, image, cancellationToken);
                     panel.Status = PanelGenerationStatus.Completed;
                     document.UpdatedAt = DateTimeOffset.UtcNow;
+                    generationStage = "DatabasePersistPanel";
                     await dbContext.SaveChangesAsync(cancellationToken);
+                    logger.LogInformation(
+                        "Async operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                        "GeneratePanel",
+                        "Succeeded",
+                        panelStopwatch.ElapsedMilliseconds);
                 }
                 catch (FoundryContentSafetyException exception)
                 {
@@ -151,6 +201,13 @@ public sealed class GenerationService(
                     panel.Error = exception.Message;
                     document.UpdatedAt = DateTimeOffset.UtcNow;
                     await dbContext.SaveChangesAsync(cancellationToken);
+                    logger.LogWarning(
+                        exception,
+                        "Async operation {OperationName} completed with outcome {Outcome} at stage {GenerationStage} after {ElapsedMs} ms.",
+                        "GeneratePanel",
+                        "ContentSafetyRejected",
+                        "ImageGeneration",
+                        panelStopwatch.ElapsedMilliseconds);
                 }
                 finally
                 {
@@ -170,6 +227,7 @@ public sealed class GenerationService(
                 }
             }
 
+            generationStage = "BoardComposition";
             var board = await imageComposer.BuildBoardAsync(
                 document.Title,
                 panelImages,
@@ -179,12 +237,19 @@ public sealed class GenerationService(
                 request.OwnerId,
                 Guid.Parse(document.Id),
                 "board.png");
+            generationStage = "BoardUpload";
             await UploadPngAsync(document.BoardBlobName, board, cancellationToken);
             document.Status = GenerationStatus.Completed;
             document.UpdatedAt = DateTimeOffset.UtcNow;
+            generationStage = "DatabasePersistCompleted";
             await dbContext.SaveChangesAsync(cancellationToken);
+            logger.LogInformation(
+                "Async operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "GenerateBoard",
+                "Succeeded",
+                operationStopwatch.ElapsedMilliseconds);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException exception)
         {
             document.Status = GenerationStatus.Pending;
             var currentPanel = document.Panels.FirstOrDefault(panel => panel.Status == PanelGenerationStatus.Processing);
@@ -194,6 +259,13 @@ public sealed class GenerationService(
             }
             document.UpdatedAt = DateTimeOffset.UtcNow;
             await dbContext.SaveChangesAsync(CancellationToken.None);
+            logger.LogWarning(
+                exception,
+                "Async operation {OperationName} ended with outcome {Outcome} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "GenerateBoard",
+                cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                generationStage,
+                operationStopwatch.ElapsedMilliseconds);
             throw;
         }
         catch (Exception exception)
@@ -208,17 +280,58 @@ public sealed class GenerationService(
                 currentPanel.Error = exception.GetType().Name;
             }
             await dbContext.SaveChangesAsync(CancellationToken.None);
+            logger.LogError(
+                exception,
+                "Async operation {OperationName} failed at stage {GenerationStage} with code {SafeErrorCode} after {ElapsedMs} ms.",
+                "GenerateBoard",
+                generationStage,
+                exception.GetType().Name,
+                operationStopwatch.ElapsedMilliseconds);
             throw;
         }
     }
 
     private async Task UploadPngAsync(string blobName, byte[] bytes, CancellationToken cancellationToken)
     {
+        var stopwatch = Stopwatch.StartNew();
+        logger.LogInformation(
+            "Async dependency {DependencyType} started at stage {GenerationStage}.",
+            "BlobStorage",
+            "ImageUpload");
         var blob = _container.GetBlobClient(blobName);
-        await blob.UploadAsync(BinaryData.FromBytes(bytes), overwrite: true, cancellationToken);
-        await blob.SetHttpHeadersAsync(
-            new BlobHttpHeaders { ContentType = "image/png" },
-            cancellationToken: cancellationToken);
+        try
+        {
+            await blob.UploadAsync(BinaryData.FromBytes(bytes), overwrite: true, cancellationToken);
+            await blob.SetHttpHeadersAsync(
+                new BlobHttpHeaders { ContentType = "image/png" },
+                cancellationToken: cancellationToken);
+            logger.LogInformation(
+                "Async dependency {DependencyType} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "BlobStorage",
+                "Succeeded",
+                stopwatch.ElapsedMilliseconds);
+        }
+        catch (OperationCanceledException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Async dependency {DependencyType} ended with outcome {Outcome} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "BlobStorage",
+                cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                "ImageUpload",
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Async dependency {DependencyType} failed at stage {GenerationStage} after {ElapsedMs} ms.",
+                "BlobStorage",
+                "ImageUpload",
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
     }
 
     private static void Validate(BoardGenerationRequestMessage request)

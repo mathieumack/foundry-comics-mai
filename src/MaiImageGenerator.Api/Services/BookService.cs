@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Azure.Storage.Blobs;
 using MaiImageGenerator.Api.Configuration;
@@ -5,10 +6,12 @@ using MaiImageGenerator.Api.Contracts;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Data.Entities;
 using MaiImageGenerator.Shared.Messages;
+using MaiImageGenerator.Shared.Telemetry;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenAI.Chat;
+using System.ClientModel;
 
 namespace MaiImageGenerator.Api.Services;
 
@@ -20,6 +23,8 @@ public sealed class BookService
     private readonly IImageGenerator _imageGenerator;
     private readonly BlobContainerClient _container;
     private readonly BookPlanGenerationQueue _generationQueue;
+    private readonly ILogger<BookService> _logger;
+    private readonly FoundryOptions _options;
 
     public BookService(
         OpenAIClient client,
@@ -27,7 +32,8 @@ public sealed class BookService
         MaiImageGeneratorDbContext dbContext,
         IImageGenerator imageGenerator,
         BlobServiceClient blobServiceClient,
-        BookPlanGenerationQueue generationQueue)
+        BookPlanGenerationQueue generationQueue,
+        ILogger<BookService> logger)
     {
         _agent = client.GetChatClient(options.Value.PromptModel).AsAIAgent(
             instructions: """
@@ -39,6 +45,8 @@ public sealed class BookService
         _imageGenerator = imageGenerator;
         _container = blobServiceClient.GetBlobContainerClient("generations");
         _generationQueue = generationQueue;
+        _logger = logger;
+        _options = options.Value;
     }
 
     public async Task<BookPlanResponse> GeneratePlanAsync(
@@ -53,6 +61,15 @@ public sealed class BookService
         }
 
         var requestId = Guid.NewGuid().ToString("N");
+        using var scope = _logger.BeginScope(
+            "OperationId:{OperationId} ProjectId:{ProjectId}",
+            requestId,
+            project.Id);
+        var stopwatch = Stopwatch.StartNew();
+        _logger.LogInformation(
+            "Async operation {OperationName} started at stage {GenerationStage}.",
+            "GenerateBookPlan",
+            "DatabasePersist");
         project.BookPlan ??= new BookPlan();
         project.BookPlan.GenerationRequestId = requestId;
         project.BookPlan.Status = GenerationStatus.Pending;
@@ -68,12 +85,38 @@ public sealed class BookService
                 RequestId = requestId,
                 ProjectId = project.Id,
                 OwnerId = project.OwnerId,
-                ChapterCount = chapterCount
+                ChapterCount = chapterCount,
+                TraceParent = OperationTelemetry.CurrentTraceParent
             };
             await _generationQueue.EnqueueAsync(message, cancellationToken);
+            _logger.LogInformation(
+                "Async operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "GenerateBookPlan",
+                "Queued",
+                stopwatch.ElapsedMilliseconds);
         }
-        catch (Exception)
+        catch (OperationCanceledException exception)
         {
+            _logger.LogWarning(
+                exception,
+                "Async operation {OperationName} canceled at stage {GenerationStage} after {ElapsedMs} ms.",
+                "GenerateBookPlan",
+                "Queue",
+                stopwatch.ElapsedMilliseconds);
+            project.BookPlan.Status = GenerationStatus.Failed;
+            project.BookPlan.Error = "The book plan could not be queued. Retry planning to try again.";
+            project.UpdatedAt = DateTimeOffset.UtcNow;
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Async operation {OperationName} failed at stage {GenerationStage} after {ElapsedMs} ms.",
+                "GenerateBookPlan",
+                "Queue",
+                stopwatch.ElapsedMilliseconds);
             project.BookPlan.Status = GenerationStatus.Failed;
             project.BookPlan.Error = "The book plan could not be queued. Retry planning to try again.";
             project.UpdatedAt = DateTimeOffset.UtcNow;
@@ -154,6 +197,21 @@ public sealed class BookService
         CancellationToken cancellationToken)
     {
         var chapter = FindChapter(project, chapterId);
+        var telemetryProjectId = Guid.Parse(project.Id).ToString("D");
+        var telemetryChapterId = Guid.ParseExact(chapter.Id, "N").ToString("N");
+        using var scope = _logger.BeginScope(
+            "OperationId:{OperationId} ProjectId:{ProjectId} ChapterId:{ChapterId}",
+            telemetryChapterId,
+            telemetryProjectId,
+            telemetryChapterId);
+        var stopwatch = Stopwatch.StartNew();
+        _logger.LogInformation(
+            "AI operation {OperationName} started for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint}.",
+            "GenerateChapterProse",
+            "AzureFoundry",
+            _options.PromptModel,
+            "PromptModel",
+            new Uri(_options.Endpoint).GetLeftPart(UriPartial.Authority));
         chapter.ProseStatus = GenerationStatus.Processing;
         chapter.ProseError = null;
         chapter.ProsePrompt = BuildProsePrompt(project, chapter);
@@ -170,18 +228,61 @@ public sealed class BookService
 
             chapter.Prose = prose;
             chapter.ProseStatus = GenerationStatus.Completed;
+            _logger.LogInformation(
+                "AI operation {OperationName} completed with outcome {Outcome} for provider {Provider} model {Model} in {ElapsedMs} ms.",
+                "GenerateChapterProse",
+                "Succeeded",
+                "AzureFoundry",
+                _options.PromptModel,
+                stopwatch.ElapsedMilliseconds);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException exception)
         {
             chapter.ProseStatus = GenerationStatus.Pending;
             chapter.ProseError = "Chapter prose generation was interrupted and can be retried.";
             await SaveAsync(project, CancellationToken.None);
+            _logger.LogWarning(
+                exception,
+                "AI operation {OperationName} ended with outcome {Outcome} for provider {Provider} model {Model} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "GenerateChapterProse",
+                cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                "AzureFoundry",
+                _options.PromptModel,
+                "PromptModel",
+                stopwatch.ElapsedMilliseconds);
             throw;
         }
-        catch (Exception)
+        catch (ClientResultException exception)
         {
             chapter.ProseStatus = GenerationStatus.Failed;
             chapter.ProseError = "Chapter prose generation failed. This chapter can be retried independently.";
+            var safeException = new FoundryGenerationException(
+                $"Chapter prose generation failed with HTTP status {exception.Status}.");
+            _logger.LogError(
+                safeException,
+                "AI operation {OperationName} failed for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint} with status {UpstreamStatus}, request {ProviderRequestId}, and code {SafeErrorCode} after {ElapsedMs} ms.",
+                "GenerateChapterProse",
+                "AzureFoundry",
+                _options.PromptModel,
+                "PromptModel",
+                new Uri(_options.Endpoint).GetLeftPart(UriPartial.Authority),
+                exception.Status,
+                GetProviderRequestId(exception),
+                "ClientResult",
+                stopwatch.ElapsedMilliseconds);
+        }
+        catch (Exception exception)
+        {
+            chapter.ProseStatus = GenerationStatus.Failed;
+            chapter.ProseError = "Chapter prose generation failed. This chapter can be retried independently.";
+            _logger.LogError(
+                exception,
+                "AI operation {OperationName} failed for provider {Provider} model {Model} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "GenerateChapterProse",
+                "AzureFoundry",
+                _options.PromptModel,
+                "PromptModel",
+                stopwatch.ElapsedMilliseconds);
         }
 
         await SaveAsync(project, CancellationToken.None);
@@ -194,6 +295,18 @@ public sealed class BookService
         CancellationToken cancellationToken)
     {
         var chapter = FindChapter(project, chapterId);
+        var telemetryProjectId = Guid.Parse(project.Id).ToString("D");
+        var telemetryChapterId = Guid.ParseExact(chapter.Id, "N").ToString("N");
+        using var scope = _logger.BeginScope(
+            "OperationId:{OperationId} ProjectId:{ProjectId} ChapterId:{ChapterId}",
+            telemetryChapterId,
+            telemetryProjectId,
+            telemetryChapterId);
+        var stopwatch = Stopwatch.StartNew();
+        _logger.LogInformation(
+            "Async operation {OperationName} started at stage {GenerationStage}.",
+            "GenerateChapterImage",
+            "ImageProvider");
         chapter.ImageStatus = GenerationStatus.Processing;
         chapter.ImageError = null;
         chapter.ImagePrompt = string.IsNullOrWhiteSpace(chapter.ImagePrompt)
@@ -211,18 +324,36 @@ public sealed class BookService
             await _container.GetBlobClient(blobName).UploadAsync(BinaryData.FromBytes(image), overwrite: true, cancellationToken);
             chapter.ImageBlobName = blobName;
             chapter.ImageStatus = GenerationStatus.Completed;
+            _logger.LogInformation(
+                "Async operation {OperationName} completed with outcome {Outcome} in {ElapsedMs} ms.",
+                "GenerateChapterImage",
+                "Succeeded",
+                stopwatch.ElapsedMilliseconds);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException exception)
         {
             chapter.ImageStatus = GenerationStatus.Pending;
             chapter.ImageError = "Chapter image generation was interrupted and can be retried.";
             await SaveAsync(project, CancellationToken.None);
+            _logger.LogWarning(
+                exception,
+                "Async operation {OperationName} ended with outcome {Outcome} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "GenerateChapterImage",
+                cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                "ImageProviderOrStorage",
+                stopwatch.ElapsedMilliseconds);
             throw;
         }
-        catch (Exception)
+        catch (Exception exception)
         {
             chapter.ImageStatus = GenerationStatus.Failed;
             chapter.ImageError = "Chapter image generation failed. This image can be retried independently.";
+            _logger.LogError(
+                exception,
+                "Async operation {OperationName} failed at stage {GenerationStage} after {ElapsedMs} ms.",
+                "GenerateChapterImage",
+                "ImageProviderOrStorage",
+                stopwatch.ElapsedMilliseconds);
         }
 
         await SaveAsync(project, CancellationToken.None);
@@ -244,6 +375,22 @@ public sealed class BookService
     {
         project.UpdatedAt = DateTimeOffset.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static string? GetProviderRequestId(ClientResultException exception)
+    {
+        var response = exception.GetRawResponse();
+        foreach (var headerName in new[] { "x-ms-request-id", "apim-request-id", "request-id" })
+        {
+            if (response?.Headers.TryGetValue(headerName, out var value) == true &&
+                value is { Length: > 0 and <= 128 } &&
+                value.All(character => char.IsLetterOrDigit(character) || character is '_' or '-' or '.'))
+            {
+                return value;
+            }
+        }
+
+        return null;
     }
 
     private static void EnsureBook(ProjectDocument project)

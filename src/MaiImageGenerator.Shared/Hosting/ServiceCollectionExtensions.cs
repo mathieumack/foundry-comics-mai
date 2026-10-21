@@ -63,6 +63,7 @@ public static class ServiceCollectionExtensions
             logging.AddConsole();
             logging.SetMinimumLevel(LogLevel.Warning);
             logging.AddFilter(serviceName, LogLevel.Information);
+            logging.AddFilter("MaiImageGenerator", LogLevel.Information);
         });
 
         // TracerProvider and MeterProvider are always registered in DI so ForceFlush() can be called

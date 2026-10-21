@@ -25,7 +25,7 @@ azd version
 
 ## Azure access
 
-You need an Azure subscription and a Microsoft Entra tenant where you can create the resources declared in `infra/main.bicep` and create role assignments. By default, the deployment also creates or updates an Entra application through the Microsoft Graph Bicep extension, requiring the corresponding Graph permissions.
+You need an Azure subscription and a Microsoft Entra tenant where you can create the resources declared in `infra/main.bicep` and create role assignments. This includes permission to create a shared Azure Monitor Workbook; resource-group Contributor normally includes `Microsoft.Insights/workbooks/write`. By default, the deployment also creates or updates an Entra application through the Microsoft Graph Bicep extension, requiring the corresponding Graph permissions.
 
 Alternatively, set `EXISTING_ENTRA_CLIENT_ID` to reuse a preconfigured authentication application in the deployment tenant. Both Graph modules are then skipped, so the deployment identity does not need Graph application-management rights. An authorized administrator must configure the API scope, permissions/consent, and SPA redirect URIs separately. The API identifier URI defaults to `api://comics-<environment-name>`; use `EXISTING_ENTRA_API_AUDIENCE` for a different URI. See [authentication application management](deployment.md#choose-authentication-application-management) for the contract and CD setup.
 
@@ -54,7 +54,7 @@ For automation, use the object ID of the deployment service principal or workloa
 
 ## Cost and production readiness
 
-The environment creates billable AI model deployments, AI Search Standard, SignalR Service Standard, Container Registry Premium, networking, storage, Cosmos DB, monitoring, and two event-driven Container Apps Jobs: one for board generation and one for book-plan generation. Review current Azure pricing and quotas before deployment.
+The environment creates billable AI model deployments, AI Search Standard, SignalR Service Standard, Container Registry Premium, networking, storage, Cosmos DB, monitoring, a shared Azure Monitor Workbook, and two event-driven Container Apps Jobs: one for board generation and one for book-plan generation. The workbook has no separate ingestion pipeline; its queries use the existing Application Insights and Log Analytics data, whose ingestion and retention remain billable. Review current Azure pricing and quotas before deployment.
 
 Create a budget and cost alerts, use non-sensitive training inputs, and plan environment teardown. Event-driven jobs can scale to zero, but that does not make the complete environment free while idle. AI Search and the Foundry capability host are provisioned even though current generation flows do not use search retrieval or hosted-agent orchestration.
 

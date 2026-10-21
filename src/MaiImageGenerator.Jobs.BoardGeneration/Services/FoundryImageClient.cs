@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using MaiImageGenerator.Api.Configuration;
 using Azure.Core;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenAI.Images;
 using System.ClientModel;
@@ -15,7 +17,8 @@ public sealed class FoundryImageClient(
     ImageClient imageClient,
     HttpClient httpClient,
     TokenCredential credential,
-    IOptions<FoundryOptions> options)
+    IOptions<FoundryOptions> options,
+    ILogger<FoundryImageClient> logger)
 {
     private const int LandscapeWidth = 1365;
     private const int LandscapeHeight = 768;
@@ -28,6 +31,8 @@ public sealed class FoundryImageClient(
 
     private readonly FoundryOptions _options = options.Value;
     private readonly Uri _generationsEndpoint = GetGenerationsEndpoint(options.Value.Endpoint);
+    private readonly string _upstreamEndpoint =
+        new Uri(options.Value.Endpoint).GetLeftPart(UriPartial.Authority);
     private readonly int _squareImageSize = options.Value.ImageSize == 1024
         ? options.Value.ImageSize
         : throw new InvalidOperationException("MAI image generation supports ImageSize=1024 for square panels.");
@@ -37,21 +42,64 @@ public sealed class FoundryImageClient(
         string prompt,
         CancellationToken cancellationToken)
     {
+        var stopwatch = Stopwatch.StartNew();
+        logger.LogInformation(
+            "AI operation {OperationName} started for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint}.",
+            "RewritePrompt",
+            "AzureFoundry",
+            _options.PromptModel,
+            "PromptRewrite",
+            _upstreamEndpoint);
         try
         {
             var response = await promptAgent.RunAsync(
                 $"Global context:\n{context ?? "None"}\n\nPanel prompt:\n{prompt}",
                 cancellationToken: cancellationToken);
             var rewrittenPrompt = response.ToString().Trim();
-            return string.IsNullOrWhiteSpace(rewrittenPrompt)
+            var result = string.IsNullOrWhiteSpace(rewrittenPrompt)
                 ? throw new FoundryGenerationException("The prompt model returned no content.")
                 : rewrittenPrompt;
+            logger.LogInformation(
+                "AI operation {OperationName} completed with outcome {Outcome} for provider {Provider} model {Model} in {ElapsedMs} ms.",
+                "RewritePrompt",
+                "Succeeded",
+                "AzureFoundry",
+                _options.PromptModel,
+                stopwatch.ElapsedMilliseconds);
+            return result;
+        }
+        catch (OperationCanceledException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "AI operation {OperationName} ended with outcome {Outcome} for provider {Provider} model {Model} at stage {GenerationStage} after {ElapsedMs} ms.",
+                "RewritePrompt",
+                cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                "AzureFoundry",
+                _options.PromptModel,
+                "PromptRewrite",
+                stopwatch.ElapsedMilliseconds);
+            throw;
         }
         catch (ClientResultException exception)
         {
-            throw new FoundryGenerationException(
+            var safeException = new FoundryGenerationException(
                 $"Prompt rewriting failed with HTTP status {exception.Status}.",
-                exception);
+                exception.Status,
+                GetProviderRequestId(exception),
+                "ClientResult");
+            logger.LogError(
+                safeException,
+                "AI operation {OperationName} failed for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint} with status {UpstreamStatus} and code {SafeErrorCode} after {ElapsedMs} ms.",
+                "RewritePrompt",
+                "AzureFoundry",
+                _options.PromptModel,
+                "PromptRewrite",
+                _upstreamEndpoint,
+                exception.Status,
+                "ClientResult",
+                stopwatch.ElapsedMilliseconds);
+            throw safeException;
         }
     }
 
@@ -61,13 +109,23 @@ public sealed class FoundryImageClient(
         bool landscape,
         CancellationToken cancellationToken)
     {
+        var stopwatch = Stopwatch.StartNew();
+        logger.LogInformation(
+            "AI operation {OperationName} started for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint}.",
+            "GenerateImage",
+            "AzureFoundry",
+            _options.ImageModel,
+            "ImageGeneration",
+            _upstreamEndpoint);
         try
         {
             var (width, height) = GetImageDimensions(landscape);
             GeneratedImage image;
             if (referenceSheet is null)
             {
-                return await GenerateFromPromptAsync(prompt, width, height, cancellationToken);
+                var generated = await GenerateFromPromptAsync(prompt, width, height, cancellationToken);
+                LogCompleted(stopwatch);
+                return generated;
             }
             else
             {
@@ -96,33 +154,113 @@ public sealed class FoundryImageClient(
 
             if (image.ImageBytes is not null)
             {
+                LogCompleted(stopwatch);
                 return image.ImageBytes.ToArray();
             }
 
             if (image.ImageUri is not null)
             {
-                return await httpClient.GetByteArrayAsync(image.ImageUri, cancellationToken);
+                byte[] bytes;
+                try
+                {
+                    bytes = await httpClient.GetByteArrayAsync(image.ImageUri, cancellationToken);
+                }
+                catch (HttpRequestException)
+                {
+                    throw new FoundryGenerationException("The generated image could not be downloaded.");
+                }
+
+                LogCompleted(stopwatch);
+                return bytes;
             }
 
             throw new FoundryGenerationException("The image model returned no image.");
         }
+        catch (OperationCanceledException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "AI operation {OperationName} ended with outcome {Outcome} for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint} after {ElapsedMs} ms.",
+                "GenerateImage",
+                cancellationToken.IsCancellationRequested ? "Canceled" : "TimedOut",
+                "AzureFoundry",
+                _options.ImageModel,
+                "ImageGeneration",
+                _upstreamEndpoint,
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
         catch (HttpRequestException exception)
         {
+            LogFailure(exception, stopwatch, null, null, "HttpRequest");
             throw new FoundryGenerationException("Image generation request failed.", exception);
         }
         catch (ClientResultException exception) when (
             exception.Status == 400 &&
             exception.Message.Contains("content_safety_violation", StringComparison.OrdinalIgnoreCase))
         {
-            throw new FoundryContentSafetyException(
+            var safeException = new FoundryContentSafetyException(
                 "The image was not generated because its prompt or references were blocked by the content safety policy.",
-                exception);
+                exception.Status,
+                GetProviderRequestId(exception),
+                "content_safety_violation");
+            logger.LogWarning(
+                safeException,
+                "AI operation {OperationName} completed with outcome {Outcome} for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint}, status {UpstreamStatus}, request {ProviderRequestId}, and code {SafeErrorCode} after {ElapsedMs} ms.",
+                "GenerateImage",
+                "ContentSafetyRejected",
+                "AzureFoundry",
+                _options.ImageModel,
+                "ImageGeneration",
+                _upstreamEndpoint,
+                exception.Status,
+                GetProviderRequestId(exception),
+                "content_safety_violation",
+                stopwatch.ElapsedMilliseconds);
+            throw safeException;
         }
         catch (ClientResultException exception)
         {
-            throw new FoundryGenerationException(
+            var requestId = GetProviderRequestId(exception);
+            var safeException = new FoundryGenerationException(
                 $"Image generation failed with HTTP status {exception.Status}.",
-                exception);
+                exception.Status,
+                requestId,
+                "ClientResult");
+            LogFailure(safeException, stopwatch, exception.Status, requestId, "ClientResult");
+            throw safeException;
+        }
+        catch (FoundryContentSafetyException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "AI operation {OperationName} completed with outcome {Outcome} for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint}, status {UpstreamStatus}, request {ProviderRequestId}, and code {SafeErrorCode} after {ElapsedMs} ms.",
+                "GenerateImage",
+                "ContentSafetyRejected",
+                "AzureFoundry",
+                _options.ImageModel,
+                "ImageGeneration",
+                _upstreamEndpoint,
+                exception.UpstreamStatus,
+                exception.ProviderRequestId,
+                exception.SafeErrorCode,
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+        catch (FoundryGenerationException exception)
+        {
+            LogFailure(
+                exception,
+                stopwatch,
+                exception.UpstreamStatus,
+                exception.ProviderRequestId,
+                exception.SafeErrorCode ?? exception.GetType().Name);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            LogFailure(exception, stopwatch, null, null, exception.GetType().Name);
+            throw;
         }
     }
 
@@ -151,15 +289,23 @@ public sealed class FoundryImageClient(
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
+            var requestId = GetProviderRequestId(response);
+            var errorCode = GetSafeErrorCode(responseBody);
             if ((int)response.StatusCode == 400 &&
                 responseBody.Contains("content_safety_violation", StringComparison.OrdinalIgnoreCase))
             {
                 throw new FoundryContentSafetyException(
-                    "The image was not generated because its prompt was blocked by the content safety policy.");
+                    "The image was not generated because its prompt was blocked by the content safety policy.",
+                    (int)response.StatusCode,
+                    requestId,
+                    "content_safety_violation");
             }
 
             throw new FoundryGenerationException(
-                $"Image generation failed with HTTP status {(int)response.StatusCode}.");
+                $"Image generation failed with HTTP status {(int)response.StatusCode}.",
+                (int)response.StatusCode,
+                requestId,
+                errorCode);
         }
 
         using var document = JsonDocument.Parse(responseBody);
@@ -190,29 +336,148 @@ public sealed class FoundryImageClient(
         return builder.Uri;
     }
 
+    private void LogCompleted(Stopwatch stopwatch) =>
+        logger.LogInformation(
+            "AI operation {OperationName} completed with outcome {Outcome} for provider {Provider} model {Model} in {ElapsedMs} ms.",
+            "GenerateImage",
+            "Succeeded",
+            "AzureFoundry",
+            _options.ImageModel,
+            stopwatch.ElapsedMilliseconds);
+
+    private void LogFailure(
+        Exception exception,
+        Stopwatch stopwatch,
+        int? upstreamStatus,
+        string? providerRequestId,
+        string? safeErrorCode) =>
+        logger.LogError(
+            exception,
+            "AI operation {OperationName} failed for provider {Provider} model {Model} at stage {GenerationStage} using endpoint {UpstreamEndpoint} with status {UpstreamStatus}, request {ProviderRequestId}, and code {SafeErrorCode} after {ElapsedMs} ms.",
+            "GenerateImage",
+            "AzureFoundry",
+            _options.ImageModel,
+            "ImageGeneration",
+            _upstreamEndpoint,
+            upstreamStatus,
+            providerRequestId,
+            safeErrorCode,
+            stopwatch.ElapsedMilliseconds);
+
+    private static string? GetProviderRequestId(HttpResponseMessage response)
+    {
+        foreach (var headerName in new[] { "x-ms-request-id", "apim-request-id", "request-id" })
+        {
+            if (response.Headers.TryGetValues(headerName, out var values))
+            {
+                return SanitizeTelemetryValue(values.FirstOrDefault());
+            }
+        }
+
+        return null;
+    }
+
+    private static string? GetProviderRequestId(ClientResultException exception)
+    {
+        var response = exception.GetRawResponse();
+        foreach (var headerName in new[] { "x-ms-request-id", "apim-request-id", "request-id" })
+        {
+            if (response?.Headers.TryGetValue(headerName, out var value) == true)
+            {
+                return SanitizeTelemetryValue(value);
+            }
+        }
+
+        return null;
+    }
+
+    private static string? SanitizeTelemetryValue(string? value) =>
+        value is { Length: > 0 and <= 128 } &&
+        value.All(character => char.IsLetterOrDigit(character) || character is '_' or '-' or '.')
+            ? value
+            : null;
+
+    private static string? GetSafeErrorCode(string responseBody)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            if (document.RootElement.TryGetProperty("error", out var error) &&
+                error.TryGetProperty("code", out var code) &&
+                code.ValueKind == JsonValueKind.String)
+            {
+                var value = code.GetString();
+                return value is { Length: > 0 and <= 128 } &&
+                       value.All(character => char.IsLetterOrDigit(character) || character is '_' or '-' or '.')
+                    ? value
+                    : null;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return null;
+    }
+
 }
 
 public class FoundryGenerationException : Exception
 {
+    public int? UpstreamStatus { get; }
+    public string? ProviderRequestId { get; }
+    public string? SafeErrorCode { get; }
+
     public FoundryGenerationException(string message) : base(message)
     {
     }
 
-    public FoundryGenerationException(string message, Exception innerException)
+    public FoundryGenerationException(
+        string message,
+        Exception innerException,
+        int? upstreamStatus = null,
+        string? safeErrorCode = null)
         : base(message, innerException)
     {
+        UpstreamStatus = upstreamStatus;
+        SafeErrorCode = safeErrorCode;
+    }
+
+    public FoundryGenerationException(
+        string message,
+        int? upstreamStatus,
+        string? providerRequestId,
+        string? safeErrorCode)
+        : base(message)
+    {
+        UpstreamStatus = upstreamStatus;
+        ProviderRequestId = providerRequestId;
+        SafeErrorCode = safeErrorCode;
     }
 }
 
 public sealed class FoundryContentSafetyException : FoundryGenerationException
 {
-    public FoundryContentSafetyException(string message, Exception innerException)
-        : base(message, innerException)
+    public FoundryContentSafetyException(
+        string message,
+        Exception innerException,
+        int? upstreamStatus = null,
+        string? safeErrorCode = null)
+        : base(message, innerException, upstreamStatus, safeErrorCode)
     {
     }
 
     public FoundryContentSafetyException(string message)
         : base(message)
+    {
+    }
+
+    public FoundryContentSafetyException(
+        string message,
+        int? upstreamStatus,
+        string? providerRequestId,
+        string? safeErrorCode)
+        : base(message, upstreamStatus, providerRequestId, safeErrorCode)
     {
     }
 }

@@ -9,9 +9,11 @@ public static class PanelGenerationNotifications
 public sealed record PanelGenerationStarted(
     string OwnerId,
     string BoardId,
-    int PanelNumber);
+    int PanelNumber,
+    string? TraceParent = null);
 
 public sealed record PanelGenerationCompleted(
     string OwnerId,
     string BoardId,
-    int PanelNumber);
+    int PanelNumber,
+    string? TraceParent = null);
