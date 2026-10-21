@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-// 
+//
 // This solution is provided for testing, learning, and evaluation purposes only.
 // It is not intended for production use. Microsoft provides no support or guarantees.
 // Use at your own risk.
