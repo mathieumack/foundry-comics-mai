@@ -64,11 +64,15 @@ public sealed class MaiImageGeneratorDbContext(
             plan.ToJsonProperty("bookPlan");
             plan.Property(item => item.GenerationRequestId).ToJsonProperty("generationRequestId");
             plan.Property(item => item.Status).HasConversion<string>();
+            plan.Property(item => item.ImageGenerationRequestId).ToJsonProperty("imageGenerationRequestId");
+            plan.Property(item => item.ImageGenerationStartedAt).ToJsonProperty("imageGenerationStartedAt");
             plan.OwnsMany(item => item.Chapters, chapter =>
             {
                 chapter.ToJsonProperty("chapters");
                 chapter.Property(item => item.ProseStatus).HasConversion<string>();
                 chapter.Property(item => item.ImageStatus).HasConversion<string>();
+                chapter.Property(item => item.ImageGenerationRequestId).ToJsonProperty("imageGenerationRequestId");
+                chapter.Property(item => item.ImageGenerationStartedAt).ToJsonProperty("imageGenerationStartedAt");
             });
         });
 

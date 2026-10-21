@@ -100,7 +100,7 @@ sequenceDiagram
     API-->>Web: Return saved board, not generated output
     Queue->>Job: Deliver work
     Job->>DB: Resolve project and mark Processing
-    loop Each panel
+    par Each panel within the configured concurrency limit
         opt Rewrite enabled
             Job->>MAI: Rewrite scene prompt
         end
@@ -123,7 +123,7 @@ sequenceDiagram
     API-->>Web: Owner-authorized status and image streams
 ```
 
-The worker requests regular panels at 1024 x 1024 and full-width slots at 1365 x 768, within MAI's 1,048,576-pixel limit. Composition crops without distortion to the selected board slots. A content-safety rejection leaves a failed panel and a placeholder but does not prevent later panels or board completion. Technical failures mark the generation failed and use queue redelivery instead.
+The worker requests regular panels at 1024 x 1024 and full-width slots at 1365 x 768, within MAI's 1,048,576-pixel limit. It prepares prompts and references before running independent image requests with bounded concurrency, serializes Cosmos checkpoints as each panel reaches a terminal state, and composes only after all panel workers settle. Composition crops without distortion to the selected board slots. A failed panel leaves a placeholder without canceling unrelated panels or board completion.
 
 ### Image invocation paths
 
@@ -184,9 +184,24 @@ sequenceDiagram
         API->>DB: Save image reference or independent error
         API-->>Web: Saved stage result
     end
+    opt Generate missing illustrations
+        Web->>API: Generate all missing chapter images
+        API->>DB: Save Processing states
+        par Within configured concurrency limit
+            API->>Image: Generate independent chapter images
+            API->>Blob: Overwrite stable owner-scoped PNGs
+            API->>DB: Serialize each terminal checkpoint
+        end
+        loop While batch runs
+            Web->>API: Poll saved per-image progress
+        end
+        API-->>Web: Saved batch result
+    end
 ```
 
-Books are `ProjectDocument` values with `Type=Book`. The embedded plan retains its request ID, prompt, status, stable ordered chapters, planning fields, prose, illustration prompt/reference, and independent prose/image states. Planning is durable and browser-polled; prose/images are foreground API operations coordinated explicitly by Web, including generate-missing. Keeping Cosmos checkpoints does not make those calls durable workflow activities.
+Books are `ProjectDocument` values with `Type=Book`. The embedded plan retains its request ID, prompt, status, stable ordered chapters, planning fields, prose, illustration prompt/reference, and independent prose/image states. Planning is durable and browser-polled; prose/images are foreground API operations coordinated explicitly by Web. Generate-missing keeps continuity-dependent prose sequential, then batches missing illustrations with bounded concurrency and polling. Keeping Cosmos checkpoints does not make those calls durable workflow activities.
+
+A fresh persisted book batch lease plus each chapter's `Processing` state, request ID, and start timestamp prevent competing aggregate writers and duplicate provider calls; the project ETag arbitrates simultaneous lease acquisition. All API project mutations and the plan worker reject an active lease. A foreground batch has a three-minute deadline beneath Container Apps' four-minute ingress limit; it returns completed checkpoints and resets unfinished chapters to `Pending` for the next batch. The 30-minute lease covers process loss, while browser cancellation resets unfinished work immediately.
 
 The plan worker accepts textual notes and normalizes nested objects or lists of text into editable multiline fields, retaining labels/order. Empty, null, non-text notes and incorrect chapter counts fail validation; invalid responses do not replace saved chapters.
 

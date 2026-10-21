@@ -5,6 +5,7 @@ using MaiImageGenerator.Jobs.BoardGeneration.Hosting;
 using MaiImageGenerator.Jobs.BoardGeneration.Services;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Messages;
+using MaiImageGenerator.Shared.Services;
 using MDev.Dotnet.AspNetCore.Apis.Extensions;
 using MDev.Dotnet.Azure.CosmosDb.Startup;
 using MDev.Dotnet.Azure.StorageAccount.Settings;
@@ -29,6 +30,7 @@ var credential = builder.Services.GetManagedIdentity(builder.Configuration);
 // Register configuration
 var customMeters = new List<string>
 {
+    ImageGenerationCoordinator.MeterName
 };
 
 builder.RegisterConfiguration()
@@ -75,6 +77,8 @@ builder.Services.AddSingleton<ImageClient>(serviceProvider =>
     return client.GetImageClient(options.ImageModel);
 });
 builder.Services.AddHttpClient<FoundryImageClient>(client => client.Timeout = TimeSpan.FromMinutes(10));
+builder.Services.AddSingleton(serviceProvider =>
+    new ImageGenerationCoordinator(serviceProvider.GetRequiredService<IOptions<FoundryOptions>>().Value));
 
 var notificationQueueOptions = new QueueClientOptions
 {
@@ -125,7 +129,9 @@ try
         ?? throw new InvalidDataException("The queue message body is empty.");
     using var scope = host.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<GenerationService>()
-        .ProcessAsync(request, CancellationToken.None);
+        .ProcessAsync(
+            request,
+            host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping);
     await jobsQueue.DeleteMessageAsync(queueMessage.MessageId, queueMessage.PopReceipt);
     logger.LogInformation("Generated board {BoardId} for owner {OwnerId}.", request.BoardId, request.OwnerId);
     await host.StopAsync();

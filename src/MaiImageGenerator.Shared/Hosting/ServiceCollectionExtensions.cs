@@ -10,6 +10,7 @@ using Azure.Monitor.OpenTelemetry.Exporter;
 using MaiImageGenerator.Jobs.BoardGeneration.Configuration;
 using MaiImageGenerator.Jobs.BoardGeneration.Hosting;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
+using MaiImageGenerator.Shared.Services;
 using MDev.Dotnet.Azure.CosmosDb.Startup;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion.Internal;
 using Microsoft.Extensions.Configuration;
@@ -84,6 +85,7 @@ public static class ServiceCollectionExtensions
             .WithMetrics(metrics =>
             {
                 metrics.SetResourceBuilder(resourceBuilder)
+                       .AddMeter(ImageGenerationCoordinator.MeterName)
                        .AddRuntimeInstrumentation();
 
                 if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))

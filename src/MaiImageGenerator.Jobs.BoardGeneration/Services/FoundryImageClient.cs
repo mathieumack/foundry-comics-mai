@@ -108,7 +108,10 @@ public sealed class FoundryImageClient(
         }
         catch (HttpRequestException exception)
         {
-            throw new FoundryGenerationException("Image generation request failed.", exception);
+            throw new FoundryGenerationException(
+                "Image generation request failed.",
+                exception,
+                exception.StatusCode is null ? null : (int)exception.StatusCode);
         }
         catch (ClientResultException exception) when (
             exception.Status == 400 &&
@@ -122,7 +125,8 @@ public sealed class FoundryImageClient(
         {
             throw new FoundryGenerationException(
                 $"Image generation failed with HTTP status {exception.Status}.",
-                exception);
+                exception,
+                exception.Status);
         }
     }
 
@@ -159,7 +163,8 @@ public sealed class FoundryImageClient(
             }
 
             throw new FoundryGenerationException(
-                $"Image generation failed with HTTP status {(int)response.StatusCode}.");
+                $"Image generation failed with HTTP status {(int)response.StatusCode}.",
+                status: (int)response.StatusCode);
         }
 
         using var document = JsonDocument.Parse(responseBody);
@@ -194,13 +199,26 @@ public sealed class FoundryImageClient(
 
 public class FoundryGenerationException : Exception
 {
+    public int? Status { get; }
+
     public FoundryGenerationException(string message) : base(message)
     {
+    }
+
+    public FoundryGenerationException(string message, int status) : base(message)
+    {
+        Status = status;
     }
 
     public FoundryGenerationException(string message, Exception innerException)
         : base(message, innerException)
     {
+    }
+
+    public FoundryGenerationException(string message, Exception innerException, int? status)
+        : base(message, innerException)
+    {
+        Status = status;
     }
 }
 

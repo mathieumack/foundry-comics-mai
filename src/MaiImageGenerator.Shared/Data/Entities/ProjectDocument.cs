@@ -28,6 +28,8 @@ public sealed class BookPlan
     public string? Prompt { get; set; }
     public GenerationStatus Status { get; set; }
     public string? Error { get; set; }
+    public string? ImageGenerationRequestId { get; set; }
+    public DateTimeOffset? ImageGenerationStartedAt { get; set; }
     public List<BookChapter> Chapters { get; set; } = [];
 }
 
@@ -47,6 +49,8 @@ public sealed class BookChapter
     public string? ImageBlobName { get; set; }
     public GenerationStatus ImageStatus { get; set; }
     public string? ImageError { get; set; }
+    public string? ImageGenerationRequestId { get; set; }
+    public DateTimeOffset? ImageGenerationStartedAt { get; set; }
 }
 
 public sealed class ProjectCharacter

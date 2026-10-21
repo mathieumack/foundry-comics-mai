@@ -3,6 +3,7 @@ using MaiImageGenerator.Api.Configuration;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Data.Entities;
 using MaiImageGenerator.Shared.Messages;
+using MaiImageGenerator.Shared.Services;
 using Microsoft.Agents.AI;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -50,6 +51,12 @@ public sealed class BookPlanGenerationService
 
         var plan = project.BookPlan
             ?? throw new InvalidOperationException($"Project '{request.ProjectId}' has no queued book plan.");
+        if (BookImageGenerationLease.IsActive(project, DateTimeOffset.UtcNow))
+        {
+            throw new InvalidOperationException(
+                $"Project '{request.ProjectId}' has an active chapter image batch.");
+        }
+
         if (!string.Equals(plan.GenerationRequestId, request.RequestId, StringComparison.Ordinal) ||
             plan.Status == GenerationStatus.Completed)
         {

@@ -442,29 +442,48 @@
                     }
                 }
 
-                chapter = chapters.Single(item => item.Id == chapterId);
-                if (chapter.ImageStatus != GenerationStatus.Completed)
+            }
+
+            var imageIds = chapters
+                .Where(chapter => chapter.ImageStatus != GenerationStatus.Completed)
+                .Select(chapter => chapter.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            if (imageIds.Count > 0)
+            {
+                foreach (var chapter in chapters.Where(chapter => imageIds.Contains(chapter.Id)))
                 {
+                    chapter.ImageStatus = GenerationStatus.Processing;
                     chapter.ImageError = null;
                     chapter.ImageLoadError = null;
+                }
+
+                var generationTask = GenerationClient.GenerateRemainingChapterImagesAsync(ProjectId, cancellation.Token);
+                while (!generationTask.IsCompleted)
+                {
+                    var completed = await Task.WhenAny(
+                        generationTask,
+                        Task.Delay(TimeSpan.FromSeconds(1), cancellation.Token));
+                    if (completed == generationTask)
+                    {
+                        break;
+                    }
+
                     try
                     {
                         ApplyPlan(
-                            await GenerationClient.GenerateChapterImageAsync(ProjectId, chapterId, cancellation.Token),
-                            markSaved: true,
-                            refreshImageIds: [chapterId]);
-                    }
-                    catch (AccessTokenNotAvailableException exception)
-                    {
-                        exception.Redirect();
-                        return;
+                            await GenerationClient.GetBookPlanAsync(ProjectId, cancellation.Token),
+                            markSaved: true);
                     }
                     catch (Exception exception) when (IsRequestFailure(exception))
                     {
-                        chapter.ImageError = exception.Message;
-                        return;
                     }
                 }
+
+                ApplyPlan(
+                    await generationTask,
+                    markSaved: true,
+                    refreshImageIds: imageIds);
+                await PollActiveImagesAsync(imageIds);
             }
         }
         catch (AccessTokenNotAvailableException exception)
@@ -546,6 +565,7 @@
                 await GenerationClient.GenerateChapterImageAsync(ProjectId, chapterId, cancellation.Token),
                 markSaved: true,
                 refreshImageIds: [chapterId]);
+            await PollActiveImagesAsync([chapterId]);
         }
         catch (AccessTokenNotAvailableException exception)
         {
@@ -575,6 +595,21 @@
                 CancelButtonText = "Annuler",
                 CloseDialogOnOverlayClick = false
             }) == true;
+    }
+
+    private async Task PollActiveImagesAsync(HashSet<string> chapterIds)
+    {
+        for (var attempt = 0;
+             attempt < 240 && chapters.Any(chapter =>
+                 chapterIds.Contains(chapter.Id) &&
+                 chapter.ImageStatus == GenerationStatus.Processing);
+             attempt++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellation.Token);
+            ApplyPlan(
+                await GenerationClient.GetBookPlanAsync(ProjectId, cancellation.Token),
+                markSaved: true);
+        }
     }
 
     private async Task ConfirmNavigationAsync(LocationChangingContext context)

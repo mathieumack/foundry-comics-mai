@@ -5,6 +5,7 @@ using MaiImageGenerator.Api.Configuration;
 using MaiImageGenerator.Api.Hubs;
 using MaiImageGenerator.Api.Services;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
+using MaiImageGenerator.Shared.Services;
 using MDev.Dotnet.AspNetCore.Apis.Extensions;
 using MDev.Dotnet.AspNetCore.OpenTelemetry.Apis.Extensions;
 using MDev.Dotnet.Azure.CosmosDb.Startup;
@@ -29,6 +30,7 @@ var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
 // Register configuration
 var customMeters = new List<string>
 {
+    ImageGenerationCoordinator.MeterName
 };
 
 builder.RegisterConfiguration()
@@ -87,6 +89,8 @@ builder.Services.AddSingleton(serviceProvider =>
 });
 builder.Services.AddScoped<IPromptRewriter, MafPromptRewriter>();
 builder.Services.AddScoped<IImageGenerator, FoundryImageGenerator>();
+builder.Services.AddSingleton(serviceProvider =>
+    new ImageGenerationCoordinator(serviceProvider.GetRequiredService<IOptions<FoundryOptions>>().Value));
 builder.Services.AddHttpClient();
 builder.Services.AddDaprClient();
 builder.Services.AddScoped<ReferenceService>();

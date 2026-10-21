@@ -14,6 +14,9 @@
     "existingEntraApiAudience": {
       "value": "${EXISTING_ENTRA_API_AUDIENCE=}"
     },
+    "imageGenerationMaxParallelism": {
+      "value": "${IMAGE_GENERATION_MAX_PARALLELISM=3}"
+    },
     "apiContainerImage": {
       "value": "${SERVICE_API_IMAGE_NAME=mcr.microsoft.com/dotnet/samples:aspnetapp@sha256:b8e94412a96b19ac12c78a7064af1bb0a6f584e752b9de7cc31ca4d45ead36b0}"
     },

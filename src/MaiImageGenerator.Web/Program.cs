@@ -22,7 +22,7 @@ builder.Services.AddMsalAuthentication(options =>
 builder.Services.AddHttpClient("Bff", client =>
 {
 	client.BaseAddress = new Uri(apiBaseUrl);
-	client.Timeout = TimeSpan.FromMinutes(10);
+	client.Timeout = TimeSpan.FromMinutes(5);
 }).AddHttpMessageHandler(sp => sp
 	.GetRequiredService<AuthorizationMessageHandler>()
 	.ConfigureHandler([apiBaseUrl], [apiScope]));

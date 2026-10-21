@@ -83,7 +83,8 @@ public sealed class FoundryImageGenerator(
         {
             throw new FoundryGenerationException(
                 $"Image generation failed with HTTP status {exception.Status}.",
-                exception);
+                exception,
+                exception.Status);
         }
     }
 }
