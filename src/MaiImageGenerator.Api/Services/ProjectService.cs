@@ -1,6 +1,7 @@
 using MaiImageGenerator.Api.Contracts;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Data.Entities;
+using MaiImageGenerator.Shared.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace MaiImageGenerator.Api.Services;
@@ -56,6 +57,7 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         CreateProjectRequest request,
         CancellationToken cancellationToken)
     {
+        BookImageGenerationLease.EnsureInactive(project);
         Validate(request, project.Type, project.SourceIdea);
         project.Title = request.Title.Trim();
         project.Context = request.Context?.Trim();
@@ -70,6 +72,7 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         ProjectCharacterRequest request,
         CancellationToken cancellationToken)
     {
+        BookImageGenerationLease.EnsureInactive(project);
         Validate(request);
         var character = new ProjectCharacter
         {
@@ -88,6 +91,7 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         ProjectCharacterRequest request,
         CancellationToken cancellationToken)
     {
+        BookImageGenerationLease.EnsureInactive(project);
         Validate(request);
         var character = FindCharacter(project, characterId);
         if (character is null)
@@ -106,6 +110,7 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         string characterId,
         CancellationToken cancellationToken)
     {
+        BookImageGenerationLease.EnsureInactive(project);
         var character = FindCharacter(project, characterId);
         if (character is null)
         {
@@ -124,6 +129,7 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         ReferenceDocument reference,
         CancellationToken cancellationToken)
     {
+        BookImageGenerationLease.EnsureInactive(project);
         character.References.Add(new ProjectCharacterReference
         {
             Id = reference.Id,

@@ -1,5 +1,6 @@
 using MaiImageGenerator.Api.Contracts;
 using MaiImageGenerator.Api.Services;
+using MaiImageGenerator.Shared.Services;
 using MDev.Dotnet.Azure.ContainerApps.Authentication.Extensions;
 using Microsoft.AspNetCore.Mvc;
 
@@ -162,9 +163,16 @@ public sealed class ProjectsController(
             return result.Result;
         }
 
-        return await projectService.DeleteCharacterAsync(result.Project!, characterId, cancellationToken)
-            ? NoContent()
-            : NotFound();
+        try
+        {
+            return await projectService.DeleteCharacterAsync(result.Project!, characterId, cancellationToken)
+                ? NoContent()
+                : NotFound();
+        }
+        catch (ArgumentException exception)
+        {
+            return InvalidCharacter(exception);
+        }
     }
 
     [HttpPost("{projectId:guid}/characters/{characterId}/references")]
@@ -189,6 +197,7 @@ public sealed class ProjectsController(
 
         try
         {
+            BookImageGenerationLease.EnsureInactive(result.Project!);
             var reference = await referenceService.UploadAsync(result.OwnerId!, file, cancellationToken);
             await projectService.AddReferenceAsync(result.Project!, character, reference, cancellationToken);
             return Ok(new ReferenceUploadResponse(reference.Id, reference.FileName));
