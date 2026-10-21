@@ -16,6 +16,7 @@ namespace MaiImageGenerator.Api.Services;
 public sealed class BookService
 {
     private const int MaximumChapterCount = 30;
+    private static readonly TimeSpan ImageGenerationLeaseDuration = TimeSpan.FromMinutes(30);
     private readonly AIAgent _agent;
     private readonly MaiImageGeneratorDbContext _dbContext;
     private readonly IImageGenerator _imageGenerator;
@@ -198,6 +199,11 @@ public sealed class BookService
         CancellationToken cancellationToken)
     {
         var chapter = FindChapter(project, chapterId);
+        if (HasActiveImageGenerationLease(project, chapter))
+        {
+            return ToResponse(project);
+        }
+
         return await GenerateImagesCoreAsync(project, [chapter], cancellationToken);
     }
 
@@ -207,7 +213,9 @@ public sealed class BookService
     {
         EnsureBook(project);
         var chapters = project.BookPlan?.Chapters
-            .Where(chapter => chapter.ImageStatus != GenerationStatus.Completed)
+            .Where(chapter =>
+                chapter.ImageStatus != GenerationStatus.Completed &&
+                !HasActiveImageGenerationLease(project, chapter))
             .ToArray() ?? [];
         return await GenerateImagesCoreAsync(project, chapters, cancellationToken);
     }
@@ -310,6 +318,10 @@ public sealed class BookService
     private static bool IsThrottled(Exception exception) =>
         exception is FoundryGenerationException { Status: 429 } ||
         exception is HttpRequestException { StatusCode: System.Net.HttpStatusCode.TooManyRequests };
+
+    private static bool HasActiveImageGenerationLease(ProjectDocument project, BookChapter chapter) =>
+        chapter.ImageStatus == GenerationStatus.Processing &&
+        project.UpdatedAt > DateTimeOffset.UtcNow - ImageGenerationLeaseDuration;
 
     public async Task<Stream?> OpenImageAsync(
         ProjectDocument project,
