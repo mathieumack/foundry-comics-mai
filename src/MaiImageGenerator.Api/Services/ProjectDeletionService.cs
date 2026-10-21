@@ -25,8 +25,7 @@ public sealed class ProjectDeletionService(
             }
 
             logger.LogInformation(
-                "Project deletion started for {ProjectId} with {GenerationCount} generations and {ReferenceCount} exclusive references",
-                projectId,
+                "Project deletion started with {GenerationCount} generations and {ReferenceCount} exclusive references",
                 deletion.Generations.Count,
                 deletion.ReferenceIds.Count);
             await artifactStore.DeleteAsync(
@@ -49,11 +48,11 @@ public sealed class ProjectDeletionService(
         }
         catch (Exception exception)
         {
-            logger.LogError(exception, "Project deletion failed for {ProjectId}; cleanup can be retried", projectId);
+            logger.LogError(exception, "Project deletion failed; cleanup can be retried");
             throw new ProjectDeletionException("Project cleanup did not complete.", exception);
         }
 
-        logger.LogInformation("Project deletion completed for {ProjectId}", projectId);
+        logger.LogInformation("Project deletion completed");
         return true;
     }
 }
