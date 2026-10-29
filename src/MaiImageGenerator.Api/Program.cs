@@ -92,11 +92,17 @@ builder.Services.AddScoped<IImageGenerator, FoundryImageGenerator>();
 builder.Services.AddSingleton(serviceProvider =>
     new ImageGenerationCoordinator(serviceProvider.GetRequiredService<IOptions<FoundryOptions>>().Value));
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient(
+    FoundryImageGenerator.HttpClientName,
+    client => client.Timeout = TimeSpan.FromMinutes(9));
 builder.Services.AddDaprClient();
 builder.Services.AddScoped<ReferenceService>();
 builder.Services.AddScoped<ImageComposer>();
 builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ProjectService>();
+builder.Services.AddScoped<IProjectDeletionRepository, CosmosProjectDeletionRepository>();
+builder.Services.AddScoped<IProjectArtifactStore, BlobProjectArtifactStore>();
+builder.Services.AddScoped<ProjectDeletionService>();
 builder.Services.AddScoped<ProjectScaffolder>();
 builder.Services.AddScoped<BookService>();
 builder.Services.AddSingleton<AuthenticatedUserIdProvider>();

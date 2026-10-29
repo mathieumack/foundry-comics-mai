@@ -23,6 +23,7 @@ public sealed class BookService
     private readonly BlobContainerClient _container;
     private readonly BookPlanGenerationQueue _generationQueue;
     private readonly ImageGenerationCoordinator _imageGeneration;
+    private readonly ILogger<BookService> _logger;
 
     public BookService(
         OpenAIClient client,
@@ -31,7 +32,8 @@ public sealed class BookService
         IImageGenerator imageGenerator,
         BlobServiceClient blobServiceClient,
         BookPlanGenerationQueue generationQueue,
-        ImageGenerationCoordinator imageGeneration)
+        ImageGenerationCoordinator imageGeneration,
+        ILogger<BookService> logger)
     {
         _agent = client.GetChatClient(options.Value.PromptModel).AsAIAgent(
             instructions: """
@@ -44,6 +46,7 @@ public sealed class BookService
         _container = blobServiceClient.GetBlobContainerClient("generations");
         _generationQueue = generationQueue;
         _imageGeneration = imageGeneration;
+        _logger = logger;
     }
 
     public async Task<BookPlanResponse> GeneratePlanAsync(
@@ -334,6 +337,11 @@ public sealed class BookService
                         {
                             chapter.ImageStatus = GenerationStatus.Failed;
                             chapter.ImageError = "Chapter image generation failed. This image can be retried independently.";
+                            _logger.LogError(
+                                "Chapter image generation failed for project {ProjectId}, chapter {ChapterId}; failure type {FailureType}.",
+                                project.Id,
+                                chapter.Id,
+                                error);
                         }
 
                         chapter.ImageGenerationRequestId = null;
@@ -383,11 +391,11 @@ public sealed class BookService
         exception is HttpRequestException { StatusCode: System.Net.HttpStatusCode.RequestTimeout or
             System.Net.HttpStatusCode.TooManyRequests } ||
         exception is HttpRequestException { StatusCode: >= System.Net.HttpStatusCode.InternalServerError } ||
-        exception is FoundryGenerationException { Status: 408 or 429 or >= 500 } ||
+        exception is FoundryGenerationException { UpstreamStatusCode: 408 or 429 or >= 500 } ||
         exception is FoundryGenerationException { InnerException: HttpRequestException };
 
     private static bool IsThrottled(Exception exception) =>
-        exception is FoundryGenerationException { Status: 429 } ||
+        exception is FoundryGenerationException { UpstreamStatusCode: 429 } ||
         exception is HttpRequestException { StatusCode: System.Net.HttpStatusCode.TooManyRequests };
 
     private static bool HasActiveImageGenerationLease(BookChapter chapter) =>

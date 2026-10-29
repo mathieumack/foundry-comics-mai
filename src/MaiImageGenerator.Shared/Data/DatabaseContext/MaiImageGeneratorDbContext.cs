@@ -50,6 +50,7 @@ public sealed class MaiImageGeneratorDbContext(
         project.Property(item => item.SourceIdea).ToJsonProperty("sourceIdea");
         project.Property(item => item.CreatedAt).ToJsonProperty("createdAt");
         project.Property(item => item.UpdatedAt).ToJsonProperty("updatedAt");
+        project.Property(item => item.DeletionRequestedAt).ToJsonProperty("deletionRequestedAt");
         project.Property(item => item.ETag).ToJsonProperty("_etag").IsETagConcurrency();
         project.OwnsMany(item => item.Characters, character =>
         {

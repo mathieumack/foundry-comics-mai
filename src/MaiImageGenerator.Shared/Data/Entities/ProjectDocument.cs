@@ -13,6 +13,7 @@ public sealed class ProjectDocument
     public List<ProjectCharacter> Characters { get; set; } = [];
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? DeletionRequestedAt { get; set; }
     public string? ETag { get; set; }
 }
 

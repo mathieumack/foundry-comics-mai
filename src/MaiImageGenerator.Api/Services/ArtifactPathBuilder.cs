@@ -9,7 +9,13 @@ public static class ArtifactPathBuilder
         $"{GetOwnerPrefix(ownerId)}/{referenceId}{extension}";
 
     public static string GetGenerationBlobName(string ownerId, Guid generationId, string fileName) =>
-        $"{GetOwnerPrefix(ownerId)}/{generationId:N}/{Path.GetFileName(fileName)}";
+        $"{GetGenerationPrefix(ownerId, generationId)}{Path.GetFileName(fileName)}";
+
+    public static string GetGenerationPrefix(string ownerId, Guid generationId) =>
+        $"{GetOwnerPrefix(ownerId)}/{generationId:N}/";
+
+    public static string GetReferencePrefix(string ownerId, string referenceId) =>
+        $"{GetOwnerPrefix(ownerId)}/{Path.GetFileName(referenceId)}";
 
     private static string GetOwnerPrefix(string ownerId) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(ownerId))).ToLowerInvariant();
