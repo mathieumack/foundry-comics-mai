@@ -4,7 +4,8 @@ public sealed record CreateProjectRequest(
     string Title,
     string? Context,
     ProjectType Type = ProjectType.Comic,
-    string? SourceIdea = null);
+    string? SourceIdea = null,
+    Guid? ScaffoldId = null);
 
 public sealed record ProjectResponse(
     Guid ProjectId,
@@ -14,7 +15,8 @@ public sealed record ProjectResponse(
     string? SourceIdea,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    IReadOnlyList<ProjectCharacterResponse> Characters);
+    IReadOnlyList<ProjectCharacterResponse> Characters,
+    IReadOnlyList<AiGenerationTrace>? ScaffoldTraces = null);
 
 public enum ProjectType
 {
@@ -40,7 +42,8 @@ public sealed record BookPlanResponse(
     GenerationStatus Status,
     bool IsGenerating,
     string? Error,
-    IReadOnlyList<BookChapterResponse> Chapters);
+    IReadOnlyList<BookChapterResponse> Chapters,
+    IReadOnlyList<AiGenerationTrace>? Traces = null);
 
 public sealed record BookChapterResponse(
     string Id,
@@ -56,7 +59,9 @@ public sealed record BookChapterResponse(
     string? ImagePrompt,
     Uri? ImageUri,
     GenerationStatus ImageStatus,
-    string? ImageError);
+    string? ImageError,
+    IReadOnlyList<AiGenerationTrace>? ProseTraces = null,
+    IReadOnlyList<AiGenerationTrace>? ImageTraces = null);
 
 public sealed record ProjectCharacterResponse(
     string CharacterId,
@@ -70,7 +75,8 @@ public sealed record CreateBoardRequest(
     string? Description,
     bool RewritePrompt,
     BoardTemplate Template,
-    IReadOnlyList<PanelRequest> Panels);
+    IReadOnlyList<PanelRequest> Panels,
+    Guid? ScaffoldId = null);
 
 public sealed record CreateGenerationRequest(
     string Title,
@@ -79,7 +85,8 @@ public sealed record CreateGenerationRequest(
     bool RewritePrompt,
     BoardTemplate Template,
     IReadOnlyList<PanelRequest> Panels,
-    IReadOnlyList<CharacterRequest> Characters);
+    IReadOnlyList<CharacterRequest> Characters,
+    Guid? ScaffoldId = null);
 
 public sealed record CreateProjectScaffoldRequest(string StoryDescription, int PanelCount);
 
@@ -87,7 +94,9 @@ public sealed record ProjectScaffoldResponse(
     string Title,
     string Description,
     string Context,
-    IReadOnlyList<string> PanelPrompts);
+    IReadOnlyList<string> PanelPrompts,
+    IReadOnlyList<AiGenerationTrace>? Traces = null,
+    Guid? ScaffoldId = null);
 
 public sealed record PanelRequest(string Prompt, IReadOnlyList<string> CharacterIds);
 
@@ -112,7 +121,8 @@ public sealed record GenerationResponse(
     int CompletedPanelCount,
     IReadOnlyList<PanelGenerationResponse> Panels,
     Uri? BoardUri,
-    string? Error);
+    string? Error,
+    IReadOnlyList<AiGenerationTrace>? ScaffoldTraces = null);
 
 public sealed record PanelGenerationResponse(
     int Number,
@@ -121,7 +131,8 @@ public sealed record PanelGenerationResponse(
     PanelGenerationStatus Status,
     string? EffectivePrompt,
     Uri? ImageUri,
-    string? Error);
+    string? Error,
+    IReadOnlyList<AiGenerationTrace>? Traces = null);
 
 public sealed record CharacterGenerationResponse(
     string Id,

@@ -35,6 +35,8 @@ public partial class Home : IAsyncDisposable
     private Guid? activeGenerationId, loadedProjectId, loadedGenerationId;
     private ElementReference imageViewerDialog;
     private ProjectResponse? project;
+    private IReadOnlyList<AiGenerationTrace>? scaffoldTraces;
+    private Guid? scaffoldId;
     private string boardTitle = "Nouvelle planche", newCharacterName = string.Empty;
     private string? storyDescription, projectDescription, context, boardDataUrl, progressMessage, projectError, workspaceError, viewerImageUrl, viewerImageAlt;
     private string baseline = string.Empty, characterBaseline = string.Empty;
@@ -171,6 +173,8 @@ public partial class Home : IAsyncDisposable
     private void ResetBoard()
     {
         activeGenerationId = null;
+        scaffoldTraces = null;
+        scaffoldId = null;
         boardTitle = "Nouvelle planche";
         projectDescription = context = storyDescription = boardDataUrl = progressMessage = viewerImageUrl = viewerImageAlt = null;
         viewerOpening = false;
@@ -188,6 +192,7 @@ public partial class Home : IAsyncDisposable
     {
         context = project!.Context;
         storyDescription = project.SourceIdea;
+        scaffoldTraces = project.ScaffoldTraces;
         characters.AddRange(project.Characters.Select(c => ToDraft(c.CharacterId, c.Name, c.References)));
     }
 
@@ -221,6 +226,17 @@ public partial class Home : IAsyncDisposable
         boardTitle = preserveTitle ? project!.Title : scaffold.Title;
         projectDescription = scaffold.Description;
         context = preserveTitle ? project!.Context : scaffold.Context;
+        scaffoldTraces = scaffold.Traces;
+        if (preserveTitle)
+        {
+            // Wizard scaffolds already belong to the saved project, not its first board.
+            scaffoldId = null;
+            scaffoldTraces = project!.ScaffoldTraces is { Count: > 0 } savedTraces ? savedTraces : scaffold.Traces;
+        }
+        else
+        {
+            scaffoldId = scaffold.ScaffoldId;
+        }
         panels.Clear();
         panels.AddRange(scaffold.PanelPrompts.Select(prompt => new ComicPanelDraft { Prompt = prompt }));
         selectedPanel = 0;
@@ -256,19 +272,20 @@ public partial class Home : IAsyncDisposable
                 if (project.Context != context?.Trim())
                     project = await GenerationClient.UpdateProjectAsync(projectId, new CreateProjectRequest(project.Title, context?.Trim(), ProjectType.Comic, project.SourceIdea), lifetime.Token);
                 generation = await GenerationClient.CreateBoardAsync(projectId,
-                    new CreateBoardRequest(boardTitle.Trim(), projectDescription?.Trim(), rewritePrompt, selectedTemplate, requests), lifetime.Token);
+                    new CreateBoardRequest(boardTitle.Trim(), projectDescription?.Trim(), rewritePrompt, selectedTemplate, requests, scaffoldId), lifetime.Token);
                 projectBoards.Insert(0, new(generation.GenerationId, generation.Title, generation.CreatedAt, generation.Status, null));
             }
             else
             {
                 generation = await GenerationClient.CreateAsync(new CreateGenerationRequest(boardTitle.Trim(), projectDescription?.Trim(),
                     context?.Trim(), rewritePrompt, selectedTemplate, requests,
-                    characters.Select(c => new CharacterRequest(c.Id, c.Name.Trim(), c.References.Select(r => r.ReferenceId).ToArray())).ToArray()), lifetime.Token);
+                    characters.Select(c => new CharacterRequest(c.Id, c.Name.Trim(), c.References.Select(r => r.ReferenceId).ToArray())).ToArray(), scaffoldId), lifetime.Token);
             }
+            scaffoldId = null;
             activeGenerationId = generation.GenerationId;
             loadedGenerationId = activeGenerationId;
             boardDataUrl = null;
-            foreach (var panel in panels) { panel.ImageDataUrl = panel.EffectivePrompt = panel.Error = null; panel.Status = PanelUiStatus.Pending; }
+            foreach (var panel in panels) { panel.ImageDataUrl = panel.EffectivePrompt = panel.Error = null; panel.Traces = null; panel.Status = PanelUiStatus.Pending; }
             baseline = CaptureDraft();
             characterBaseline = CaptureCharacters();
             await ApplyGenerationAsync(generation, lifetime.Token);
@@ -310,6 +327,9 @@ public partial class Home : IAsyncDisposable
     private async Task ApplyGenerationAsync(GenerationResponse generation, CancellationToken token)
     {
         workspaceError = null;
+        scaffoldTraces = generation.ScaffoldTraces is { Count: > 0 } boardTraces
+            ? boardTraces
+            : project?.ScaffoldTraces;
         isGenerating = generation.Status is GenerationStatus.Pending or GenerationStatus.Processing;
         generatedPanelCount = generation.CompletedPanelCount;
         progressMessage = generation.Status == GenerationStatus.Pending ? "En attente d'un atelier de génération disponible…" : $"{generatedPanelCount} / {generation.PanelCount} cases illustrées";
@@ -321,6 +341,7 @@ public partial class Home : IAsyncDisposable
             panel.Status = status.Status switch { PanelGenerationStatus.Processing => PanelUiStatus.Generating, PanelGenerationStatus.Completed => PanelUiStatus.Ready, PanelGenerationStatus.Failed => PanelUiStatus.Error, _ => PanelUiStatus.Pending };
             panel.EffectivePrompt = status.EffectivePrompt;
             panel.Error = status.Error;
+            panel.Traces = status.Traces;
             if (panel.ImageDataUrl is null && status.ImageUri is not null)
                 panel.ImageDataUrl = await GenerationClient.DownloadDataUrlAsync(status.ImageUri, token);
         }
@@ -359,6 +380,8 @@ public partial class Home : IAsyncDisposable
         selectedTemplate = template;
         panels.Clear();
         panels.AddRange(Enumerable.Range(0, BoardTemplateDefinitions.Get(template).Slots.Count).Select(_ => new ComicPanelDraft()));
+        scaffoldTraces = null;
+        scaffoldId = null;
         activeGenerationId = null;
         boardDataUrl = null;
         selectedPanel = generatedPanelCount = 0;

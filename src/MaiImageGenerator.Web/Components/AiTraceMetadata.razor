@@ -1,0 +1,16 @@
+@if (AiTraceFormatting.Select(Traces, Images) is { Count: > 0 } requests)
+{
+    <div class="ai-traces" role="group" aria-label="@Label">
+        @for (var index = 0; index < requests.Count; index++)
+        {
+            var trace = requests[index];
+            <AiTraceIndicator @key="(trace, index)" Trace="trace" Label="@Label" />
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<AiGenerationTrace>? Traces { get; set; }
+    [Parameter] public bool? Images { get; set; }
+    [Parameter] public string Label { get; set; } = "AI requests";
+}

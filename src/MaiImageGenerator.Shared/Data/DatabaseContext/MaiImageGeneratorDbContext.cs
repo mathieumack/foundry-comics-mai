@@ -1,5 +1,6 @@
 using MaiImageGenerator.Shared.Data.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace MaiImageGenerator.Shared.Data.DatabaseContext;
 
@@ -25,6 +26,8 @@ public sealed class MaiImageGeneratorDbContext(
         generation.Property(item => item.Description).ToJsonProperty("description");
         generation.Property(item => item.Context).ToJsonProperty("context");
         generation.Property(item => item.RewritePrompt).ToJsonProperty("rewritePrompt");
+        generation.Property(item => item.ScaffoldId).ToJsonProperty("scaffoldId");
+        generation.OwnsMany(item => item.ScaffoldTraces, trace => ConfigureTrace(trace, "scaffoldTraces"));
         generation.Property(item => item.Status).HasConversion<string>().ToJsonProperty("status");
         generation.Property(item => item.BoardBlobName).ToJsonProperty("boardBlobName");
         generation.Property(item => item.Error).ToJsonProperty("error");
@@ -35,6 +38,7 @@ public sealed class MaiImageGeneratorDbContext(
         {
             panel.ToJsonProperty("panels");
             panel.Property(item => item.Status).HasConversion<string>();
+            panel.OwnsMany(item => item.Traces, trace => ConfigureTrace(trace, "traces"));
         });
         var project = modelBuilder.Entity<ProjectDocument>();
         project.ToContainer("projects");
@@ -48,6 +52,8 @@ public sealed class MaiImageGeneratorDbContext(
         project.Property(item => item.Title).ToJsonProperty("title");
         project.Property(item => item.Context).ToJsonProperty("context");
         project.Property(item => item.SourceIdea).ToJsonProperty("sourceIdea");
+        project.Property(item => item.ScaffoldId).ToJsonProperty("scaffoldId");
+        project.OwnsMany(item => item.ScaffoldTraces, trace => ConfigureTrace(trace, "scaffoldTraces"));
         project.Property(item => item.CreatedAt).ToJsonProperty("createdAt");
         project.Property(item => item.UpdatedAt).ToJsonProperty("updatedAt");
         project.Property(item => item.DeletionRequestedAt).ToJsonProperty("deletionRequestedAt");
@@ -65,11 +71,14 @@ public sealed class MaiImageGeneratorDbContext(
             plan.ToJsonProperty("bookPlan");
             plan.Property(item => item.GenerationRequestId).ToJsonProperty("generationRequestId");
             plan.Property(item => item.Status).HasConversion<string>();
+            plan.OwnsMany(item => item.Traces, trace => ConfigureTrace(trace, "traces"));
             plan.OwnsMany(item => item.Chapters, chapter =>
             {
                 chapter.ToJsonProperty("chapters");
                 chapter.Property(item => item.ProseStatus).HasConversion<string>();
                 chapter.Property(item => item.ImageStatus).HasConversion<string>();
+                chapter.OwnsMany(item => item.ProseTraces, trace => ConfigureTrace(trace, "proseTraces"));
+                chapter.OwnsMany(item => item.ImageTraces, trace => ConfigureTrace(trace, "imageTraces"));
             });
         });
 
@@ -88,5 +97,27 @@ public sealed class MaiImageGeneratorDbContext(
         reference.Property(item => item.CreatedAt).ToJsonProperty("createdAt");
         reference.Property(item => item.UpdatedAt).ToJsonProperty("updatedAt");
         reference.Property(item => item.ETag).ToJsonProperty("_etag").IsETagConcurrency();
+    }
+
+    private static void ConfigureTrace<TOwner>(
+        OwnedNavigationBuilder<TOwner, AiGenerationTrace> trace,
+        string jsonProperty) where TOwner : class
+    {
+        trace.ToJsonProperty(jsonProperty);
+        trace.Property(item => item.Operation).ToJsonProperty("operation");
+        trace.Property(item => item.Provider).ToJsonProperty("provider");
+        trace.Property(item => item.Model).ToJsonProperty("model");
+        trace.Property(item => item.RequestId).ToJsonProperty("requestId");
+        trace.Property(item => item.InputTokens).ToJsonProperty("inputTokens");
+        trace.Property(item => item.OutputTokens).ToJsonProperty("outputTokens");
+        trace.Property(item => item.TotalTokens).ToJsonProperty("totalTokens");
+        trace.Property(item => item.UsageSource).ToJsonProperty("usageSource");
+        trace.Property(item => item.StartedAt).ToJsonProperty("startedAt");
+        trace.Property(item => item.CompletedAt).ToJsonProperty("completedAt");
+        trace.Property(item => item.DurationMs).ToJsonProperty("durationMs");
+        trace.Property(item => item.ImageCount).ToJsonProperty("imageCount");
+        trace.Property(item => item.ImageSize).ToJsonProperty("imageSize");
+        trace.Property(item => item.ImageQuality).ToJsonProperty("imageQuality");
+        trace.Property(item => item.Status).ToJsonProperty("status");
     }
 }

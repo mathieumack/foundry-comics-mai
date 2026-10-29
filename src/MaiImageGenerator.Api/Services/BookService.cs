@@ -4,6 +4,7 @@ using MaiImageGenerator.Api.Configuration;
 using MaiImageGenerator.Api.Contracts;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Data.Entities;
+using MaiImageGenerator.Shared.Generation;
 using MaiImageGenerator.Shared.Messages;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Options;
@@ -15,12 +16,18 @@ namespace MaiImageGenerator.Api.Services;
 public sealed class BookService
 {
     private const int MaximumChapterCount = 30;
-    private readonly AIAgent _agent;
+    private const string Instructions = """
+        You are a professional book editor and fiction writer. Follow the requested output format exactly,
+        preserve the supplied plot and character continuity, and do not add Markdown or commentary unless asked.
+        """;
+    private readonly ChatClient _client;
     private readonly MaiImageGeneratorDbContext _dbContext;
     private readonly IImageGenerator _imageGenerator;
     private readonly BlobContainerClient _container;
     private readonly BookPlanGenerationQueue _generationQueue;
     private readonly ILogger<BookService> _logger;
+    private readonly string _promptModel;
+    private readonly string _imageModel;
 
     public BookService(
         OpenAIClient client,
@@ -31,17 +38,14 @@ public sealed class BookService
         BookPlanGenerationQueue generationQueue,
         ILogger<BookService> logger)
     {
-        _agent = client.GetChatClient(options.Value.PromptModel).AsAIAgent(
-            instructions: """
-                You are a professional book editor and fiction writer. Follow the requested output format exactly,
-                preserve the supplied plot and character continuity, and do not add Markdown or commentary unless asked.
-                """,
-            name: "BookWriter");
+        _client = client.GetChatClient(options.Value.PromptModel);
         _dbContext = dbContext;
         _imageGenerator = imageGenerator;
         _container = blobServiceClient.GetBlobContainerClient("generations");
         _generationQueue = generationQueue;
         _logger = logger;
+        _promptModel = options.Value.PromptModel;
+        _imageModel = options.Value.ImageModel;
     }
 
     public async Task<BookPlanResponse> GeneratePlanAsync(
@@ -61,6 +65,7 @@ public sealed class BookService
         project.BookPlan.Status = GenerationStatus.Pending;
         project.BookPlan.Prompt = null;
         project.BookPlan.Error = null;
+        project.SchemaVersion = 3;
         project.UpdatedAt = DateTimeOffset.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -131,7 +136,9 @@ public sealed class BookService
                     ImagePrompt = chapter.ImagePrompt?.Trim(),
                     ImageBlobName = saved?.ImageBlobName,
                     ImageStatus = saved?.ImageStatus ?? GenerationStatus.Pending,
-                    ImageError = saved?.ImageError
+                    ImageError = saved?.ImageError,
+                    ProseTraces = saved?.ProseTraces.Select(AiTraceCapture.Clone).ToList() ?? [],
+                    ImageTraces = saved?.ImageTraces.Select(AiTraceCapture.Clone).ToList() ?? []
                 };
             })
             .ToList();
@@ -140,6 +147,7 @@ public sealed class BookService
         project.BookPlan.Chapters = chapters;
         project.BookPlan.Status = GenerationStatus.Completed;
         project.BookPlan.Error = null;
+        project.SchemaVersion = 3;
         project.UpdatedAt = DateTimeOffset.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
         return ToResponse(project);
@@ -160,19 +168,36 @@ public sealed class BookService
         chapter.ProseStatus = GenerationStatus.Processing;
         chapter.ProseError = null;
         chapter.ProsePrompt = BuildProsePrompt(project, chapter);
+        var trace = new AiGenerationTrace
+        {
+            Operation = "chapter-prose", Model = _promptModel, StartedAt = DateTimeOffset.UtcNow
+        };
+        chapter.ProseTraces.Add(trace);
         await SaveAsync(project, cancellationToken);
 
         try
         {
-            var response = await _agent.RunAsync(chapter.ProsePrompt, cancellationToken: cancellationToken);
-            var prose = response.ToString().Trim();
-            if (string.IsNullOrWhiteSpace(prose))
+            using var capture = AiTraceCapture.Begin(trace, "chapter-prose", _promptModel);
+            try
             {
-                throw new JsonException("The prompt model returned no chapter prose.");
-            }
+                var agent = new FoundryChatTraceClient(_client, trace).AsAIAgent(
+                    instructions: Instructions, name: "BookWriter");
+                var response = await agent.RunAsync(chapter.ProsePrompt, cancellationToken: cancellationToken);
+                var prose = response.ToString().Trim();
+                if (string.IsNullOrWhiteSpace(prose))
+                {
+                    throw new JsonException("The prompt model returned no chapter prose.");
+                }
 
-            chapter.Prose = prose;
-            chapter.ProseStatus = GenerationStatus.Completed;
+                chapter.Prose = prose;
+                chapter.ProseStatus = GenerationStatus.Completed;
+                capture.Complete();
+            }
+            catch (OperationCanceledException)
+            {
+                capture.Cancel();
+                throw;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -202,11 +227,16 @@ public sealed class BookService
         chapter.ImagePrompt = string.IsNullOrWhiteSpace(chapter.ImagePrompt)
             ? $"Book illustration, no text. {project.Context} Chapter: {chapter.Title}. {chapter.Summary} Continuity: {chapter.Continuity}"
             : chapter.ImagePrompt.Trim();
+        var trace = new AiGenerationTrace
+        {
+            Operation = "chapter-image", Model = _imageModel, StartedAt = DateTimeOffset.UtcNow
+        };
+        chapter.ImageTraces.Add(trace);
         await SaveAsync(project, cancellationToken);
 
         try
         {
-            var image = await _imageGenerator.GenerateAsync(chapter.ImagePrompt, null, cancellationToken);
+            var image = await _imageGenerator.GenerateAsync(chapter.ImagePrompt, null, cancellationToken, trace);
             var blobName = ArtifactPathBuilder.GetGenerationBlobName(
                 project.OwnerId,
                 Guid.Parse(project.Id),
@@ -253,6 +283,7 @@ public sealed class BookService
 
     private async Task SaveAsync(ProjectDocument project, CancellationToken cancellationToken)
     {
+        project.SchemaVersion = 3;
         project.UpdatedAt = DateTimeOffset.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -303,7 +334,7 @@ public sealed class BookService
             """;
     }
 
-    private static BookPlanResponse ToResponse(ProjectDocument project)
+    public static BookPlanResponse ToResponse(ProjectDocument project)
     {
         var plan = project.BookPlan ?? new BookPlan { Status = GenerationStatus.Pending };
         return new(
@@ -327,7 +358,10 @@ public sealed class BookService
                     ? null
                     : new Uri($"api/projects/{project.Id}/book/chapters/{chapter.Id}/image", UriKind.Relative),
                 chapter.ImageStatus,
-                chapter.ImageError)).ToArray());
+                chapter.ImageError,
+                chapter.ProseTraces.ToArray(),
+                chapter.ImageTraces.ToArray())).ToArray(),
+            plan.Traces.ToArray());
     }
 
 }

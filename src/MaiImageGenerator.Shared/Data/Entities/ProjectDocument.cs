@@ -4,11 +4,13 @@ public sealed class ProjectDocument
 {
     public string Id { get; set; } = string.Empty;
     public string OwnerId { get; set; } = string.Empty;
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 3;
     public ProjectType Type { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? Context { get; set; }
     public string? SourceIdea { get; set; }
+    public Guid? ScaffoldId { get; set; }
+    public List<AiGenerationTrace> ScaffoldTraces { get; set; } = [];
     public BookPlan? BookPlan { get; set; }
     public List<ProjectCharacter> Characters { get; set; } = [];
     public DateTimeOffset CreatedAt { get; set; }
@@ -25,6 +27,7 @@ public enum ProjectType
 
 public sealed class BookPlan
 {
+    public List<AiGenerationTrace> Traces { get; set; } = [];
     public string? GenerationRequestId { get; set; }
     public string? Prompt { get; set; }
     public GenerationStatus Status { get; set; }
@@ -34,6 +37,8 @@ public sealed class BookPlan
 
 public sealed class BookChapter
 {
+    public List<AiGenerationTrace> ProseTraces { get; set; } = [];
+    public List<AiGenerationTrace> ImageTraces { get; set; } = [];
     public string Id { get; set; } = string.Empty;
     public int Number { get; set; }
     public string Title { get; set; } = string.Empty;
