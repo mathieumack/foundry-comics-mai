@@ -46,6 +46,12 @@ public sealed class GenerationApiClient(HttpClient httpClient)
             ?? throw new GenerationApiException("The API returned no project.");
     }
 
+    public async Task DeleteProjectAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.DeleteAsync($"api/projects/{projectId:D}", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
     public async Task<BookPlanResponse> GetBookPlanAsync(Guid projectId, CancellationToken cancellationToken)
     {
         using var response = await httpClient.GetAsync($"api/projects/{projectId:D}/book/plan", cancellationToken);

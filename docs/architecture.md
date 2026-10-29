@@ -24,7 +24,7 @@ The [editable Excalidraw source](images/solution-architecture.excalidraw) accomp
 
 ## Frontend workshop
 
-The authenticated root route and `/projects` show the creative workshop/library. `/new` is a three-step story wizard that creates a real owner-scoped project. Comic scaffolding is prepared before project creation and passed to the editor through a scoped, in-memory draft store; it is not a persisted board until generation is submitted. Book creation submits a durable plan job. A failed plan submission can be retried without creating another project.
+The authenticated root route and `/projects` show the creative workshop/library. Each comic or book can be permanently deleted there after explicit confirmation. `/new` is a three-step story wizard that creates a real owner-scoped project. Comic scaffolding is prepared before project creation and passed to the editor through a scoped, in-memory draft store; it is not a persisted board until generation is submitted. Book creation submits a durable plan job. A failed plan submission can be retried without creating another project.
 
 The comic workspace retains project and board routes, displays one selected scene beside a template-aware preview, and manages shared characters/references through project endpoints. Generated versions, per-panel SignalR progress, bounded status refresh retries, partial failures, effective prompt inspection, and PNG downloads remain available. `/boards/new` preserves free-form generation; legacy `/?generationId=...` links redirect there.
 
@@ -212,6 +212,14 @@ The `core` Cosmos database contains `projects`, `documents`, and `references`, a
 
 The owner hash avoids embedding raw owner identifiers in blob paths; it is not authorization. Comic panels reference project character IDs; Book projects reject board creation. Layouts are persisted as Standard, Storyline, Dynamic 1, or Dynamic 2. Review queue-schema compatibility explicitly because deployed API/worker revisions can overlap.
 
+### Permanent project deletion
+
+`DELETE /api/projects/{projectId}` resolves the authenticated owner and never accepts an owner ID from the browser. The API first saves a deletion marker, cancels queued or failed generation state, and makes both workers ignore stale messages. If a board, plan, prose request, or image request is already processing, deletion returns `409`; the user can retry after that operation finishes.
+
+Cleanup enumerates the project's book prefix, every comic-generation prefix, and each reference prefix not shared by another project owned by the same user. It deletes base blobs, snapshots, and every stored version. Missing blobs are successful no-ops. Any storage failure is logged, returned as retryable `503`, and prevents Cosmos deletion.
+
+After storage succeeds, the API deletes generation documents, exclusive reference documents, and finally the root project document. Cosmos cannot transact across these containers, so root-last ordering preserves the deletion marker as a retry anchor after a partial database failure. A successful response therefore means that no attributable database record or blob remains. Blob soft delete is disabled by the deployment so deleted artifacts are not retained for recovery; account versioning remains enabled for normal overwrites, and deletion removes all versions explicitly.
+
 ### Queues, recovery, and status
 
 | Queue | Producer | Consumer |
@@ -224,7 +232,7 @@ The owner hash avoids embedding raw owner identifiers in blob paths; it is not a
 
 Each job receives one message with six-hour visibility. Bicep configures a six-hour replica timeout, no replica-level retries, 30-second polling, and at most one execution per job. The two jobs run independently. A failed message remains invisible until the visibility timeout expires; after the fifth dequeue the worker logs and deletes it. Neither worker currently transfers failed messages to the provisioned poison queues. Do not rely on those queues for recovery/audit.
 
-Board redelivery skips completed boards and reuses completed panels with existing PNGs; missing PNGs are regenerated. Book planning skips completed plans and obsolete request IDs. These safeguards do not guarantee exactly-once execution.
+Board redelivery skips completed or canceled boards and reuses completed panels with existing PNGs; missing PNGs are regenerated. Book planning skips completed plans and obsolete request IDs. Both workers stop when the project has a deletion marker. These safeguards do not guarantee exactly-once execution.
 
 Generation states are `Pending`, `Processing`, `Completed`, `Failed`, and `Canceled`; panel states omit `Canceled`. There is no cancellation API. Chapter prose and image stages have separate states/errors. Foreground cancellation resets the affected stage to `Pending` when its handler runs; abrupt process loss can leave `Processing` requiring an explicit retry.
 
@@ -239,7 +247,7 @@ Cosmos persistence and enqueue are separate operations, not a transaction/outbox
 - Azure access uses RBAC, without storage/database/model access keys.
 - Telemetry and deployment-specific client configuration come from environment outputs, not committed values.
 
-These controls are not production certification. The API has permissive application CORS; Dapr callbacks are service integration endpoints, not user operations. There is no implemented per-user rate limiting, comprehensive moderation, or application retention/deletion workflow. Review ingress/authentication, callback reachability, CORS, logging, and abuse controls before any independent adaptation beyond disposable training.
+These controls are not production certification. The API has permissive application CORS; Dapr callbacks are service integration endpoints, not user operations. There is no implemented per-user rate limiting, comprehensive moderation, or scheduled retention workflow. Review ingress/authentication, callback reachability, CORS, logging, and abuse controls before any independent adaptation beyond disposable training.
 
 ## HTTP surfaces
 
@@ -248,7 +256,7 @@ Paths are relative to the API origin; IDs are server-issued. User-facing stored-
 | Surface | Operations and behavior |
 | --- | --- |
 | `/api/projects` | `POST` creates (`201`); `GET` lists owner projects. |
-| `/api/projects/{projectId}` | `GET` reads; `PUT` updates metadata. |
+| `/api/projects/{projectId}` | `GET` reads; `PUT` updates metadata; `DELETE` permanently removes owner-scoped data and artifacts. |
 | `/api/projects/{projectId}/characters` | `GET` lists; `POST` creates; `/{characterId}` supports `GET`, `PUT`, `DELETE`. |
 | `/api/projects/{projectId}/characters/{characterId}/references` | Multipart `POST` uploads PNG/JPEG; `GET` on `/{referenceId}/content` streams a reference. |
 | `/api/projects/{projectId}/boards` | `GET` lists; `POST` persists and queues (`201`, not completed output). |

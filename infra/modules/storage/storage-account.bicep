@@ -130,8 +130,7 @@ resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01
   name: 'default'
   properties: {
     deleteRetentionPolicy: {
-      enabled: true
-      days: 7
+      enabled: false
     }
     isVersioningEnabled: enableBlobVersioning
   }

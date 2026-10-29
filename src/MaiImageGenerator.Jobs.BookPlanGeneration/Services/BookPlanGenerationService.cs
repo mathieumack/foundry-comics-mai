@@ -43,6 +43,11 @@ public sealed class BookPlanGenerationService
                 cancellationToken)
             ?? throw new InvalidOperationException($"Project '{request.ProjectId}' was not found.");
 
+        if (project.DeletionRequestedAt is not null)
+        {
+            return;
+        }
+
         if (project.Type != ProjectType.Book)
         {
             throw new InvalidOperationException($"Project '{request.ProjectId}' is not a book.");

@@ -4,6 +4,7 @@
 @implements IDisposable
 @inject GenerationApiClient GenerationClient
 @inject NavigationManager Navigation
+@inject DialogService Dialogs
 
 <PageTitle>Mon atelier · MAI Studio</PageTitle>
 
@@ -58,10 +59,20 @@
         <section class="projects-grid" aria-label="Vos histoires">
             @foreach (var project in FilteredProjects)
             {
-                <a class="project-card" href="@ProjectUri(project)" @key="project.ProjectId">
-                    <div class="project-cover"><StoryIllustration Book="@(project.Type == ProjectType.Book)" Label="Illustration décorative du format, pas une couverture générée" /><span class="cover-label">@(project.Type == ProjectType.Book ? "Livre illustré" : "Bande dessinée")</span></div>
-                    <div class="project-card-copy"><span class="eyebrow">Votre univers</span><h3>@project.Title</h3><div class="card-meta"><span>@project.Characters.Count personnage(s)</span><time datetime="@project.UpdatedAt.ToString("O")">Modifié le @project.UpdatedAt.ToLocalTime().ToString("d MMM yyyy", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))</time></div></div>
-                </a>
+                <article class="project-card" @key="project.ProjectId">
+                    <a class="project-card-link" href="@ProjectUri(project)">
+                        <div class="project-cover"><StoryIllustration Book="@(project.Type == ProjectType.Book)" Label="Illustration décorative du format, pas une couverture générée" /><span class="cover-label">@(project.Type == ProjectType.Book ? "Livre illustré" : "Bande dessinée")</span></div>
+                        <div class="project-card-copy"><span class="eyebrow">Votre univers</span><h3>@project.Title</h3><div class="card-meta"><span>@project.Characters.Count personnage(s)</span><time datetime="@project.UpdatedAt.ToString("O")">Modifié le @project.UpdatedAt.ToLocalTime().ToString("d MMM yyyy", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))</time></div></div>
+                    </a>
+                    <div class="project-card-actions">
+                        <button class="link-btn danger"
+                                disabled="@(deletingProjectId is not null)"
+                                aria-label="@($"Supprimer définitivement {project.Title}")"
+                                @onclick="() => DeleteProjectAsync(project)">
+                            <RadzenIcon Icon="delete_forever" />@(deletingProjectId == project.ProjectId ? "Suppression…" : "Supprimer")
+                        </button>
+                    </div>
+                </article>
             }
         </section>
     }
@@ -77,6 +88,7 @@
     private ProjectType? filter;
     private bool isLoading = true;
     private string? error;
+    private Guid? deletingProjectId;
     private bool IsLibrary => new Uri(Navigation.Uri).AbsolutePath.TrimEnd('/').Equals("/projects", StringComparison.OrdinalIgnoreCase);
     private IEnumerable<ProjectResponse> FilteredProjects => projects.Where(p =>
         (filter is null || p.Type == filter) && p.Title.Contains(search.Trim(), StringComparison.CurrentCultureIgnoreCase));
@@ -105,6 +117,44 @@
     }
 
     private void ResetFilters() { search = string.Empty; filter = null; }
+
+    private async Task DeleteProjectAsync(ProjectResponse project)
+    {
+        error = null;
+        try
+        {
+            var deleted = await ProjectDeletionWorkflow.RunAsync(
+                project,
+                async confirmation => await Dialogs.Confirm(
+                    confirmation.Message,
+                    confirmation.Title,
+                    new ConfirmOptions
+                    {
+                        OkButtonText = confirmation.ConfirmText,
+                        CancelButtonText = "Annuler"
+                    }) == true,
+                async token =>
+                {
+                    deletingProjectId = project.ProjectId;
+                    await GenerationClient.DeleteProjectAsync(project.ProjectId, token);
+                },
+                cancellation.Token);
+            if (deleted)
+            {
+                projects.Remove(project);
+            }
+        }
+        catch (AccessTokenNotAvailableException exception) { exception.Redirect(); }
+        catch (Exception exception) when (exception is GenerationApiException or HttpRequestException)
+        {
+            error = $"La suppression de « {project.Title} » n’a pas pu être terminée. Réessayez pour terminer le nettoyage. {exception.Message}";
+        }
+        finally
+        {
+            deletingProjectId = null;
+        }
+    }
+
     private static string ProjectUri(ProjectResponse project) => project.Type == ProjectType.Book
         ? $"/projects/{project.ProjectId:D}/book"
         : $"/projects/{project.ProjectId:D}";
