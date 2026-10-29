@@ -49,6 +49,7 @@ public sealed class GenerationService(
         }
 
         document.Status = GenerationStatus.Processing;
+        document.SchemaVersion = 3;
         document.Error = null;
         foreach (var failedPanel in document.Panels.Where(panel => panel.Status == PanelGenerationStatus.Failed))
         {
@@ -86,9 +87,17 @@ public sealed class GenerationService(
 
                 panel.Status = PanelGenerationStatus.Processing;
                 panel.Error = null;
-                panel.EffectivePrompt = request.RewritePrompt
-                    ? await foundryClient.RewritePromptAsync(document.Context, panel.Prompt, cancellationToken)
-                    : panel.Prompt;
+                if (request.RewritePrompt)
+                {
+                    var rewriteTrace = new AiGenerationTrace { Operation = "prompt-rewrite" };
+                    panel.Traces.Add(rewriteTrace);
+                    panel.EffectivePrompt = await foundryClient.RewritePromptAsync(
+                        document.Context, panel.Prompt, cancellationToken, rewriteTrace);
+                }
+                else
+                {
+                    panel.EffectivePrompt = panel.Prompt;
+                }
 
                 var selectedCharacters = project.Characters
                     .Where(character => panel.CharacterIds.Contains(character.Id, StringComparer.Ordinal))
@@ -129,11 +138,14 @@ public sealed class GenerationService(
                         panel.Number,
                         cancellationToken);
                     generationStarted = true;
+                    var imageTrace = new AiGenerationTrace { Operation = "panel-image" };
+                    panel.Traces.Add(imageTrace);
                     var image = await foundryClient.GenerateAsync(
                         prompt!,
                         referenceSheet,
                         landscape,
-                        cancellationToken);
+                        cancellationToken,
+                        imageTrace);
                     panelImages.Add(image);
                     panel.ImageBlobName = ArtifactPathBuilder.GetGenerationBlobName(
                         request.OwnerId,

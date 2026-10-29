@@ -29,6 +29,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\MaiImageGenerator.Shared\Generation\FoundryChatTraceClient.cs" Link="Generation\FoundryChatTraceClient.cs" />
     <ProjectReference Include="..\MaiImageGenerator.Shared\MaiImageGenerator.Shared.csproj" />
   </ItemGroup>
 

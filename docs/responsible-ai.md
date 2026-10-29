@@ -39,6 +39,18 @@ Cosmos DB stores owner-scoped projects, characters, plans, prose, prompts, statu
 
 Use synthetic, non-sensitive data. Do not upload secrets, personal information, confidential material, or third-party content without authorization. Consult the applicable Azure/model service terms for processing, retention, and regional commitments; the repository makes no additional data-residency promise.
 
+## What generation trace and usage data is retained?
+
+Each image or text request can retain its provider, configured model/deployment name, operation, safe request/correlation identifier, UTC start/completion times, duration, outcome, and the input, output, and total token counts supplied by the provider. Image traces also include requested image count and dimensions. Prompt rewriting, story scaffolding, book planning, chapter prose, and illustrations are tracked separately, including retry attempts where captured.
+
+The compact AI indicator beside generated content opens details on hover, keyboard focus, or touch. `Provider-reported` means the model response supplied usage, not that the application independently verified billing. Unavailable counters stay unknown, never zero; an image may instead show its count and size. Partial counters do not imply a known total. The contract distinguishes estimated usage, but no estimates are currently produced. Usage is not a price quote or billing ledger.
+
+Trace records do **not** contain API keys, access tokens, authorization headers, endpoints, raw provider responses, or hidden/internal reasoning. Only allowlisted response metadata is retained; existing owner-scoped prompt storage is unchanged. Metadata capture failures do not deliberately discard otherwise usable generated content.
+
+Cosmos retains traces alongside their owner-scoped project, panel, plan, or chapter. Regeneration can retain multiple request records, and editing text does not erase the history of the original model call or imply that the edited text is unchanged AI output. Permanent project deletion removes its trace records and linked scaffold sidecars along with the other artifacts.
+
+Before a draft becomes a project or board, its scaffold trace is stored in a private, owner-scoped Blob sidecar. The authenticated API resolves its opaque ID when the draft is saved; browser-supplied token counts are not accepted as provider usage. Abandoned scaffold sidecars have no automatic expiration: remove the environment to remove these unclaimed records. Other saved trace records also have no automatic expiration; project deletion or environment removal is required. Review this retention model before workshops, and never put sensitive data into prompts or reference images.
+
 ## Who can access artifacts?
 
 The application derives the owner from authentication and uses owner-partitioned Cosmos queries and owner-scoped artifact paths. Downloads go through the API; the application does not publish anonymous blob links. Backend data/model services use private endpoints and managed identity.

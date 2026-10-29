@@ -5,11 +5,13 @@ public sealed class GenerationDocument
     public string Id { get; set; } = string.Empty;
     public string OwnerId { get; set; } = string.Empty;
     public string ProjectId { get; set; } = string.Empty;
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 3;
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string? Context { get; set; }
     public bool RewritePrompt { get; set; } = true;
+    public Guid? ScaffoldId { get; set; }
+    public List<AiGenerationTrace> ScaffoldTraces { get; set; } = [];
     public BoardTemplate Template { get; set; }
     public GenerationStatus Status { get; set; }
     public List<GenerationPanel> Panels { get; set; } = [];
@@ -29,6 +31,7 @@ public sealed class GenerationPanel
     public PanelGenerationStatus Status { get; set; }
     public string? ImageBlobName { get; set; }
     public string? Error { get; set; }
+    public List<AiGenerationTrace> Traces { get; set; } = [];
 }
 
 public enum GenerationStatus

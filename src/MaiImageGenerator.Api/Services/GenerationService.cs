@@ -12,7 +12,8 @@ public sealed class GenerationService(
     MaiImageGeneratorDbContext dbContext,
     ReferenceService referenceService,
     BlobServiceClient blobServiceClient,
-    QueueClient jobsQueue)
+    QueueClient jobsQueue,
+    ScaffoldTraceStore scaffoldTraceStore)
 {
     private readonly BlobContainerClient _container = blobServiceClient.GetBlobContainerClient("generations");
 
@@ -30,13 +31,16 @@ public sealed class GenerationService(
             throw new ArgumentException(string.Join(" ", validationErrors.SelectMany(item => item.Value)));
         }
 
+        var scaffoldTraces = await scaffoldTraceStore.ReadAsync(ownerId, request.ScaffoldId, cancellationToken);
         var now = DateTimeOffset.UtcNow;
         var document = new GenerationDocument
         {
             Id = Guid.NewGuid().ToString("D"),
             OwnerId = ownerId,
             ProjectId = project.Id,
-            SchemaVersion = 2,
+            SchemaVersion = 3,
+            ScaffoldId = request.ScaffoldId,
+            ScaffoldTraces = scaffoldTraces,
             Title = request.Title.Trim(),
             Description = request.Description?.Trim(),
             Context = project.Context,
@@ -72,6 +76,7 @@ public sealed class GenerationService(
         }
 
         var references = await LoadReferencesAsync(ownerId, request, cancellationToken);
+        var scaffoldTraces = await scaffoldTraceStore.ReadAsync(ownerId, request.ScaffoldId, cancellationToken);
         var now = DateTimeOffset.UtcNow;
         var project = new ProjectDocument
         {
@@ -97,7 +102,9 @@ public sealed class GenerationService(
             Id = Guid.NewGuid().ToString("D"),
             OwnerId = ownerId,
             ProjectId = project.Id,
-            SchemaVersion = 2,
+            SchemaVersion = 3,
+            ScaffoldId = request.ScaffoldId,
+            ScaffoldTraces = scaffoldTraces,
             Title = request.Title.Trim(),
             Description = request.Description?.Trim(),
             Context = request.Context?.Trim(),
@@ -231,7 +238,7 @@ public sealed class GenerationService(
         }
     }
 
-    private static GenerationResponse ToResponse(GenerationDocument document, ProjectDocument project) => new(
+    public static GenerationResponse ToResponse(GenerationDocument document, ProjectDocument project) => new(
         Guid.Parse(document.Id),
         document.Title,
         document.Description,
@@ -257,9 +264,11 @@ public sealed class GenerationService(
             panel.Status,
             panel.EffectivePrompt,
             panel.ImageBlobName is null ? null : new Uri($"api/generations/{document.Id}/panels/{panel.Number}", UriKind.Relative),
-            panel.Error)).ToArray(),
+            panel.Error,
+            panel.Traces.ToArray())).ToArray(),
         document.BoardBlobName is null ? null : new Uri($"api/generations/{document.Id}/board", UriKind.Relative),
-        document.Error);
+        document.Error,
+        document.ScaffoldTraces.ToArray());
 
     private static GenerationSummaryResponse ToSummaryResponse(GenerationDocument document)
     {

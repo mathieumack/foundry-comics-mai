@@ -5,6 +5,7 @@ using MaiImageGenerator.Api.Configuration;
 using MaiImageGenerator.Api.Hubs;
 using MaiImageGenerator.Api.Services;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
+using MaiImageGenerator.Shared.Generation;
 using MDev.Dotnet.AspNetCore.Apis.Extensions;
 using MDev.Dotnet.AspNetCore.OpenTelemetry.Apis.Extensions;
 using MDev.Dotnet.Azure.CosmosDb.Startup;
@@ -29,6 +30,7 @@ var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
 // Register configuration
 var customMeters = new List<string>
 {
+    AiTraceCapture.MeterName
 };
 
 builder.RegisterConfiguration()
@@ -96,6 +98,7 @@ builder.Services.AddScoped<ReferenceService>();
 builder.Services.AddScoped<ImageComposer>();
 builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ProjectService>();
+builder.Services.AddScoped<ScaffoldTraceStore>();
 builder.Services.AddScoped<IProjectDeletionRepository, CosmosProjectDeletionRepository>();
 builder.Services.AddScoped<IProjectArtifactStore, BlobProjectArtifactStore>();
 builder.Services.AddScoped<ProjectDeletionService>();

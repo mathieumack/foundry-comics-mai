@@ -54,6 +54,7 @@
             <span class="eyebrow">@(type == ProjectType.Comic ? "Bande dessinée" : "Livre illustré") · @artStyle</span><h2 style="margin-top:12px">@title</h2><p style="margin-top:16px;white-space:pre-wrap">@idea</p>
             <p class="hint">@(type == ProjectType.Comic ? $"{BoardTemplateDefinitions.Get(template).Slots.Count} cases à personnaliser" : $"{chapterCount} chapitres à imaginer")</p>
             <p class="hint">@(type == ProjectType.Comic ? "MAI prépare vos scènes. Vous pourrez tout modifier avant de générer les images. Le projet sera sauvegardé ; les scènes restent un brouillon jusqu'à la génération." : "Votre projet est sauvegardé, puis MAI prépare un plan en arrière-plan. Vous pourrez modifier chaque chapitre avant de lancer le texte ou l'image.")</p>
+            <AiTraceMetadata Traces="preparedScaffold?.Traces" Label="Story scaffold requests" />
         }
         @if (error is not null) { <div class="error" role="alert">@error</div> }
         @if (createdProject is not null && error is not null)
@@ -88,6 +89,7 @@
     private string? error;
     private bool isBusy, allowNavigation;
     private ProjectResponse? createdProject;
+    private ProjectScaffoldResponse? preparedScaffold;
     private bool HasUnsavedChanges => !allowNavigation && (isBusy || !string.IsNullOrWhiteSpace(idea) || !string.IsNullOrWhiteSpace(title));
 
     protected override void OnInitialized() { if (Inspired) Inspire(); }
@@ -122,18 +124,17 @@
         try
         {
             var context = $"{artStyle}. {artNotes}".Trim();
-            ProjectScaffoldResponse? scaffold = null;
             if (type == ProjectType.Comic)
             {
-                scaffold = await GenerationClient.CreateScaffoldAsync(new CreateProjectScaffoldRequest(
+                preparedScaffold = await GenerationClient.CreateScaffoldAsync(new CreateProjectScaffoldRequest(
                     $"{idea.Trim()}\nDirection artistique : {context}", BoardTemplateDefinitions.Get(template).Slots.Count), cancellation.Token);
-                context = $"{context}\n{scaffold.Context}";
+                context = $"{context}\n{preparedScaffold.Context}";
             }
-            createdProject ??= await GenerationClient.CreateProjectAsync(new CreateProjectRequest(title.Trim(), context, type, idea.Trim()), cancellation.Token);
+            createdProject ??= await GenerationClient.CreateProjectAsync(new CreateProjectRequest(title.Trim(), context, type, idea.Trim(), preparedScaffold?.ScaffoldId), cancellation.Token);
             if (type == ProjectType.Book)
                 await GenerationClient.GenerateBookPlanAsync(createdProject.ProjectId, new GenerateBookPlanRequest(chapterCount), cancellation.Token);
             else
-                Drafts.Store(createdProject.ProjectId, new PreparedComic(template, scaffold!));
+                Drafts.Store(createdProject.ProjectId, new PreparedComic(template, preparedScaffold!));
             allowNavigation = true;
             Navigation.NavigateTo(type == ProjectType.Book ? $"/projects/{createdProject.ProjectId:D}/book" : $"/projects/{createdProject.ProjectId:D}");
         }

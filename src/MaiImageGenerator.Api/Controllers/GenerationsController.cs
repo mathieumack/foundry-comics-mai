@@ -10,21 +10,24 @@ namespace MaiImageGenerator.Api.Controllers;
 public sealed class GenerationsController(
     IHttpContextAccessor httpContextAccessor,
     GenerationService generationService,
-    ProjectScaffolder projectScaffolder) : ControllerBase
+    ProjectScaffolder projectScaffolder,
+    ScaffoldTraceStore scaffoldTraceStore) : ControllerBase
 {
     [HttpPost("scaffold")]
     public async Task<ActionResult<ProjectScaffoldResponse>> CreateScaffold(
         CreateProjectScaffoldRequest request,
         CancellationToken cancellationToken)
     {
-        if (httpContextAccessor.GetUserId() is null)
+        var ownerId = httpContextAccessor.GetUserId();
+        if (ownerId is null)
         {
             return Unauthorized();
         }
 
         try
         {
-            return Ok(await projectScaffolder.CreateAsync(request, cancellationToken));
+            var scaffold = await projectScaffolder.CreateAsync(request, cancellationToken);
+            return Ok(await scaffoldTraceStore.SaveAsync(ownerId, scaffold, cancellationToken));
         }
         catch (ArgumentException exception)
         {

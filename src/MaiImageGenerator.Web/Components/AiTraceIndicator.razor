@@ -1,0 +1,38 @@
+<div class="ai-trace" @onmouseenter="Enter" @onmouseleave="Leave" @onkeydown="HandleKey">
+    <button type="button" class="ai-trace-toggle"
+            aria-label="@($"AI · {Label}: {AiTraceFormatting.Summary(Trace)}. Request details")"
+            aria-describedby="@tooltipId" aria-expanded="@(Visible ? "true" : "false")"
+            aria-controls="@tooltipId"
+            @onfocus="Focus" @onblur="Blur" @onclick="Toggle">
+        AI · @AiTraceFormatting.Summary(Trace)
+    </button>
+    <div id="@tooltipId" class="ai-trace-tooltip" role="tooltip" hidden="@(!Visible)">
+        <dl>
+            @foreach (var detail in AiTraceFormatting.Details(Trace))
+            {
+                <div><dt>@detail.Key</dt><dd>@detail.Value</dd></div>
+            }
+        </dl>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public AiGenerationTrace Trace { get; set; } = default!;
+    [Parameter] public string Label { get; set; } = "AI request";
+    private readonly string tooltipId = $"ai-trace-{Guid.NewGuid():N}";
+    private bool hovered, focused, pinned, dismissed;
+    private bool Visible => !dismissed && (hovered || focused || pinned);
+    private void Enter() { hovered = true; dismissed = false; }
+    private void Leave() => hovered = false;
+    private void Focus() { focused = true; dismissed = false; }
+    private void Blur() { focused = false; pinned = false; }
+    private void Toggle()
+    {
+        if (pinned) { pinned = false; dismissed = true; }
+        else { pinned = true; dismissed = false; }
+    }
+    private void HandleKey(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape") { pinned = false; dismissed = true; }
+    }
+}

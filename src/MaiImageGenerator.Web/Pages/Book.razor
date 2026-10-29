@@ -27,6 +27,7 @@
                 <span class="eyebrow">Livre illustré</span>
                 <h1>@project.Title</h1>
                 <p class="muted">Un plan d’abord. Puis l’aventure, chapitre après chapitre.</p>
+                <AiTraceMetadata Traces="planTraces" Label="Book plan requests" />
             </div>
             <div class="header-actions">
                 <div class="field chapter-count-field">
@@ -199,6 +200,7 @@
                                 <h3 id="prose-heading">Le récit</h3>
                                 <span class="@StatusClass(chapterDraft.ProseStatus)">@StatusLabel(chapterDraft.ProseStatus)</span>
                             </div>
+                            <AiTraceMetadata Traces="chapterDraft.ProseTraces" Label="Chapter prose requests" />
                             <div class="field">
                                 <label for="chapter-prose">Votre texte, toujours modifiable</label>
                                 <RadzenTextArea id="chapter-prose"
@@ -256,6 +258,7 @@
                             {
                                 <p class="hint">Le texte et l’image se créent séparément. Une illustration sera associée à ce chapitre.</p>
                             }
+                            <AiTraceMetadata Traces="chapterDraft.ImageTraces" Label="Chapter image requests" />
                             <RadzenButton Text="@(chapterDraft.ImageStatus == GenerationStatus.Completed ? "Recréer l’illustration" : "Illustrer ce chapitre")"
                                           Icon="image"
                                           class="btn quiet"
@@ -280,6 +283,7 @@
     private readonly Dictionary<string, ChapterValues> savedDrafts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> activeImageLoads = new(StringComparer.Ordinal);
     private ProjectResponse? project;
+    private IReadOnlyList<AiGenerationTrace>? planTraces;
     private string? error;
     private string? planError;
     private string? selectedChapterId;
@@ -437,6 +441,7 @@
                     }
                     catch (Exception exception) when (IsRequestFailure(exception))
                     {
+                        await RefreshTraceMetadataAsync();
                         chapter.ProseError = exception.Message;
                         return;
                     }
@@ -461,6 +466,7 @@
                     }
                     catch (Exception exception) when (IsRequestFailure(exception))
                     {
+                        await RefreshTraceMetadataAsync();
                         chapter.ImageError = exception.Message;
                         return;
                     }
@@ -512,6 +518,7 @@
         }
         catch (Exception exception) when (IsRequestFailure(exception))
         {
+            await RefreshTraceMetadataAsync();
             chapter.ProseError = exception.Message;
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -553,6 +560,7 @@
         }
         catch (Exception exception) when (IsRequestFailure(exception))
         {
+            await RefreshTraceMetadataAsync();
             chapter.ImageError = exception.Message;
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -562,6 +570,27 @@
         {
             isGenerating = false;
         }
+    }
+
+    private async Task RefreshTraceMetadataAsync()
+    {
+        try
+        {
+            var plan = await GenerationClient.GetBookPlanAsync(ProjectId, cancellation.Token);
+            planTraces = plan.Traces;
+            foreach (var source in plan.Chapters)
+            {
+                var chapter = chapters.SingleOrDefault(item => item.Id == source.Id);
+                if (chapter is null) continue;
+                chapter.ProseTraces = source.ProseTraces;
+                chapter.ImageTraces = source.ImageTraces;
+                chapter.ProseStatus = source.ProseStatus;
+                chapter.ImageStatus = source.ImageStatus;
+            }
+        }
+        catch (AccessTokenNotAvailableException exception) { exception.Redirect(); }
+        catch (Exception exception) when (IsRequestFailure(exception)) { }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
     }
 
     private async Task<bool> ConfirmAsync(string message, string title)
@@ -616,6 +645,7 @@
     {
         isPlanGenerationActive = plan.IsGenerating;
         planError = plan.Error;
+        planTraces = plan.Traces;
 
         var existingChapters = chapters.ToDictionary(chapter => chapter.Id, StringComparer.Ordinal);
         var updatedChapters = new List<ChapterDraft>(plan.Chapters.Count);
@@ -640,8 +670,10 @@
                 existing.ImagePrompt = merged.ImagePrompt;
                 existing.ProseStatus = source.ProseStatus;
                 existing.ProseError = source.ProseError;
+                existing.ProseTraces = source.ProseTraces;
                 existing.ImageStatus = source.ImageStatus;
                 existing.ImageError = source.ImageError;
+                existing.ImageTraces = source.ImageTraces;
                 existing.ImageUri = source.ImageUri;
                 if (imageChanged)
                 {
@@ -673,9 +705,11 @@
                     Prose = source.Prose,
                     ProseStatus = source.ProseStatus,
                     ProseError = source.ProseError,
+                    ProseTraces = source.ProseTraces,
                     ImagePrompt = source.ImagePrompt,
                     ImageStatus = source.ImageStatus,
                     ImageError = source.ImageError,
+                    ImageTraces = source.ImageTraces,
                     ImageUri = source.ImageUri
                 };
                 updatedChapters.Add(created);
@@ -885,9 +919,11 @@
         public string? Prose { get; set; }
         public GenerationStatus ProseStatus { get; set; }
         public string? ProseError { get; set; }
+        public IReadOnlyList<AiGenerationTrace>? ProseTraces { get; set; }
         public string? ImagePrompt { get; set; }
         public GenerationStatus ImageStatus { get; set; }
         public string? ImageError { get; set; }
+        public IReadOnlyList<AiGenerationTrace>? ImageTraces { get; set; }
         public string? ImageLoadError { get; set; }
         public Uri? ImageUri { get; set; }
         public string? ImageDataUrl { get; set; }

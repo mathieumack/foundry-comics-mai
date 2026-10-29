@@ -87,8 +87,9 @@ sequenceDiagram
         User->>Web: Describe story
         Web->>API: Request scaffold with Entra token
         API->>MAI: Generate structured title, context and panels
-        MAI-->>API: Return scaffold
-        API-->>Web: Return editable draft
+        MAI-->>API: Return scaffold and available usage
+        API->>Blob: Save owner-scoped scaffold trace
+        API-->>Web: Return editable draft, trace and scaffold ID
     end
     Web->>API: Create project, characters and references
     API->>DB: Save owner-scoped metadata
@@ -132,6 +133,20 @@ The worker requests regular panels at 1024 x 1024 and full-width slots at 1365 x
 - **Text:** API/job chat agents use `/openai/v1/` with the `https://ai.azure.com/.default` token scope.
 
 Both image paths save private artifacts in `generations`. Chapter regeneration overwrites a stable image path; a new comic board gets a new generation ID.
+
+### Request traceability
+
+Every model invocation records an `AiGenerationTrace`: provider, configured model/deployment, operation, safe request/correlation ID, UTC start/completion times, duration, outcome, and independently nullable input/output/total token counts. Image requests also record their requested count and dimensions. Prompt rewrites and images have separate records on each panel; book-plan, chapter-prose, and chapter-image requests retain their own lists. Retries append requests rather than combining usage. Composing a board is not a model invocation and does not invent an additional usage record.
+
+Usage is `provider-reported` only when the response supplies counters. Missing counters remain null; totals are not inferred from partial data or summed across requests. The contract also supports explicitly `estimated` usage, but the application does not currently estimate tokens. Metadata capture failures emit operational telemetry without model payloads and do not fail otherwise successful content generation.
+
+Chat SDK usage types can normalize absent fields to zero, so a per-request `ChatClient` decorator captures field presence from the response before agent-level normalization. It retains only allowlisted counters and correlation IDs, never the raw response. Its source is linked into the three backend projects to reuse their existing OpenAI dependency without adding that dependency to the shared entity library.
+
+Generation/project documents use schema 3 with owned trace collections. Older documents load with empty collections; queue schemas remain unchanged because messages still reference owner-scoped documents, not trace payloads. API responses expose only the allowlisted trace fields. The browser keeps them while refreshing panel state and shows compact indicators for images, effective prompts, scaffolds, book plans, and prose. Details are disclosed on hover, keyboard focus, or touch activation; unknown usage is never shown as zero.
+
+Scaffold usage is saved immediately as `<sha256-owner-prefix>/<scaffold-id-N>/scaffold-trace.json` in the private `generations` container. The API returns an opaque scaffold ID, not a client-editable usage claim. Saving the scaffold into a new project or board resolves its metadata under the authenticated owner and attaches the traces and sidecar ID in Cosmos. Project deletion includes these linked sidecar prefixes. Project and board identifiers remain independently generated, preserving creation/retry behavior. Only trace metadata is in the sidecar; draft text still travels through the browser until saved. Unclaimed scaffold sidecars have no automatic expiration and remain until the environment is removed. If sidecar persistence fails, the generated draft and in-memory trace are still returned without a scaffold ID.
+
+Request history describes the model calls, not authorship of subsequent manual edits or a billing ledger. See [responsible AI](responsible-ai.md#what-generation-trace-and-usage-data-is-retained) for retention and privacy limits.
 
 ### Notification delivery
 
@@ -202,8 +217,8 @@ The `core` Cosmos database contains `projects`, `documents`, and `references`, a
 
 | Store or message | Contents and boundary |
 | --- | --- |
-| Cosmos `projects` | Project type, characters/references, source idea, and embedded book plan/chapters. |
-| Cosmos `documents` | Generation, parent project ID, layout, prompts, panel states, and board/panel blob names. |
+| Cosmos `projects` | Project type, characters/references, source idea, embedded book plan/chapters, and per-request AI traces. |
+| Cosmos `documents` | Generation, parent project ID, layout, prompts, panel states, board/panel blob names, and per-request AI traces. |
 | Cosmos `references` | Uploaded-reference metadata. |
 | Blob `references` | `<sha256-owner-prefix>/<reference-id>.<extension>`. |
 | Blob `generations` | `<sha256-owner-prefix>/<generation-or-book-id-N>/panel-NN.png`, `board.png`, or `chapter-<chapter-id>.png`. |

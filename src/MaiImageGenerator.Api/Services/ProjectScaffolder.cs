@@ -2,6 +2,8 @@ using System.ClientModel;
 using System.Text.Json;
 using MaiImageGenerator.Api.Configuration;
 using MaiImageGenerator.Api.Contracts;
+using MaiImageGenerator.Shared.Data.Entities;
+using MaiImageGenerator.Shared.Generation;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Options;
 using OpenAI;
@@ -21,18 +23,19 @@ public sealed class ProjectScaffolder
         Do not include Markdown, code fences, commentary, or properties other than those specified.
         """;
 
-    private readonly AIAgent _agent;
+    private readonly ChatClient _client;
+    private readonly string _model;
 
     public ProjectScaffolder(OpenAIClient client, IOptions<FoundryOptions> options)
     {
-        _agent = client.GetChatClient(options.Value.PromptModel).AsAIAgent(
-            instructions: Instructions,
-            name: "ProjectScaffolder");
+        _model = options.Value.PromptModel;
+        _client = client.GetChatClient(_model);
     }
 
     public async Task<ProjectScaffoldResponse> CreateAsync(
         CreateProjectScaffoldRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AiGenerationTrace? trace = null)
     {
         if (string.IsNullOrWhiteSpace(request.StoryDescription) || request.StoryDescription.Length > 10_000)
         {
@@ -44,12 +47,23 @@ public sealed class ProjectScaffolder
             throw new ArgumentException("A project scaffold requires between 1 and 8 panels.");
         }
 
+        trace ??= new AiGenerationTrace();
+        using var capture = AiTraceCapture.Begin(trace, "project-scaffold", _model);
         try
         {
-            var response = await _agent.RunAsync(
+            var agent = new FoundryChatTraceClient(_client, trace).AsAIAgent(
+                instructions: Instructions, name: "ProjectScaffolder");
+            var response = await agent.RunAsync(
                 $"Panel count: {request.PanelCount}\n\nStory description:\n{request.StoryDescription.Trim()}",
                 cancellationToken: cancellationToken);
-            return Parse(response.ToString(), request.PanelCount);
+            var scaffold = Parse(response.ToString(), request.PanelCount);
+            capture.Complete();
+            return scaffold with { Traces = [trace], ScaffoldId = null };
+        }
+        catch (OperationCanceledException)
+        {
+            capture.Cancel();
+            throw;
         }
         catch (ClientResultException exception)
         {
@@ -72,7 +86,7 @@ public sealed class ProjectScaffolder
             throw new JsonException("The response did not contain a JSON object.");
         }
 
-        var scaffold = JsonSerializer.Deserialize<ProjectScaffoldResponse>(
+        var scaffold = JsonSerializer.Deserialize<ScaffoldContent>(
             content[start..(end + 1)],
             JsonSerializerOptions.Web);
         if (scaffold is null ||
@@ -86,12 +100,13 @@ public sealed class ProjectScaffolder
             throw new JsonException("The response did not contain all required scaffold values.");
         }
 
-        return scaffold with
-        {
-            Title = scaffold.Title.Trim(),
-            Description = scaffold.Description.Trim(),
-            Context = scaffold.Context.Trim(),
-            PanelPrompts = scaffold.PanelPrompts.Select(prompt => prompt.Trim()).ToArray()
-        };
+        return new ProjectScaffoldResponse(
+            scaffold.Title.Trim(),
+            scaffold.Description.Trim(),
+            scaffold.Context.Trim(),
+            scaffold.PanelPrompts.Select(prompt => prompt.Trim()).ToArray());
     }
+
+    private sealed record ScaffoldContent(
+        string Title, string Description, string Context, IReadOnlyList<string> PanelPrompts);
 }

@@ -31,7 +31,12 @@ public sealed class ProjectDeletionService(
             await artifactStore.DeleteAsync(
                 ownerId,
                 projectId,
-                deletion.Generations.Select(item => Guid.Parse(item.Id)).ToArray(),
+                deletion.Generations.Select(item => Guid.Parse(item.Id))
+                    .Concat(deletion.Generations.Select(item => item.ScaffoldId)
+                        .Append(deletion.Project.ScaffoldId)
+                        .OfType<Guid>())
+                    .Distinct()
+                    .ToArray(),
                 deletion.ReferenceIds,
                 cancellationToken);
             await repository.DeleteGenerationsAsync(deletion.Generations, cancellationToken);
