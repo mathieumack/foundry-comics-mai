@@ -19,10 +19,10 @@ param virtualNetworkId string
 //   [3]  cosmosDb           → privatelink.documents.azure.com
 //   [4]  search             → privatelink.search.windows.net
 //   [5]  blob               → privatelink.blob.core.windows.net
-//   [6]  queue              → privatelink.queue.core.windows.net
-//   [7]  table              → privatelink.table.core.windows.net
-//   [8]  file               → privatelink.file.core.windows.net
-//   [9]  acr                → privatelink.azurecr.io
+//   [6]  table              → privatelink.table.core.windows.net
+//   [7]  file               → privatelink.file.core.windows.net
+//   [8]  acr                → privatelink.azurecr.io
+//   [9]  serviceBus         → privatelink.servicebus.windows.net
 var zones = [
   { name: 'privatelink-cognitiveservices-azure-com', zone: 'privatelink.cognitiveservices.azure.com' }   // [0]
   { name: 'privatelink-openai-azure-com',            zone: 'privatelink.openai.azure.com' }               // [1]
@@ -30,10 +30,10 @@ var zones = [
   { name: 'privatelink-documents-azure-com',         zone: 'privatelink.documents.azure.com' }            // [3]
   { name: 'privatelink-search-windows-net',          zone: 'privatelink.search.windows.net' }             // [4]
   { name: 'privatelink-blob-core-windows-net',       zone: 'privatelink.blob.${environment().suffixes.storage}' }  // [5]
-  { name: 'privatelink-queue-core-windows-net',      zone: 'privatelink.queue.${environment().suffixes.storage}' } // [6]
-  { name: 'privatelink-table-core-windows-net',      zone: 'privatelink.table.${environment().suffixes.storage}' } // [7]
-  { name: 'privatelink-file-core-windows-net',       zone: 'privatelink.file.${environment().suffixes.storage}' }  // [8]
-  { name: 'privatelink-azurecr-io',                  zone: 'privatelink.azurecr.io' }                     // [9]
+  { name: 'privatelink-table-core-windows-net',      zone: 'privatelink.table.${environment().suffixes.storage}' } // [6]
+  { name: 'privatelink-file-core-windows-net',       zone: 'privatelink.file.${environment().suffixes.storage}' }  // [7]
+  { name: 'privatelink-azurecr-io',                  zone: 'privatelink.azurecr.io' }                     // [8]
+  { name: 'privatelink-servicebus-windows-net',      zone: 'privatelink.servicebus.windows.net' }         // [9]
 ]
 
 resource privateDnsZones 'Microsoft.Network/privateDnsZones@2020-06-01' = [for zone in zones: {
@@ -63,7 +63,7 @@ output aiServicesZoneId string = privateDnsZones[2].id
 output cosmosDbZoneId string = privateDnsZones[3].id
 output searchZoneId string = privateDnsZones[4].id
 output blobZoneId string = privateDnsZones[5].id
-output queueZoneId string = privateDnsZones[6].id
-output tableZoneId string = privateDnsZones[7].id
-output fileZoneId string = privateDnsZones[8].id
-output acrZoneId string = privateDnsZones[9].id
+output tableZoneId string = privateDnsZones[6].id
+output fileZoneId string = privateDnsZones[7].id
+output acrZoneId string = privateDnsZones[8].id
+output serviceBusZoneId string = privateDnsZones[9].id

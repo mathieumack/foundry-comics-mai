@@ -21,6 +21,7 @@ For GitHub Actions, see [Configure GitHub Actions](#configure-github-actions) af
 azd env new
 azd env set AZURE_LOCATION swedencentral
 azd env set IMAGE_GENERATION_MAX_PARALLELISM 3
+azd env set GENERATION_JOB_MAX_EXECUTIONS 3
 $principalId = az ad signed-in-user show --query id --output tsv
 azd env set DEPLOYER_PRINCIPAL_ID $principalId
 ```
@@ -28,6 +29,8 @@ azd env set DEPLOYER_PRINCIPAL_ID $principalId
 Choose a short environment name because it contributes to Azure resource names. `AZURE_SUBSCRIPTION_ID` is selected by `azd env new` and stored only in the ignored `.azure` directory.
 
 `IMAGE_GENERATION_MAX_PARALLELISM` bounds image-provider requests within each board or book batch (1 to 16, default 3). Lower it when provider quota is constrained.
+
+`GENERATION_JOB_MAX_EXECUTIONS` bounds concurrent board and book-plan worker executions independently (1 to 10, default 3). The maximum concurrent board image requests is the product of this value and `IMAGE_GENERATION_MAX_PARALLELISM`; tune both values to provider quota.
 
 ## 3. Validate prerequisites
 
@@ -79,7 +82,7 @@ The checked-in production appsettings is only a neutral template. Never replace 
 
 ## 5. Verify
 
-Use `azd env get-values` locally to inspect deployment outputs. Open `SERVICE_WEB_URI` and sign in. Submit a small board and confirm that `generation-jobs` triggers only the board-generation job, panel notifications arrive, the job completes, and artifacts are downloadable. Then generate a book plan and confirm that `book-plan-jobs` triggers only the book-plan-generation job and that the page progresses from pending to completed. Verify that the browser acquires the API scope, the API accepts the token, both jobs use the managed identity, and telemetry reaches Application Insights.
+Use `azd env get-values` locally to inspect deployment outputs. Open `SERVICE_WEB_URI` and sign in. Submit a small board and confirm that the Service Bus `generation-jobs` queue triggers only the board-generation job, panel notifications arrive, the job completes, and artifacts are downloadable. Then generate a book plan and confirm that `book-plan-jobs` triggers only the book-plan-generation job and that the page progresses from pending to completed. Verify that the browser acquires the API scope, the API accepts the token, both jobs use the managed identity, and telemetry reaches Application Insights.
 
 Avoid sharing the complete environment output in issues because it contains deployment-specific identifiers and endpoints.
 
@@ -105,6 +108,10 @@ The storage account intentionally disables blob soft delete so confirmed project
 Use `azd deploy` for application-only changes and `azd provision` when infrastructure changes. `azd up` performs both.
 
 Foundry project connections become owned by the capability host after the first deployment. The preprovision hook detects an existing host and skips those immutable resources on subsequent provisions. Do not remove the hook without replacing this behavior.
+
+### Upgrade from Storage Queues
+
+This release is a direct transport cutover; it does not copy messages from the former Storage queues. Before provisioning an existing environment, stop new submissions on the old deployment and wait until `generation-jobs`, `book-plan-jobs`, and both panel-notification queues are empty and their persisted operations are terminal. Do not cut over while a worker is processing a message. After the Service Bus deployment is verified, remove orphaned Storage Queue resources only after confirming they contain no recoverable work; incremental ARM provisioning does not delete resources omitted from the new graph.
 
 ## Configure GitHub Actions
 
@@ -219,7 +226,7 @@ Confirm that the API identity has both SignalR App Server and SignalR REST API O
 
 ### Generation remains pending or fails repeatedly
 
-Inspect the correct queue, job execution history, and Application Insights logs. Each worker takes one message with six hours of visibility and the job allows one concurrent execution, so a technical failure may wait for visibility expiry before a retry. The fifth dequeue deletes the failed message after logging it. The provisioned poison queues are not currently populated by the workers.
+Inspect the correct Service Bus queue, its dead-letter subqueue, job execution history, and Application Insights logs. Each worker receives one message under a five-minute PeekLock and renews the lock every two minutes while processing. On a retryable failure it abandons the message immediately; the fifth failed delivery is dead-lettered. KEDA can run up to `GENERATION_JOB_MAX_EXECUTIONS` workers for each queue.
 
 Check Cosmos status together with queue submission logs: persistence and enqueue are separate operations. A board can remain `Pending` if enqueue fails after persistence. Chapter prose/images are not queued. For a chapter image failure, correlate the API request with its dependency in Application Insights: the dependency path must be `/mai/v1/images/generations`; the API persists `ImageStatus=Failed` and returns sanitized `502` problem details without the prompt or provider response body.
 

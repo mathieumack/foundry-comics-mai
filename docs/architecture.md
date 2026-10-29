@@ -53,7 +53,8 @@ flowchart TB
     API --> PE
     BoardJob --> PE
     PlanJob --> PE
-    PE --> Storage[Storage - blobs and queues]
+    PE --> Storage[Storage - blobs]
+    PE --> ServiceBus[Service Bus Premium - queues]
     PE --> Cosmos[Cosmos DB]
     PE --> Foundry[Microsoft Foundry and MAI deployments]
     PE --> Search[AI Search - provisioned dependency]
@@ -135,7 +136,7 @@ Both image paths save private artifacts in `generations`. Chapter regeneration o
 
 ### Notification delivery
 
-The board job writes owner-scoped contracts to `panel-generation-started` and `panel-generation-completed`. Container Apps Jobs do not host managed Dapr sidecars. The API's sidecar consumes those queues through managed-identity Storage Queue input bindings, calls the notification controller, and sends through the Azure SignalR output binding using the owner ID in `user` metadata.
+The board job writes owner-scoped contracts to the Service Bus `panel-generation-started` and `panel-generation-completed` queues. Container Apps Jobs do not host managed Dapr sidecars. The API's sidecar consumes those queues through managed-identity Service Bus input bindings, calls the notification controller, and sends through the Azure SignalR output binding using the owner ID in `user` metadata.
 
 Messages target the ASP.NET-derived `notificationhub` hub, not a broadcast/group. Web negotiates with its API-scoped Entra token and refreshes after completion events. Independent Cosmos sessions mean an event can precede visibility of the latest artifact/state; Web uses bounded retries. Events are hints, not the durable status record.
 
@@ -243,9 +244,10 @@ After storage succeeds, the API deletes generation documents, exclusive referenc
 | `book-plan-jobs` | API | Book-plan job. |
 | `panel-generation-started` | Board job | API Dapr input binding. |
 | `panel-generation-completed` | Board job | API Dapr input binding. |
-| `generation-jobs-poison`, `book-plan-jobs-poison` | Provisioned only | No implemented worker dead-letter transfer. |
 
-Each job receives one message with six-hour visibility. Bicep configures a six-hour replica timeout, no replica-level retries, 30-second polling, and at most one execution per job. The two jobs run independently. A failed message remains invisible until the visibility timeout expires; after the fifth dequeue the worker logs and deletes it. Neither worker currently transfers failed messages to the provisioned poison queues. Do not rely on those queues for recovery/audit.
+Each job receives one Service Bus message using PeekLock. The five-minute lock is renewed every two minutes while generation runs. Success completes the message, cancellation abandons it, and isolated failures are abandoned for immediate redelivery; the fifth failed delivery is moved to the queue's built-in dead-letter subqueue. Bicep configures a six-hour replica timeout, no replica-level retries, 30-second polling, and a configurable maximum of concurrent executions per job. The two jobs scale independently.
+
+All four queues require duplicate detection. API job messages and panel notifications use stable business-derived message IDs, reducing duplicate delivery during a ten-minute detection window. Settlement and existing persistence checks still provide at-least-once rather than exactly-once processing.
 
 Board redelivery skips completed or canceled boards and reuses completed panels with existing PNGs; missing PNGs are regenerated. Book planning skips completed plans and obsolete request IDs. Both workers stop when the project has a deletion marker. These safeguards do not guarantee exactly-once execution.
 
@@ -296,10 +298,10 @@ Bicep injects backend environment variables; double underscores map to .NET conf
 | `AZURE_CLIENT_ID` | User-assigned managed identity selection. |
 | `Foundry__Endpoint`, `Foundry__PromptModel`, `Foundry__ImageModel`, `Foundry__ImageSize` | Endpoint, deployments, square image size (`1024`). |
 | `CosmosDb__Endpoint`, `CosmosDb__DatabaseName` | Cosmos endpoint and `core` database. |
-| `StorageAccount__BlobsEndpoint`, `StorageAccount__QueuesEndpoint` | Storage data-plane endpoints. |
-| `Storage__JobsQueueName` | Board queue in API; job-specific trigger queue in workers. |
-| `Storage__BookPlanJobsQueueName` | Dedicated plan queue in API. |
-| `Storage__PoisonQueueName` | Injected in jobs but not used for dead-letter transfer. |
+| `StorageAccount__BlobsEndpoint` | Blob Storage data-plane endpoint. |
+| `ServiceBus__FullyQualifiedNamespace` | Private Service Bus namespace endpoint used with managed identity. |
+| `ServiceBus__JobsQueueName` | Board queue in API; job-specific trigger queue in workers. |
+| `ServiceBus__BookPlanJobsQueueName` | Dedicated plan queue in API. |
 | `SignalR__ConnectionString` | Identity-based configuration (`AuthType=azure.msi`), not an access-key secret. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Environment-specific telemetry. |
 | Web `ApiBaseUrl`, `AzureAd` | Generated API origin, Entra authority/client, and token scope. |
@@ -308,7 +310,7 @@ The frontend hook requires `SERVICE_API_URI`, `AZURE_TENANT_ID`, `AZURE_ENTRA_CL
 
 Chat completions retain the configured account endpoint under `/openai/v1/` with the Azure AI token scope. Text-only image generation normalizes an account host ending in `.cognitiveservices.azure.com` to `.services.ai.azure.com`, posts `model`, `prompt`, `width`, and `height` to `/mai/v1/images/generations`, and requests the `https://cognitiveservices.azure.com/.default` scope. The response image is decoded from `data[].b64_json`.
 
-All projects target .NET 10. Main integrations include Agent Framework/OpenAI, Azure Identity/Storage, EF Core Cosmos, Azure Monitor OpenTelemetry, Dapr/SignalR, ImageSharp, and Radzen. Exact versions are defined by project package references; MIT does not relicense dependencies.
+All projects target .NET 10. Main integrations include Agent Framework/OpenAI, Azure Identity/Storage/Service Bus, EF Core Cosmos, Azure Monitor OpenTelemetry, Dapr/SignalR, ImageSharp, and Radzen. Exact versions are defined by project package references; MIT does not relicense dependencies.
 
 ## Foundry models
 

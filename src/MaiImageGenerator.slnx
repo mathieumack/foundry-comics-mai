@@ -10,6 +10,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="MaiImageGenerator.Tests/MaiImageGenerator.Tests.csproj" />
-    <Project Path="../tests/MaiImageGenerator.Tests/MaiImageGenerator.Tests.csproj" />
+    <Project Path="../tests/MaiImageGenerator.Tests/MaiImageGenerator.Main.Tests.csproj" />
   </Folder>
 </Solution>

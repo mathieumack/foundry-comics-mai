@@ -37,7 +37,7 @@ The default primary location is `swedencentral`. Static Web Apps is explicitly p
 
 - `MAI-Thinking-1`, version `2026-06-01`, with `GlobalStandard` capacity 500.
 - `MAI-Image-2.5-Pro`, version `2026-06-19`, with `GlobalStandard` capacity 2.
-- Azure AI Search Standard, Azure SignalR Service Standard, Cosmos DB, Container Apps, Container Registry Premium, and the required private endpoint types.
+- Azure AI Search Standard, Azure SignalR Service Standard, Azure Service Bus Premium, Cosmos DB, Container Apps, Container Registry Premium, and the required private endpoint types. Service Bus Premium is required because this deployment disables public access and uses a private endpoint.
 
 Catalog availability does not reserve capacity. Confirm model quota separately in Microsoft Foundry or through your Azure quota process. If a model version or capacity is unavailable, update and validate the Bicep model definitions before provisioning.
 
@@ -54,7 +54,7 @@ For automation, use the object ID of the deployment service principal or workloa
 
 ## Cost and production readiness
 
-The environment creates billable AI model deployments, AI Search Standard, SignalR Service Standard, Container Registry Premium, networking, storage, Cosmos DB, monitoring, and two event-driven Container Apps Jobs: one for board generation and one for book-plan generation. Review current Azure pricing and quotas before deployment.
+The environment creates billable AI model deployments, AI Search Standard, SignalR Service Standard, Service Bus Premium, Container Registry Premium, networking, storage, Cosmos DB, monitoring, and two event-driven Container Apps Jobs: one for board generation and one for book-plan generation. Review current Azure pricing and quotas before deployment.
 
 Create a budget and cost alerts, use non-sensitive training inputs, and plan environment teardown. Event-driven jobs can scale to zero, but that does not make the complete environment free while idle. AI Search and the Foundry capability host are provisioned even though current generation flows do not use search retrieval or hosted-agent orchestration.
 

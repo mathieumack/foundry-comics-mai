@@ -48,7 +48,7 @@ Board generation and book planning run in separate queue-driven Container Apps J
 - **Asynchronous boards:** generate panels in a background job, inspect effective prompts, follow owner-targeted progress, and download panels and composed boards.
 - **Illustrated books:** generate an editable plan of 1 to 30 chapters, write prose with prior-chapter context, and generate one illustration per chapter.
 - **Selective retries:** retry book stages independently and preserve saved work; board workers reuse available completed panels on queue redelivery.
-- **Azure integration:** explore managed identities, RBAC, private endpoints, Storage Queues, Dapr, SignalR, telemetry, and Bicep.
+- **Azure integration:** explore managed identities, RBAC, private endpoints, Service Bus, Dapr, SignalR, telemetry, and Bicep.
 
 </details>
 
