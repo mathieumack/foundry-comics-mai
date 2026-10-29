@@ -134,6 +134,15 @@ public sealed class ImageGenerationCoordinator
                 retryDelay = TimeSpan.FromMilliseconds(Math.Min(
                     _retryBaseDelayMilliseconds * Math.Pow(2, attempt),
                     MaximumBackoffMilliseconds));
+                var providerDelay = (exception as IImageGenerationRetryAfter)?.RetryAfter;
+                if (providerDelay is null && isThrottled(exception))
+                {
+                    providerDelay = TimeSpan.FromMinutes(1);
+                }
+                if (providerDelay > retryDelay)
+                {
+                    retryDelay = providerDelay;
+                }
             }
             finally
             {

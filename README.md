@@ -25,7 +25,7 @@ The application uses `MAI-Thinking-1` for story scaffolding, prompt rewriting, b
 
 ![MAI Comic Studio application architecture: authenticated Web, API, two generation jobs, Foundry, Cosmos DB, Blob Storage, and SignalR](docs/images/solution-architecture.svg)
 
-[Architecture and sequence diagrams](docs/architecture.md) | [Editable Excalidraw source](docs/images/solution-architecture.excalidraw)
+[Technical architecture and sequence diagrams](docs/architecture.md) | [Functional workflow](docs/functional-guide.md#functional-overview) | [Editable Excalidraw source](docs/images/solution-architecture.excalidraw)
 
 Board generation and book planning run in separate queue-driven Container Apps Jobs. Chapter prose and chapter illustrations run as explicit API requests, not background jobs. The diagram is an application-flow overview; networking, provisioning-only resources, and trust boundaries are detailed in the architecture guide.
 
@@ -45,7 +45,7 @@ Board generation and book planning run in separate queue-driven Container Apps J
 
 - **Story workshop:** create a comic or book through a guided wizard, then reopen it from a private project library.
 - **Comic authoring:** edit and reorder scenes, select a layout, and reuse project characters with PNG/JPEG reference images.
-- **Asynchronous boards:** generate panels in a background job, inspect effective prompts, follow owner-targeted progress, and download panels and composed boards.
+- **Asynchronous boards:** generate panels in a background job, see each scene and thumbnail as its image arrives, inspect effective prompts, and download panels and composed boards. Owner-targeted SignalR updates are backed by active-generation status polling.
 - **Illustrated books:** generate an editable plan of 1 to 30 chapters, write prose with prior-chapter context, and generate one illustration per chapter.
 - **Selective retries:** retry book stages independently and preserve saved work; board workers reuse available completed panels on queue redelivery.
 - **Azure integration:** explore managed identities, RBAC, private endpoints, Service Bus, Dapr, SignalR, telemetry, and Bicep.

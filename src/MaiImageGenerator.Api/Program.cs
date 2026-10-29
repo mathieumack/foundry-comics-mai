@@ -14,6 +14,7 @@ using MDev.Dotnet.Azure.ContainerApps.Authentication.Extensions;
 using MDev.Dotnet.Azure.StorageAccount.Startup;
 using Microsoft.Agents.AI;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Azure.SignalR;
 using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenAI.Chat;
@@ -105,8 +106,10 @@ builder.Services.AddSingleton<IUserIdProvider>(
 builder.Services.AddSignalR()
     .AddAzureSignalR(options =>
     {
-        options.ConnectionString = builder.Configuration["SignalR:ConnectionString"]
+        var connectionString = builder.Configuration["SignalR:ConnectionString"]
             ?? throw new InvalidOperationException("Configuration 'SignalR:ConnectionString' is required.");
+        var endpoint = new ServiceEndpoint(connectionString);
+        options.Endpoints = [new ServiceEndpoint(new Uri(endpoint.Endpoint), credential)];
         options.ClaimsProvider = context =>
         [
             new Claim(

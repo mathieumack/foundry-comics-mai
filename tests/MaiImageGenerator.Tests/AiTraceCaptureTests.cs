@@ -24,6 +24,26 @@ namespace MaiImageGenerator.Tests;
 
 public sealed class AiTraceCaptureTests
 {
+    [Theory]
+    [InlineData("Retry-After", "90", 90000)]
+    [InlineData("retry-after-ms", "1200", 1200)]
+    public async Task ImageGeneration_PreservesProviderRetryAfter(string header, string value, int milliseconds)
+    {
+        using var httpClient = new HttpClient(new FakeHandler((_, _) =>
+        {
+            var response = JsonResponse("""{"error":{"code":"RateLimitReached"}}""", HttpStatusCode.TooManyRequests);
+            response.Headers.TryAddWithoutValidation(header, value);
+            return Task.FromResult(response);
+        }));
+        var generator = CreateImageGenerator(httpClient);
+
+        var exception = await Assert.ThrowsAsync<FoundryGenerationException>(() =>
+            generator.GenerateAsync("A quiet landscape", null, CancellationToken.None));
+
+        Assert.Equal(429, exception.UpstreamStatusCode);
+        Assert.Equal(TimeSpan.FromMilliseconds(milliseconds), exception.RetryAfter);
+    }
+
     [Fact]
     public void CaptureChatResponse_PreservesIndependentCountsAndDoesNotInferTotal()
     {

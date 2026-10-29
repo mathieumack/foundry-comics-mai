@@ -92,14 +92,16 @@ Avoid sharing the complete environment output in issues because it contains depl
 | --- | --- |
 | Create a comic and submit a template-matching board | A saved version appears; panels and final board become accessible through the API. |
 | Close and reopen the board page | The background execution continues and saved progress can be retrieved. |
-| View panel progress | SignalR targets the signed-in owner, and completion refreshes stored state/artifacts. |
+| Keep the Scenes tab open during generation | Each completed image appears in its scene and layout thumbnail before board completion, without a click or manual refresh; the selected scene is preserved. |
+| View panel progress | Service Bus notification queues reach the API Dapr callbacks, SignalR targets the signed-in owner, and completion refreshes stored state/artifacts. Check per-panel states as well as the board status. |
+| Temporarily interrupt browser live notifications during an active board | Five-second API status refresh continues updating available scenes and retrieves the final board; connection or API errors remain visible. |
 | Create a book and request a short plan | API returns `202`; only the book-plan job consumes it; polling restores the completed plan. |
 | Save chapter edits and generate prose, then an image | The image dependency uses `/mai/v1/images/generations`; the response is `Completed`, and the owner-scoped PNG is retrievable. |
 | Reopen the book | Saved plan, prose, image, and stage errors survive navigation. |
 | Delete a completed comic and book from history | Confirmation is required; the card disappears only after all owner-scoped records and blob versions are removed. |
 | Use a second authorized test account | The first account's project/artifact IDs do not expose its data. |
 
-Use synthetic inputs and a small chapter/panel count to limit cost. Do not deliberately submit harmful material to exercise safety paths. These are manual smoke checks; the repository has no automated end-to-end test suite.
+Use synthetic inputs and a small chapter/panel count to limit cost. Do not deliberately submit harmful material to exercise safety paths. These are manual smoke checks; [automated unit and rendering tests](architecture.md#development-and-validation) exist, but there is no automated live end-to-end test suite. After deploying a new Web build, reload an already-open browser tab once to load its new assemblies before testing.
 
 The storage account intentionally disables blob soft delete so confirmed project deletion is permanent. Blob versioning remains enabled for ordinary overwrites; the deletion API removes every version and snapshot under the project-owned prefixes before deleting Cosmos records. Re-provision the infrastructure before relying on this behavior in an existing environment.
 
@@ -112,6 +114,18 @@ Foundry project connections become owned by the capability host after the first 
 ### Upgrade from Storage Queues
 
 This release is a direct transport cutover; it does not copy messages from the former Storage queues. Before provisioning an existing environment, stop new submissions on the old deployment and wait until `generation-jobs`, `book-plan-jobs`, and both panel-notification queues are empty and their persisted operations are terminal. Do not cut over while a worker is processing a message. After the Service Bus deployment is verified, remove orphaned Storage Queue resources only after confirming they contain no recoverable work; incremental ARM provisioning does not delete resources omitted from the new graph.
+
+Provision the active infrastructure before deploying the migrated application. `azd deploy` replaces application images but does not apply the API environment variables declared by Bicep. An API retaining only the former `Storage__JobsQueueName` settings cannot submit Service Bus work, even if the namespace and workers have already been provisioned.
+
+The API requires `ServiceBus__FullyQualifiedNamespace`, `ServiceBus__JobsQueueName`, and `ServiceBus__BookPlanJobsQueueName`; each worker requires the namespace and its own queue name. The namespace has no checked-in fallback: missing configuration stops startup instead of accepting requests that later fail against a placeholder DNS name. For local development, supply `ServiceBus:FullyQualifiedNamespace` through environment variables or user secrets.
+
+If board submission returns `500` with a Service Bus `Name does not resolve` exception, compare the API revision's environment variables with `infra/modules/hosting/container-app.bicep` before changing private DNS. Restore missing settings from the provisioned namespace, or run the reviewed `azd provision` upgrade, then deploy. Check the persisted board status before resubmitting: queue-submission failures leave a failed board with its original prompts. An operator can re-enqueue that exact board with its original owner/project IDs and board ID as the Service Bus message ID; the existing worker resumes it without recreating the project or losing completed panels. Never replay a completed or currently processing board.
+
+For missing progress notifications, verify that both `panel-generation-started` and `panel-generation-completed` Dapr components use `bindings.azure.servicebusqueues`, not `bindings.azure.storagequeues`. Application deployment does not migrate those components. A growing notification queue with no API callback requests indicates an input-binding problem; callback failures instead require inspecting Dapr and SignalR logs. The SignalR SDK uses the API's Azure Identity credential explicitly for Container Apps managed identity.
+
+Distinguish transport from rendering: successful notification callbacks alone do not prove that the browser received or displayed the event. Verify owner-targeted client reception, then the saved panel status and authenticated image download. The Web callback must trigger a render after each download, not only after board completion. Use the Scenes-tab smoke check and rendering tests above; do not regenerate an already-successful board just to diagnose browser display.
+
+Image retries honor `retry-after-ms`, `x-ms-retry-after-ms`, and `Retry-After` (seconds or HTTP date). The provider delay is a minimum and is not truncated by the ordinary 30-second exponential-backoff cap. HTTP `429` without a valid delay waits at least one minute before retrying. Retries remain bounded by `Foundry:ImageRetryCount` and cancellation; reduce image parallelism when quota remains constrained. A completed board can contain placeholder panels after individual failures: inspect every panel status, not only the board status, before declaring a generation successful.
 
 ## Configure GitHub Actions
 

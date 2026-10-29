@@ -28,6 +28,8 @@ The authenticated root route and `/projects` show the creative workshop/library.
 
 The comic workspace retains project and board routes, displays one selected scene beside a template-aware preview, and manages shared characters/references through project endpoints. Generated versions, per-panel SignalR progress, bounded status refresh retries, partial failures, effective prompt inspection, and PNG downloads remain available. `/boards/new` preserves free-form generation; legacy `/?generationId=...` links redirect there.
 
+Each panel-completion notification refreshes saved progress and explicitly triggers a Blazor render as soon as an individual image is downloaded. The scenes tab updates both the selected illustration and the layout thumbnails without waiting for other image downloads or final board composition; the selected scene remains unchanged.
+
 Books use a chapter navigator and active editor, explicit save, plan polling, browser-coordinated generate-missing, and independent prose/image states. Navigation guards warn about unsaved edits. Chapter writing and illustration require keeping the page open while API operations complete.
 
 The shell uses CSS theme tokens and Radzen components. Light/dark mode defaults to browser preference; only the theme choice is stored locally. Library artwork identifies the format, not a generated cover. The [UX design](ux-design.md) and prototype record design rationale, not an additional deployment surface.
@@ -59,6 +61,13 @@ flowchart TB
     PE --> Foundry[Microsoft Foundry and MAI deployments]
     PE --> Search[AI Search - provisioned dependency]
     Dapr -->|Managed identity output binding| SignalR
+    API -->|Submit board and book-plan messages| ServiceBus
+    ServiceBus -->|generation-jobs - KEDA and PeekLock| BoardJob
+    ServiceBus -->|book-plan-jobs - KEDA and PeekLock| PlanJob
+    BoardJob -->|panel-generation-started and completed| ServiceBus
+    ServiceBus -->|Managed identity input bindings| Dapr
+    Dapr -->|Internal notification callbacks| API
+    Browser -.->|Status and image reads; active refresh every 5 s| API
     ACR[Container Registry] --> API
     ACR --> BoardJob
     ACR --> PlanJob
@@ -71,6 +80,8 @@ The browser runs Blazor and calls the API directly; Static Web Apps is not an AP
 
 SignalR runs in Default mode: the API hosts the server-push-only hub while the service handles client connections. Negotiation binds the authenticated user's identifier to the connection. Static Web Apps, the authenticated API, and SignalR remain public entry points.
 
+The API supplies its shared Azure Identity credential explicitly to the SignalR SDK, so Container Apps managed-identity authentication uses the platform identity endpoint rather than VM IMDS. While a board is pending or processing, the editor also reloads persisted status every five seconds. This complements push delivery, recovers missed events, and retrieves the assembled board after the last panel completes.
+
 ## Generation sequence
 
 ```mermaid
@@ -79,11 +90,13 @@ sequenceDiagram
     participant Web as Blazor
     participant API
     participant DB as Cosmos DB
-    participant Queue as Board queue
+    participant Queue as Service Bus board queue
     participant Job as Board job
     participant MAI as Foundry MAI models
     participant Blob
-    participant Push as API Dapr and SignalR
+    participant Events as Service Bus panel event queues
+    participant Dapr as API Dapr sidecar and callbacks
+    participant SignalR as Azure SignalR
     opt Scaffold from a story
         User->>Web: Describe story
         Web->>API: Request scaffold with Entra token
@@ -102,22 +115,37 @@ sequenceDiagram
     API-->>Web: Return saved board, not generated output
     Queue->>Job: Deliver work
     Job->>DB: Resolve project and mark Processing
-    par Each panel within the configured concurrency limit
+    loop Prepare panel prompts and references
         opt Rewrite enabled
             Job->>MAI: Rewrite scene prompt
         end
         Job->>Blob: Read selected character references
-        Job->>Push: Enqueue panel-started notification
+    end
+    Note over Web,API: Also refresh status every 5 s while Pending or Processing
+    par Each prepared image within the configured concurrency limit
+        Job->>Events: Enqueue panel-started notification
         Job->>MAI: Generate text-only or reference-guided image
+        opt Transient failure and retries remain
+            MAI-->>Job: Failure and optional Retry-After
+            Note over Job,MAI: Honor provider delay, HTTP 429 without one waits at least 60 s
+            Job->>MAI: Retry image request
+        end
         alt Image available
             Job->>Blob: Save panel PNG
             Job->>DB: Save Completed panel and path
-        else Content safety rejection
+        else Permanent rejection or exhausted image retries
             Job->>DB: Save Failed panel and error
         end
-        Job->>Push: Enqueue panel-completed notification
-        Push-->>Web: Notify owning user
+        Job->>Events: Enqueue panel-completed notification
+        Events->>Dapr: Deliver event through Service Bus input binding
+        Dapr->>SignalR: Output binding with ownerId as user
+        SignalR-->>Web: Notify owning user
         Web->>API: Refresh saved state and available artifacts
+        API-->>Web: Status and available private image streams
+        Web->>Web: Render each downloaded scene and thumbnail
+    end
+    loop Every 5 seconds while final composition is still Processing
+        Web->>API: Refresh authoritative status even if events were missed
     end
     Job->>Blob: Save composed board with placeholders if needed
     Job->>DB: Mark board Completed
@@ -153,7 +181,7 @@ Request history describes the model calls, not authorship of subsequent manual e
 
 The board job writes owner-scoped contracts to the Service Bus `panel-generation-started` and `panel-generation-completed` queues. Container Apps Jobs do not host managed Dapr sidecars. The API's sidecar consumes those queues through managed-identity Service Bus input bindings, calls the notification controller, and sends through the Azure SignalR output binding using the owner ID in `user` metadata.
 
-Messages target the ASP.NET-derived `notificationhub` hub, not a broadcast/group. Web negotiates with its API-scoped Entra token and refreshes after completion events. Independent Cosmos sessions mean an event can precede visibility of the latest artifact/state; Web uses bounded retries. Events are hints, not the durable status record.
+Messages target the ASP.NET-derived `notificationhub` hub, not a broadcast/group. Web negotiates at `/hubs/notifications` with its API-scoped Entra token and refreshes after completion events. Independent Cosmos sessions mean an event can precede visibility of the latest artifact/state; Web uses bounded retries. The callback explicitly requests a Blazor render after each image download and after the status refresh, so the scenes tab does not wait for final composition or another UI event. Five-second polling continues while the generation is active, including after the last panel event until composition completes. Events are hints, not the durable status record.
 
 ## Book generation
 
@@ -268,7 +296,9 @@ Board redelivery skips completed or canceled boards and reuses completed panels 
 
 Generation states are `Pending`, `Processing`, `Completed`, `Failed`, and `Canceled`; panel states omit `Canceled`. There is no cancellation API. Chapter prose and image stages have separate states/errors. Foreground cancellation resets the affected stage to `Pending` when its handler runs; abrupt process loss can leave `Processing` requiring an explicit retry.
 
-Cosmos persistence and enqueue are separate operations, not a transaction/outbox. Book-plan enqueue failure records `Failed`; board enqueue failure can leave a persisted `Pending` record. Diagnose stuck work using both durable metadata and queue/job telemetry.
+Cosmos persistence and enqueue are separate operations, not a transaction/outbox. Both book-plan and board enqueue failures attempt to persist `Failed`; the board error is `The generation could not be queued.` A process loss or a failed failure-checkpoint write can still leave stale status. Diagnose stuck work using both durable metadata and queue/job telemetry.
+
+Image-provider retries are separate from Service Bus delivery retries. Both foreground chapter illustrations and queued panel images propagate provider retry headers through their sanitized exceptions to the shared coordinator. The retry delay is the greater of exponential backoff (1-second base, capped at 30 seconds by default) and a valid provider delay. Supported headers, in precedence order, are `retry-after-ms`, `x-ms-retry-after-ms`, and `Retry-After` (seconds or HTTP date); HTTP `429` without a valid delay waits at least one minute. Three retries are allowed by default, cancellation interrupts waiting, and permanent rejections are not retried. Exhausted panel retries produce panel-level errors/placeholders, not automatic redelivery of an otherwise completed board.
 
 ## Identity and secrets
 
@@ -312,12 +342,14 @@ Bicep injects backend environment variables; double underscores map to .NET conf
 | --- | --- |
 | `AZURE_CLIENT_ID` | User-assigned managed identity selection. |
 | `Foundry__Endpoint`, `Foundry__PromptModel`, `Foundry__ImageModel`, `Foundry__ImageSize` | Endpoint, deployments, square image size (`1024`). |
+| `Foundry__MaxParallelImages` | Per-batch image concurrency (1 to 16, default 3); Bicep maps `IMAGE_GENERATION_MAX_PARALLELISM`. |
+| `Foundry__ImageRetryCount`, `Foundry__ImageRetryBaseDelayMilliseconds` | Image retries (0 to 10, default 3) and exponential-backoff base (1 to 30,000 ms, default 1,000). Provider delays can exceed the 30-second exponential cap. |
 | `CosmosDb__Endpoint`, `CosmosDb__DatabaseName` | Cosmos endpoint and `core` database. |
 | `StorageAccount__BlobsEndpoint` | Blob Storage data-plane endpoint. |
-| `ServiceBus__FullyQualifiedNamespace` | Private Service Bus namespace endpoint used with managed identity. |
+| `ServiceBus__FullyQualifiedNamespace` | Required Service Bus namespace hostname used with managed identity; no checked-in namespace fallback. |
 | `ServiceBus__JobsQueueName` | Board queue in API; job-specific trigger queue in workers. |
 | `ServiceBus__BookPlanJobsQueueName` | Dedicated plan queue in API. |
-| `SignalR__ConnectionString` | Identity-based configuration (`AuthType=azure.msi`), not an access-key secret. |
+| `SignalR__ConnectionString` | Identity-based endpoint configuration (`AuthType=azure.msi`), not an access-key secret. The API parses the endpoint and supplies its Azure Identity credential explicitly to the SDK. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Environment-specific telemetry. |
 | Web `ApiBaseUrl`, `AzureAd` | Generated API origin, Entra authority/client, and token scope. |
 
@@ -359,4 +391,11 @@ az bicep build --file .\infra\main.bicep --stdout > $null
 azd show --output json
 ```
 
-There is no automated test project or complete local Azure-service emulator setup. A build does not validate live quota, private DNS, Entra permissions, or generation. Use [deployment smoke checks](deployment.md#5-verify) in an authorized training environment. Do not deploy or remove resources merely to validate documentation.
+Two xUnit/VSTest projects are included in the solution: [`src/MaiImageGenerator.Tests`](../src/MaiImageGenerator.Tests) covers shared generation coordination, retry headers and image-generation leases; [`tests/MaiImageGenerator.Tests`](../tests/MaiImageGenerator.Tests) covers API/data workflows, trace capture and UI rendering. For focused regression checks:
+
+```powershell
+dotnet test .\src\MaiImageGenerator.Tests\MaiImageGenerator.Tests.csproj --filter "FullyQualifiedName~ImageGenerationCoordinatorTests|FullyQualifiedName~ImageGenerationRetryTests"
+dotnet test .\tests\MaiImageGenerator.Tests\MaiImageGenerator.Main.Tests.csproj --filter "FullyQualifiedName~SceneProgressRenderingTests|FullyQualifiedName~ImageGeneration_PreservesProviderRetryAfter"
+```
+
+The scene-rendering tests exercise the real Razor markup with mocked API responses: a completed image appears while the board is still `Processing`, even while another download remains pending. They do not prove live Entra or SignalR delivery. There is no complete local Azure-service emulator setup or automated live end-to-end suite. A build does not validate live quota, private DNS, Entra permissions, or generation. Use [deployment smoke checks](deployment.md#5-verify) in an authorized training environment. Do not deploy or remove resources merely to validate documentation.

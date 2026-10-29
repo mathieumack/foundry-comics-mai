@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1160" height="900" viewBox="0 0 1160 900" role="img" aria-labelledby="title description">
-  <title id="title">MAI Comic Studio - application architecture</title>
-  <desc id="description">Blazor authenticates with Entra and calls the API. The API calls Foundry for foreground stages and queues separate board and book-plan jobs. Both jobs call Foundry. The API and jobs persist owner-scoped data in Cosmos DB and private Blob Storage. The board job emits progress through the API Dapr sidecar and SignalR to the owning browser. Detailed private networking is documented separately.</desc>
+  <title id="title">MAI Comic Studio - technical application architecture</title>
+  <desc id="description">Blazor authenticates with Entra and calls the API. Service Bus carries separate board and book-plan jobs and panel events. Both jobs and the API call Foundry and persist owner-scoped data in Cosmos DB and private Blob Storage. Dapr Service Bus input bindings and the SignalR output binding deliver per-image updates to the owning browser. Scenes and thumbnails render after each image download; active status refresh runs every five seconds. Image retries honor provider Retry-After. Detailed private networking is documented separately.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 Z" fill="#495057"/>
@@ -8,7 +8,7 @@
   </defs>
   <rect width="1160" height="900" fill="#ffffff"/>
   <g font-family="Segoe UI, Arial, sans-serif" fill="#000000">
-    <text x="40" y="60" font-size="28" font-weight="600">MAI Comic Studio - application architecture</text>
+    <text x="40" y="60" font-size="28" font-weight="600">MAI Comic Studio - technical application architecture</text>
     <text x="40" y="90" font-size="15">Educational exploration of Azure services and MAI models</text>
   </g>
   <g fill="none" stroke="#495057" stroke-width="2" marker-end="url(#arrow)">
@@ -37,7 +37,7 @@
     <text x="160" y="165"><tspan font-weight="600">Blazor WebAssembly</tspan><tspan x="160" dy="28">Static Web Apps</tspan><tspan x="160" dy="28">Entra sign-in</tspan></text>
     <text x="540" y="165"><tspan font-weight="600">.NET API</tspan><tspan x="540" dy="28">Owner validation / persistence</tspan><tspan x="540" dy="28">Foreground chapter stages</tspan></text>
     <text x="960" y="165"><tspan font-weight="600">Microsoft Foundry</tspan><tspan x="960" dy="28">MAI-Thinking-1</tspan><tspan x="960" dy="28">MAI-Image-2.5-Pro</tspan></text>
-    <text x="160" y="445"><tspan font-weight="600">Dapr + Azure SignalR</tspan><tspan x="160" dy="28">Owner-targeted progress</tspan><tspan x="160" dy="28">Dapr runs with API</tspan></text>
+    <text x="160" y="445"><tspan font-weight="600">Dapr + Azure SignalR</tspan><tspan x="160" dy="28">Service Bus input bindings</tspan><tspan x="160" dy="28">Owner-targeted progress</tspan></text>
     <text x="540" y="445"><tspan font-weight="600">Board generation job</tspan><tspan x="540" dy="28">Queue: generation-jobs</tspan><tspan x="540" dy="28">Panels + board composition</tspan></text>
     <text x="960" y="445"><tspan font-weight="600">Book plan generation job</tspan><tspan x="960" dy="28">Queue: book-plan-jobs</tspan><tspan x="960" dy="28">Structured chapter plan</tspan></text>
     <text x="760" y="735"><tspan font-weight="600">Cosmos DB + private Blob Storage</tspan><tspan x="760" dy="30">Owner-scoped metadata, reference images and generated PNGs</tspan></text>
@@ -45,15 +45,17 @@
   <g font-family="Segoe UI, Arial, sans-serif" font-size="13" fill="#000000">
     <text x="298" y="168">API token</text>
     <text x="690" y="168">Model calls</text>
-    <text x="430" y="350">Board queue</text>
-    <text x="815" y="310">Book plan queue</text>
+    <text x="430" y="325">Service Bus<tspan x="430" dy="20">Board queue</tspan></text>
+    <text x="815" y="290">Service Bus<tspan x="815" dy="20">Book plan queue</tspan></text>
     <text x="750" y="365">Panels</text>
     <text x="1000" y="350">Planning</text>
-    <text x="285" y="450">Events</text>
-    <text x="50" y="330">User progress</text>
+    <text x="285" y="428">Service Bus<tspan x="285" dy="20">Panel events</tspan></text>
+    <text x="45" y="310">Per-image<tspan x="45" dy="20">progress</tspan></text>
+    <text x="40" y="585">Scenes + thumbnails update<tspan x="40" dy="22">after each image download.</tspan><tspan x="40" dy="22">Active API refresh: every 5 s.</tspan></text>
     <text x="350" y="650">Persist</text>
     <text x="550" y="610">Metadata + PNGs</text>
     <text x="970" y="610">Plan metadata</text>
-    <text x="40" y="850">Application flows only. Private networking and provisioning-only resources: see the architecture guide.</text>
+    <text x="40" y="835">Image retries honor provider Retry-After; HTTP 429 without a delay waits at least 60 s.</text>
+    <text x="40" y="870">Application flows only. Private networking and provisioning-only resources: see the architecture guide.</text>
   </g>
 </svg>

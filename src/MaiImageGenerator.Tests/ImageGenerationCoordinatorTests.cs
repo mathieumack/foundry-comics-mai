@@ -108,6 +108,53 @@ public sealed class ImageGenerationCoordinatorTests
     }
 
     [Fact]
+    public async Task ExecuteWithRetryAsync_HonorsProviderDelay()
+    {
+        var coordinator = CreateCoordinator(retryCount: 1);
+        var attempts = 0;
+        var stopwatch = Stopwatch.StartNew();
+
+        var result = await coordinator.ExecuteWithRetryAsync(
+            "test",
+            _ => Interlocked.Increment(ref attempts) == 1
+                ? Task.FromException<int>(new RetryAfterException(TimeSpan.FromMilliseconds(150)))
+                : Task.FromResult(42),
+            _ => true,
+            _ => true,
+            CancellationToken.None);
+
+        Assert.Equal(42, result);
+        Assert.Equal(2, attempts);
+        Assert.True(stopwatch.Elapsed >= TimeSpan.FromMilliseconds(130));
+    }
+
+    [Fact]
+    public async Task ExecuteWithRetryAsync_ThrottlingWithoutHeaderWaitsAndCanBeCancelled()
+    {
+        var coordinator = CreateCoordinator(retryCount: 3);
+        var attempts = 0;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(150));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.ExecuteWithRetryAsync<int>(
+            "test",
+            _ =>
+            {
+                Interlocked.Increment(ref attempts);
+                throw new HttpRequestException("429");
+            },
+            _ => true,
+            _ => true,
+            cancellation.Token));
+
+        Assert.Equal(1, attempts);
+    }
+
+    private sealed class RetryAfterException(TimeSpan retryAfter) : Exception, IImageGenerationRetryAfter
+    {
+        public TimeSpan? RetryAfter => retryAfter;
+    }
+
+    [Fact]
     public async Task ExecuteWithRetryAsync_DoesNotRetryPermanentFailure()
     {
         var coordinator = CreateCoordinator(retryCount: 3);
