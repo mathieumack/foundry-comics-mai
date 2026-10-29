@@ -128,7 +128,7 @@ The worker requests regular panels at 1024 x 1024 and full-width slots at 1365 x
 ### Image invocation paths
 
 - **Comic panels:** the board job optionally rewrites context and scene text with an Agent Framework chat agent. It resolves current project characters and combines their reference images into a sheet. Text-only generation calls `/mai/v1/images/generations` with integer `width` and `height`; reference-guided generation uses the image-edit SDK operation against `/mai/v1` with multipart `size`. Image requests use the Cognitive Services token scope.
-- **Chapter illustrations:** `BookService` uses the saved image prompt or constructs one from context, title, summary, and continuity. It passes no reference sheet to the API's `FoundryImageGenerator`, whose image SDK client uses `/openai/v1/` and requests 1024 x 1024. This is distinct from the board client; do not assume a single image endpoint or request shape.
+- **Chapter illustrations:** `BookService` uses the saved image prompt or constructs one from context, title, summary, and continuity. It passes no reference sheet to the API's `FoundryImageGenerator`, which calls `/mai/v1/images/generations` with integer `width` and `height` for a 1024 x 1024 image.
 - **Text:** API/job chat agents use `/openai/v1/` with the `https://ai.azure.com/.default` token scope.
 
 Both image paths save private artifacts in `generations`. Chapter regeneration overwrites a stable image path; a new comic board gets a new generation ID.
@@ -179,7 +179,7 @@ sequenceDiagram
     opt Explicit illustration action
         Web->>API: Generate selected chapter image
         API->>DB: Save image prompt and Processing state
-        API->>Image: Generate one image without references
+        API->>Image: POST /mai/v1/images/generations without references
         API->>Blob: Save stable owner-scoped chapter PNG
         API->>DB: Save image reference or independent error
         API-->>Web: Saved stage result
@@ -259,10 +259,10 @@ Paths are relative to the API origin; IDs are server-issued. User-facing stored-
 | `/api/projects/{projectId}/book/plan` | `GET` reads; `PUT` saves chapter edits/prose. |
 | `/api/projects/{projectId}/book/plan/generate` | `POST` queues planning (`202`); poll the plan route. |
 | `/api/projects/{projectId}/book/chapters/{chapterId}/prose/generate` | `POST` runs foreground prose generation. |
-| `/api/projects/{projectId}/book/chapters/{chapterId}/image/generate` | `POST` runs foreground illustration; `GET` on sibling `/image` streams it. |
+| `/api/projects/{projectId}/book/chapters/{chapterId}/image/generate` | `POST` runs foreground illustration; provider failures return `502`; `GET` on sibling `/image` streams it. |
 | `/hubs/notifications` | Authenticated SignalR negotiation/connection. |
 
-Invalid input normally returns `400` problem details, missing identity `401`, and missing owner-scoped records `404`. A successful transport response does not prove a chapter stage succeeded: inspect `ProseStatus`/`ImageStatus` and errors. Internal Dapr callbacks use `/panel-generation-started` and `/panel-generation-completed`, not browser submission APIs.
+Invalid input normally returns `400` problem details, missing identity `401`, and missing owner-scoped records `404`. A chapter image provider failure is persisted as `ImageStatus=Failed`, logged without the prompt or provider body, and returned as sanitized `502` problem details. Inspect the stage status and error for foreground prose results. Internal Dapr callbacks use `/panel-generation-started` and `/panel-generation-completed`, not browser submission APIs.
 
 ## Configuration and dependencies
 
@@ -282,6 +282,8 @@ Bicep injects backend environment variables; double underscores map to .NET conf
 | Web `ApiBaseUrl`, `AzureAd` | Generated API origin, Entra authority/client, and token scope. |
 
 The frontend hook requires `SERVICE_API_URI`, `AZURE_TENANT_ID`, `AZURE_ENTRA_CLIENT_ID`, and `AZURE_ENTRA_API_SCOPE`. Client identifiers are public configuration, not credentials, but generated values must not be committed. Keep checked-in appsettings neutral.
+
+Chat completions retain the configured account endpoint under `/openai/v1/` with the Azure AI token scope. Text-only image generation normalizes an account host ending in `.cognitiveservices.azure.com` to `.services.ai.azure.com`, posts `model`, `prompt`, `width`, and `height` to `/mai/v1/images/generations`, and requests the `https://cognitiveservices.azure.com/.default` scope. The response image is decoded from `data[].b64_json`.
 
 All projects target .NET 10. Main integrations include Agent Framework/OpenAI, Azure Identity/Storage, EF Core Cosmos, Azure Monitor OpenTelemetry, Dapr/SignalR, ImageSharp, and Radzen. Exact versions are defined by project package references; MIT does not relicense dependencies.
 

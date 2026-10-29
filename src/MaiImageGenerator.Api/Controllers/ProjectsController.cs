@@ -388,6 +388,13 @@ public sealed class ProjectsController(
             {
                 return InvalidBook(exception);
             }
+            catch (FoundryGenerationException exception)
+            {
+                return Problem(
+                    statusCode: StatusCodes.Status502BadGateway,
+                    title: "Chapter image generation failed",
+                    detail: exception.Message);
+            }
         }
 
         [HttpGet("{projectId:guid}/book/chapters/{chapterId}/image")]
