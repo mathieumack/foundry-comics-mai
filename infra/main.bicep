@@ -33,6 +33,16 @@ param generationJobContainerImage string
 @description('Container image for the book plan generation job')
 param bookPlanGenerationJobContainerImage string
 
+@minValue(1)
+@maxValue(16)
+@description('Maximum number of image provider requests per board or book batch')
+param imageGenerationMaxParallelism int = 3
+
+@minValue(1)
+@maxValue(10)
+@description('Maximum concurrent executions for each generation job')
+param generationJobMaxExecutions int = 3
+
 // Generate unique suffix based on resource group
 var suffix = substring(uniqueString(resourceGroup().id, environmentName), 0, 3)
 
@@ -65,9 +75,7 @@ var entraApiAudience = !manageEntraApplication && !empty(existingEntraApiAudienc
 var entraClientId = manageEntraApplication ? entraApiRegistration!.outputs.clientId : existingEntraClientId
 var entraApiScope = '${entraApiAudience}/access_as_user'
 var generationJobsQueueName = 'generation-jobs'
-var generationJobsPoisonQueueName = 'generation-jobs-poison'
 var bookPlanJobsQueueName = 'book-plan-jobs'
-var bookPlanJobsPoisonQueueName = 'book-plan-jobs-poison'
 var panelGenerationStartedQueueName = 'panel-generation-started'
 var panelGenerationCompletedQueueName = 'panel-generation-completed'
 
@@ -158,7 +166,6 @@ module storage 'modules/storage/storage-account.bicep' = {
     enablePrivateEndpoint: true
     privateEndpointSubnetId: vnet.outputs.privateEndpointsSubnetId
     blobPrivateDnsZoneId: privateDnsZones.outputs.blobZoneId
-    queuePrivateDnsZoneId: privateDnsZones.outputs.queueZoneId
     tablePrivateDnsZoneId: privateDnsZones.outputs.tableZoneId
     filePrivateDnsZoneId: privateDnsZones.outputs.fileZoneId
     containers: [
@@ -167,17 +174,31 @@ module storage 'modules/storage/storage-account.bicep' = {
       'generations'
       'references'
     ]
-    queues: [
-      generationJobsQueueName
-      generationJobsPoisonQueueName
-      bookPlanJobsQueueName
-      bookPlanJobsPoisonQueueName
-      panelGenerationStartedQueueName
-      panelGenerationCompletedQueueName
-    ]
+    queues: []
     fileShares: []
     principalId: ''
     principalType: 'ServicePrincipal'
+  }
+}
+
+//=============================================================================
+// MESSAGING
+//=============================================================================
+
+module serviceBus 'modules/messaging/service-bus.bicep' = {
+  name: 'service-bus'
+  params: {
+    name: take('sbns-${environmentName}-${regionalSuffix}', 50)
+    location: location
+    tags: apiTags
+    queueNames: [
+      generationJobsQueueName
+      bookPlanJobsQueueName
+      panelGenerationStartedQueueName
+      panelGenerationCompletedQueueName
+    ]
+    privateEndpointSubnetId: vnet.outputs.privateEndpointsSubnetId
+    privateDnsZoneId: privateDnsZones.outputs.serviceBusZoneId
   }
 }
 
@@ -422,10 +443,11 @@ module apiContainerApp 'modules/hosting/container-app.bicep' = {
     cosmosDbEndpoint: cosmosDb.outputs.cosmosDbEndpoint
     cosmosDbDatabaseName: cosmosDb.outputs.databaseName
     storageAccountBlobEndpoint: storage.outputs.blobEndpoint
-    storageAccountQueueEndpoint: storage.outputs.queueEndpoint
+    serviceBusFullyQualifiedNamespace: serviceBus.outputs.fullyQualifiedNamespace
     jobsQueueName: generationJobsQueueName
     bookPlanJobsQueueName: bookPlanJobsQueueName
     azureFoundryEndpoint: foundry.outputs.foundryEndpoint
+    maxParallelImages: imageGenerationMaxParallelism
     azureAISearchEndpoint: aiSearch.outputs.searchServiceEndpoint
     azureContentUnderstandingEndpoint: 'https://${foundry.outputs.foundryName}.services.ai.azure.com'
     signalREndpoint: signalR.outputs.endpoint
@@ -455,11 +477,12 @@ module boardGenerationJob 'modules/hosting/container-app-job.bicep' = {
     cosmosDbEndpoint: cosmosDb.outputs.cosmosDbEndpoint
     cosmosDbDatabaseName: cosmosDb.outputs.databaseName
     storageBlobEndpoint: storage.outputs.blobEndpoint
-    storageQueueEndpoint: storage.outputs.queueEndpoint
-    storageAccountName: storage.outputs.name
+    serviceBusNamespace: serviceBus.outputs.name
+    serviceBusFullyQualifiedNamespace: serviceBus.outputs.fullyQualifiedNamespace
     jobsQueueName: generationJobsQueueName
-    poisonQueueName: generationJobsPoisonQueueName
     foundryEndpoint: foundry.outputs.foundryEndpoint
+    maxParallelImages: imageGenerationMaxParallelism
+    maxExecutions: generationJobMaxExecutions
     serviceName: 'generationjob'
   }
   dependsOn: [
@@ -482,11 +505,11 @@ module bookPlanGenerationJob 'modules/hosting/container-app-job.bicep' = {
     cosmosDbEndpoint: cosmosDb.outputs.cosmosDbEndpoint
     cosmosDbDatabaseName: cosmosDb.outputs.databaseName
     storageBlobEndpoint: storage.outputs.blobEndpoint
-    storageQueueEndpoint: storage.outputs.queueEndpoint
-    storageAccountName: storage.outputs.name
+    serviceBusNamespace: serviceBus.outputs.name
+    serviceBusFullyQualifiedNamespace: serviceBus.outputs.fullyQualifiedNamespace
     jobsQueueName: bookPlanJobsQueueName
-    poisonQueueName: bookPlanJobsPoisonQueueName
     foundryEndpoint: foundry.outputs.foundryEndpoint
+    maxExecutions: generationJobMaxExecutions
     serviceName: 'bookplanjob'
   }
   dependsOn: [
@@ -494,12 +517,12 @@ module bookPlanGenerationJob 'modules/hosting/container-app-job.bicep' = {
   ]
 }
 
-module panelGenerationStartedBinding 'modules/hosting/dapr-storage-queue-binding.bicep' = {
+module panelGenerationStartedBinding 'modules/hosting/dapr-service-bus-queue-binding.bicep' = {
   name: 'panel-generation-started-binding'
   params: {
     environmentName: containerAppEnv.outputs.name
     name: panelGenerationStartedQueueName
-    storageAccountName: storage.outputs.name
+    fullyQualifiedNamespace: serviceBus.outputs.fullyQualifiedNamespace
     managedIdentityClientId: managedIdentity.outputs.clientId
     scopes: [
       'api'
@@ -511,12 +534,12 @@ module panelGenerationStartedBinding 'modules/hosting/dapr-storage-queue-binding
   ]
 }
 
-module panelGenerationCompletedBinding 'modules/hosting/dapr-storage-queue-binding.bicep' = {
+module panelGenerationCompletedBinding 'modules/hosting/dapr-service-bus-queue-binding.bicep' = {
   name: 'panel-generation-completed-binding'
   params: {
     environmentName: containerAppEnv.outputs.name
     name: panelGenerationCompletedQueueName
-    storageAccountName: storage.outputs.name
+    fullyQualifiedNamespace: serviceBus.outputs.fullyQualifiedNamespace
     managedIdentityClientId: managedIdentity.outputs.clientId
     scopes: [
       'api'
@@ -557,6 +580,7 @@ module roleAssignments 'modules/security/role-assignments.bicep' = {
     cosmosDbAccountName: cosmosDb.outputs.cosmosDbAccountName
     foundryName: foundry.outputs.foundryName
     storageAccountName: storage.outputs.name
+    serviceBusNamespaceName: serviceBus.outputs.name
     aiSearchIdentityPrincipalId: aiSearch.outputs.searchServicePrincipalId
     aiSearchName: aiSearch.outputs.searchServiceName
     containerRegistryName: containerRegistry.outputs.name

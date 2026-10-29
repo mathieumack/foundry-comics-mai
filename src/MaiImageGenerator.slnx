@@ -8,5 +8,8 @@
   <Folder Name="/front/">
     <Project Path="MaiImageGenerator.Web/MaiImageGenerator.Web.csproj" />
   </Folder>
-  <Project Path="../tests/MaiImageGenerator.Tests/MaiImageGenerator.Tests.csproj" />
+  <Folder Name="/tests/">
+    <Project Path="MaiImageGenerator.Tests/MaiImageGenerator.Tests.csproj" />
+    <Project Path="../tests/MaiImageGenerator.Tests/MaiImageGenerator.Main.Tests.csproj" />
+  </Folder>
 </Solution>

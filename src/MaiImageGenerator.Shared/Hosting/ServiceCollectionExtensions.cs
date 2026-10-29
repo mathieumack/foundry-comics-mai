@@ -10,6 +10,7 @@ using Azure.Monitor.OpenTelemetry.Exporter;
 using MaiImageGenerator.Jobs.BoardGeneration.Configuration;
 using MaiImageGenerator.Jobs.BoardGeneration.Hosting;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
+using MaiImageGenerator.Shared.Services;
 using MaiImageGenerator.Shared.Generation;
 using MDev.Dotnet.Azure.CosmosDb.Startup;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion.Internal;
@@ -85,6 +86,8 @@ public static class ServiceCollectionExtensions
             .WithMetrics(metrics =>
             {
                 metrics.SetResourceBuilder(resourceBuilder)
+                       .AddMeter(ImageGenerationCoordinator.MeterName)
+                       .AddMeter(ImageGenerationCoordinator.MeterName)
                        .AddMeter(AiTraceCapture.MeterName)
                        .AddRuntimeInstrumentation();
 

@@ -20,11 +20,17 @@ For GitHub Actions, see [Configure GitHub Actions](#configure-github-actions) af
 ```powershell
 azd env new
 azd env set AZURE_LOCATION swedencentral
+azd env set IMAGE_GENERATION_MAX_PARALLELISM 3
+azd env set GENERATION_JOB_MAX_EXECUTIONS 3
 $principalId = az ad signed-in-user show --query id --output tsv
 azd env set DEPLOYER_PRINCIPAL_ID $principalId
 ```
 
 Choose a short environment name because it contributes to Azure resource names. `AZURE_SUBSCRIPTION_ID` is selected by `azd env new` and stored only in the ignored `.azure` directory.
+
+`IMAGE_GENERATION_MAX_PARALLELISM` bounds image-provider requests within each board or book batch (1 to 16, default 3). Lower it when provider quota is constrained.
+
+`GENERATION_JOB_MAX_EXECUTIONS` bounds concurrent board and book-plan worker executions independently (1 to 10, default 3). The maximum concurrent board image requests is the product of this value and `IMAGE_GENERATION_MAX_PARALLELISM`; tune both values to provider quota.
 
 ## 3. Validate prerequisites
 
@@ -76,7 +82,7 @@ The checked-in production appsettings is only a neutral template. Never replace 
 
 ## 5. Verify
 
-Use `azd env get-values` locally to inspect deployment outputs. Open `SERVICE_WEB_URI` and sign in. Submit a small board and confirm that `generation-jobs` triggers only the board-generation job, panel notifications arrive, the job completes, and artifacts are downloadable. Then generate a book plan and confirm that `book-plan-jobs` triggers only the book-plan-generation job and that the page progresses from pending to completed. Verify that the browser acquires the API scope, the API accepts the token, both jobs use the managed identity, and telemetry reaches Application Insights.
+Use `azd env get-values` locally to inspect deployment outputs. Open `SERVICE_WEB_URI` and sign in. Submit a small board and confirm that the Service Bus `generation-jobs` queue triggers only the board-generation job, panel notifications arrive, the job completes, and artifacts are downloadable. Then generate a book plan and confirm that `book-plan-jobs` triggers only the book-plan-generation job and that the page progresses from pending to completed. Verify that the browser acquires the API scope, the API accepts the token, both jobs use the managed identity, and telemetry reaches Application Insights.
 
 Avoid sharing the complete environment output in issues because it contains deployment-specific identifiers and endpoints.
 
@@ -86,14 +92,16 @@ Avoid sharing the complete environment output in issues because it contains depl
 | --- | --- |
 | Create a comic and submit a template-matching board | A saved version appears; panels and final board become accessible through the API. |
 | Close and reopen the board page | The background execution continues and saved progress can be retrieved. |
-| View panel progress | SignalR targets the signed-in owner, and completion refreshes stored state/artifacts. |
+| Keep the Scenes tab open during generation | Each completed image appears in its scene and layout thumbnail before board completion, without a click or manual refresh; the selected scene is preserved. |
+| View panel progress | Service Bus notification queues reach the API Dapr callbacks, SignalR targets the signed-in owner, and completion refreshes stored state/artifacts. Check per-panel states as well as the board status. |
+| Temporarily interrupt browser live notifications during an active board | Five-second API status refresh continues updating available scenes and retrieves the final board; connection or API errors remain visible. |
 | Create a book and request a short plan | API returns `202`; only the book-plan job consumes it; polling restores the completed plan. |
 | Save chapter edits and generate prose, then an image | The image dependency uses `/mai/v1/images/generations`; the response is `Completed`, and the owner-scoped PNG is retrievable. |
 | Reopen the book | Saved plan, prose, image, and stage errors survive navigation. |
 | Delete a completed comic and book from history | Confirmation is required; the card disappears only after all owner-scoped records and blob versions are removed. |
 | Use a second authorized test account | The first account's project/artifact IDs do not expose its data. |
 
-Use synthetic inputs and a small chapter/panel count to limit cost. Do not deliberately submit harmful material to exercise safety paths. These are manual smoke checks; the repository has no automated end-to-end test suite.
+Use synthetic inputs and a small chapter/panel count to limit cost. Do not deliberately submit harmful material to exercise safety paths. These are manual smoke checks; [automated unit and rendering tests](architecture.md#development-and-validation) exist, but there is no automated live end-to-end test suite. After deploying a new Web build, reload an already-open browser tab once to load its new assemblies before testing.
 
 The storage account intentionally disables blob soft delete so confirmed project deletion is permanent. Blob versioning remains enabled for ordinary overwrites; the deletion API removes every version and snapshot under the project-owned prefixes before deleting Cosmos records. Re-provision the infrastructure before relying on this behavior in an existing environment.
 
@@ -102,6 +110,22 @@ The storage account intentionally disables blob soft delete so confirmed project
 Use `azd deploy` for application-only changes and `azd provision` when infrastructure changes. `azd up` performs both.
 
 Foundry project connections become owned by the capability host after the first deployment. The preprovision hook detects an existing host and skips those immutable resources on subsequent provisions. Do not remove the hook without replacing this behavior.
+
+### Upgrade from Storage Queues
+
+This release is a direct transport cutover; it does not copy messages from the former Storage queues. Before provisioning an existing environment, stop new submissions on the old deployment and wait until `generation-jobs`, `book-plan-jobs`, and both panel-notification queues are empty and their persisted operations are terminal. Do not cut over while a worker is processing a message. After the Service Bus deployment is verified, remove orphaned Storage Queue resources only after confirming they contain no recoverable work; incremental ARM provisioning does not delete resources omitted from the new graph.
+
+Provision the active infrastructure before deploying the migrated application. `azd deploy` replaces application images but does not apply the API environment variables declared by Bicep. An API retaining only the former `Storage__JobsQueueName` settings cannot submit Service Bus work, even if the namespace and workers have already been provisioned.
+
+The API requires `ServiceBus__FullyQualifiedNamespace`, `ServiceBus__JobsQueueName`, and `ServiceBus__BookPlanJobsQueueName`; each worker requires the namespace and its own queue name. The namespace has no checked-in fallback: missing configuration stops startup instead of accepting requests that later fail against a placeholder DNS name. For local development, supply `ServiceBus:FullyQualifiedNamespace` through environment variables or user secrets.
+
+If board submission returns `500` with a Service Bus `Name does not resolve` exception, compare the API revision's environment variables with `infra/modules/hosting/container-app.bicep` before changing private DNS. Restore missing settings from the provisioned namespace, or run the reviewed `azd provision` upgrade, then deploy. Check the persisted board status before resubmitting: queue-submission failures leave a failed board with its original prompts. An operator can re-enqueue that exact board with its original owner/project IDs and board ID as the Service Bus message ID; the existing worker resumes it without recreating the project or losing completed panels. Never replay a completed or currently processing board.
+
+For missing progress notifications, verify that both `panel-generation-started` and `panel-generation-completed` Dapr components use `bindings.azure.servicebusqueues`, not `bindings.azure.storagequeues`. Application deployment does not migrate those components. A growing notification queue with no API callback requests indicates an input-binding problem; callback failures instead require inspecting Dapr and SignalR logs. The SignalR SDK uses the API's Azure Identity credential explicitly for Container Apps managed identity.
+
+Distinguish transport from rendering: successful notification callbacks alone do not prove that the browser received or displayed the event. Verify owner-targeted client reception, then the saved panel status and authenticated image download. The Web callback must trigger a render after each download, not only after board completion. Use the Scenes-tab smoke check and rendering tests above; do not regenerate an already-successful board just to diagnose browser display.
+
+Image retries honor `retry-after-ms`, `x-ms-retry-after-ms`, and `Retry-After` (seconds or HTTP date). The provider delay is a minimum and is not truncated by the ordinary 30-second exponential-backoff cap. HTTP `429` without a valid delay waits at least one minute before retrying. Retries remain bounded by `Foundry:ImageRetryCount` and cancellation; reduce image parallelism when quota remains constrained. A completed board can contain placeholder panels after individual failures: inspect every panel status, not only the board status, before declaring a generation successful.
 
 ## Configure GitHub Actions
 
@@ -216,7 +240,7 @@ Confirm that the API identity has both SignalR App Server and SignalR REST API O
 
 ### Generation remains pending or fails repeatedly
 
-Inspect the correct queue, job execution history, and Application Insights logs. Each worker takes one message with six hours of visibility and the job allows one concurrent execution, so a technical failure may wait for visibility expiry before a retry. The fifth dequeue deletes the failed message after logging it. The provisioned poison queues are not currently populated by the workers.
+Inspect the correct Service Bus queue, its dead-letter subqueue, job execution history, and Application Insights logs. Each worker receives one message under a five-minute PeekLock and renews the lock every two minutes while processing. On a retryable failure it abandons the message immediately; the fifth failed delivery is dead-lettered. KEDA can run up to `GENERATION_JOB_MAX_EXECUTIONS` workers for each queue.
 
 Check Cosmos status together with queue submission logs: persistence and enqueue are separate operations. A board can remain `Pending` if enqueue fails after persistence. Chapter prose/images are not queued. For a chapter image failure, correlate the API request with its dependency in Application Insights: the dependency path must be `/mai/v1/images/generations`; the API persists `ImageStatus=Failed` and returns sanitized `502` problem details without the prompt or provider response body.
 

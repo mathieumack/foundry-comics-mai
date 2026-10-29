@@ -19,8 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/MaiImageGenerator.Api/MaiImageGenerator.Api.csproj" />
-    <ProjectReference Include="../../src/MaiImageGenerator.Web/MaiImageGenerator.Web.csproj" />
+    <ProjectReference Include="..\MaiImageGenerator.Shared\MaiImageGenerator.Shared.csproj" />
   </ItemGroup>
 
 </Project>

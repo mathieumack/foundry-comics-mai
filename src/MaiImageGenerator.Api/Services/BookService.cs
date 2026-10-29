@@ -6,7 +6,9 @@ using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Data.Entities;
 using MaiImageGenerator.Shared.Generation;
 using MaiImageGenerator.Shared.Messages;
+using MaiImageGenerator.Shared.Services;
 using Microsoft.Agents.AI;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenAI.Chat;
@@ -25,6 +27,7 @@ public sealed class BookService
     private readonly IImageGenerator _imageGenerator;
     private readonly BlobContainerClient _container;
     private readonly BookPlanGenerationQueue _generationQueue;
+    private readonly ImageGenerationCoordinator _imageGeneration;
     private readonly ILogger<BookService> _logger;
     private readonly string _promptModel;
     private readonly string _imageModel;
@@ -36,6 +39,7 @@ public sealed class BookService
         IImageGenerator imageGenerator,
         BlobServiceClient blobServiceClient,
         BookPlanGenerationQueue generationQueue,
+        ImageGenerationCoordinator imageGeneration,
         ILogger<BookService> logger)
     {
         _client = client.GetChatClient(options.Value.PromptModel);
@@ -43,6 +47,7 @@ public sealed class BookService
         _imageGenerator = imageGenerator;
         _container = blobServiceClient.GetBlobContainerClient("generations");
         _generationQueue = generationQueue;
+        _imageGeneration = imageGeneration;
         _logger = logger;
         _promptModel = options.Value.PromptModel;
         _imageModel = options.Value.ImageModel;
@@ -54,6 +59,7 @@ public sealed class BookService
         CancellationToken cancellationToken)
     {
         EnsureBook(project);
+        BookImageGenerationLease.EnsureInactive(project);
         if (chapterCount is < 1 or > MaximumChapterCount)
         {
             throw new ArgumentException($"A book plan requires between 1 and {MaximumChapterCount} chapters.");
@@ -65,9 +71,7 @@ public sealed class BookService
         project.BookPlan.Status = GenerationStatus.Pending;
         project.BookPlan.Prompt = null;
         project.BookPlan.Error = null;
-        project.SchemaVersion = 3;
-        project.UpdatedAt = DateTimeOffset.UtcNow;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveAsync(project, cancellationToken);
 
         try
         {
@@ -98,6 +102,7 @@ public sealed class BookService
         CancellationToken cancellationToken)
     {
         EnsureBook(project);
+        BookImageGenerationLease.EnsureInactive(project);
         if (request.Chapters.Count is < 1 or > MaximumChapterCount ||
             request.Chapters.Any(chapter =>
                 string.IsNullOrWhiteSpace(chapter.Title) ||
@@ -137,6 +142,8 @@ public sealed class BookService
                     ImageBlobName = saved?.ImageBlobName,
                     ImageStatus = saved?.ImageStatus ?? GenerationStatus.Pending,
                     ImageError = saved?.ImageError,
+                    ImageGenerationRequestId = saved?.ImageGenerationRequestId,
+                    ImageGenerationStartedAt = saved?.ImageGenerationStartedAt,
                     ProseTraces = saved?.ProseTraces.Select(AiTraceCapture.Clone).ToList() ?? [],
                     ImageTraces = saved?.ImageTraces.Select(AiTraceCapture.Clone).ToList() ?? []
                 };
@@ -147,9 +154,7 @@ public sealed class BookService
         project.BookPlan.Chapters = chapters;
         project.BookPlan.Status = GenerationStatus.Completed;
         project.BookPlan.Error = null;
-        project.SchemaVersion = 3;
-        project.UpdatedAt = DateTimeOffset.UtcNow;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveAsync(project, cancellationToken);
         return ToResponse(project);
     }
 
@@ -164,6 +169,7 @@ public sealed class BookService
         string chapterId,
         CancellationToken cancellationToken)
     {
+        BookImageGenerationLease.EnsureInactive(project);
         var chapter = FindChapter(project, chapterId);
         chapter.ProseStatus = GenerationStatus.Processing;
         chapter.ProseError = null;
@@ -221,54 +227,237 @@ public sealed class BookService
         string chapterId,
         CancellationToken cancellationToken)
     {
+        EnsureBookPlanReady(project);
         var chapter = FindChapter(project, chapterId);
-        chapter.ImageStatus = GenerationStatus.Processing;
-        chapter.ImageError = null;
-        chapter.ImagePrompt = string.IsNullOrWhiteSpace(chapter.ImagePrompt)
-            ? $"Book illustration, no text. {project.Context} Chapter: {chapter.Title}. {chapter.Summary} Continuity: {chapter.Continuity}"
-            : chapter.ImagePrompt.Trim();
-        var trace = new AiGenerationTrace
+        if (BookImageGenerationLease.IsActive(project, DateTimeOffset.UtcNow))
         {
-            Operation = "chapter-image", Model = _imageModel, StartedAt = DateTimeOffset.UtcNow
-        };
-        chapter.ImageTraces.Add(trace);
-        await SaveAsync(project, cancellationToken);
+            return ToResponse(project);
+        }
 
+        return await GenerateImagesCoreAsync(project, [chapter], cancellationToken);
+    }
+
+    public async Task<BookPlanResponse> GenerateRemainingImagesAsync(
+        ProjectDocument project,
+        CancellationToken cancellationToken)
+    {
+        EnsureBook(project);
+        EnsureBookPlanReady(project);
+        if (BookImageGenerationLease.IsActive(project, DateTimeOffset.UtcNow))
+        {
+            return ToResponse(project);
+        }
+
+        var chapters = project.BookPlan?.Chapters
+            .Where(chapter =>
+                chapter.ImageStatus != GenerationStatus.Completed &&
+                !HasActiveImageGenerationLease(chapter))
+            .ToArray() ?? [];
+        return await GenerateImagesCoreAsync(project, chapters, cancellationToken);
+    }
+
+    private async Task<BookPlanResponse> GenerateImagesCoreAsync(
+        ProjectDocument project,
+        IReadOnlyCollection<BookChapter> chapters,
+        CancellationToken cancellationToken)
+    {
+        if (chapters.Count == 0)
+        {
+            return ToResponse(project);
+        }
+
+        var requestId = Guid.NewGuid().ToString("N");
+        var startedAt = DateTimeOffset.UtcNow;
+        using var batchCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        batchCancellation.CancelAfter(BookImageGenerationLease.BatchTimeout);
+        var batchToken = batchCancellation.Token;
+        project.BookPlan!.ImageGenerationRequestId = requestId;
+        project.BookPlan.ImageGenerationStartedAt = startedAt;
+        foreach (var chapter in chapters)
+        {
+            chapter.ImageStatus = GenerationStatus.Processing;
+            chapter.ImageError = null;
+            chapter.ImageGenerationRequestId = requestId;
+            chapter.ImageGenerationStartedAt = startedAt;
+            chapter.ImagePrompt = string.IsNullOrWhiteSpace(chapter.ImagePrompt)
+                ? $"Book illustration, no text. {project.Context} Chapter: {chapter.Title}. {chapter.Summary} Continuity: {chapter.Continuity}"
+                : chapter.ImagePrompt.Trim();
+            chapter.ImageTraces.Add(new AiGenerationTrace
+            {
+                Operation = "chapter-image",
+                Model = _imageModel,
+                StartedAt = startedAt
+            });
+        }
+
+        project.UpdatedAt = DateTimeOffset.UtcNow;
         try
         {
-            var image = await _imageGenerator.GenerateAsync(chapter.ImagePrompt, null, cancellationToken, trace);
-            var blobName = ArtifactPathBuilder.GetGenerationBlobName(
-                project.OwnerId,
-                Guid.Parse(project.Id),
-                $"chapter-{chapter.Id}.png");
-            await _container.GetBlobClient(blobName).UploadAsync(BinaryData.FromBytes(image), overwrite: true, cancellationToken);
-            chapter.ImageBlobName = blobName;
-            chapter.ImageStatus = GenerationStatus.Completed;
+            await _dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (DbUpdateConcurrencyException)
         {
-            chapter.ImageStatus = GenerationStatus.Pending;
-            chapter.ImageError = "Chapter image generation was interrupted and can be retried.";
-            await SaveAsync(project, CancellationToken.None);
-            throw;
-        }
-        catch (Exception exception)
-        {
-            chapter.ImageStatus = GenerationStatus.Failed;
-            chapter.ImageError = "Chapter image generation failed. This image can be retried independently.";
-            await SaveAsync(project, CancellationToken.None);
-            _logger.LogError(
-                "Chapter image generation failed for project {ProjectId}, chapter {ChapterId}; failure type {FailureType}, upstream HTTP status {UpstreamStatusCode}.",
-                project.Id,
-                chapter.Id,
-                exception.GetType().Name,
-                (exception as FoundryGenerationException)?.UpstreamStatusCode);
+            var current = await LoadCurrentProjectAsync(project, cancellationToken);
+            if (current is not null && BookImageGenerationLease.IsActive(current, DateTimeOffset.UtcNow))
+            {
+                return ToResponse(current);
+            }
+
+            if (current?.BookPlan?.Chapters.Any(chapter =>
+                    chapter.ProseStatus == GenerationStatus.Processing) == true)
+            {
+                throw new ArgumentException(
+                    "Chapter prose generation must finish before chapter images can be generated.");
+            }
+
             throw;
         }
 
-        await SaveAsync(project, CancellationToken.None);
+        using var persistenceLock = new SemaphoreSlim(1, 1);
+        try
+        {
+            await _imageGeneration.RunAsync(
+                chapters.Select(chapter => new ChapterImageWorkItem(
+                    chapter,
+                    requestId,
+                    chapter.ImageTraces[^1])).ToArray(),
+                "book-chapter",
+                async (workItem, token) =>
+                {
+                    var chapter = workItem.Chapter;
+                    byte[]? image = null;
+                    string? error = null;
+                    var blobName = ArtifactPathBuilder.GetGenerationBlobName(
+                        project.OwnerId,
+                        Guid.Parse(project.Id),
+                        $"chapter-{chapter.Id}.png");
+                    try
+                    {
+                        image = await _imageGeneration.ExecuteWithRetryAsync(
+                            "book-chapter",
+                            retryToken => _imageGenerator.GenerateAsync(
+                                chapter.ImagePrompt!,
+                                null,
+                                retryToken,
+                                workItem.Trace),
+                            IsTransient,
+                            IsThrottled,
+                            token);
+                        await _container.GetBlobClient(blobName)
+                            .UploadAsync(BinaryData.FromBytes(image), overwrite: true, token);
+                    }
+                    catch (Exception exception) when (
+                        exception is not OperationCanceledException || !token.IsCancellationRequested)
+                    {
+                        error = exception.GetType().Name;
+                    }
+
+                    await persistenceLock.WaitAsync(CancellationToken.None);
+                    try
+                    {
+                        if (!string.Equals(
+                                chapter.ImageGenerationRequestId,
+                                workItem.RequestId,
+                                StringComparison.Ordinal))
+                        {
+                            return;
+                        }
+
+                        if (image is not null && error is null)
+                        {
+                            chapter.ImageBlobName = blobName;
+                            chapter.ImageStatus = GenerationStatus.Completed;
+                            chapter.ImageError = null;
+                        }
+                        else
+                        {
+                            chapter.ImageStatus = GenerationStatus.Failed;
+                            chapter.ImageError = "Chapter image generation failed. This image can be retried independently.";
+                            _logger.LogError(
+                                "Chapter image generation failed for project {ProjectId}, chapter {ChapterId}; failure type {FailureType}.",
+                                project.Id,
+                                chapter.Id,
+                                error);
+                        }
+
+                        chapter.ImageGenerationRequestId = null;
+                        chapter.ImageGenerationStartedAt = null;
+                        await SaveAsync(project, CancellationToken.None);
+                    }
+                    finally
+                    {
+                        persistenceLock.Release();
+                    }
+                },
+                batchToken);
+            project.BookPlan.ImageGenerationRequestId = null;
+            project.BookPlan.ImageGenerationStartedAt = null;
+            await SaveAsync(project, CancellationToken.None);
+        }
+        catch (OperationCanceledException) when (batchToken.IsCancellationRequested)
+        {
+            foreach (var chapter in chapters.Where(chapter =>
+                         chapter.ImageStatus == GenerationStatus.Processing &&
+                         string.Equals(chapter.ImageGenerationRequestId, requestId, StringComparison.Ordinal)))
+            {
+                chapter.ImageStatus = GenerationStatus.Pending;
+                chapter.ImageError = "Chapter image generation was interrupted and can be retried.";
+                chapter.ImageGenerationRequestId = null;
+                chapter.ImageGenerationStartedAt = null;
+            }
+
+            project.BookPlan!.ImageGenerationRequestId = null;
+            project.BookPlan.ImageGenerationStartedAt = null;
+            await SaveAsync(project, CancellationToken.None);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            return ToResponse(project);
+        }
+
         return ToResponse(project);
     }
+
+    private static bool IsTransient(Exception exception) =>
+        exception is TimeoutException ||
+        exception is OperationCanceledException ||
+        exception is HttpRequestException { StatusCode: null } ||
+        exception is HttpRequestException { StatusCode: System.Net.HttpStatusCode.RequestTimeout or
+            System.Net.HttpStatusCode.TooManyRequests } ||
+        exception is HttpRequestException { StatusCode: >= System.Net.HttpStatusCode.InternalServerError } ||
+        exception is FoundryGenerationException { UpstreamStatusCode: 408 or 429 or >= 500 } ||
+        exception is FoundryGenerationException { InnerException: HttpRequestException };
+
+    private static bool IsThrottled(Exception exception) =>
+        exception is FoundryGenerationException { UpstreamStatusCode: 429 } ||
+        exception is HttpRequestException { StatusCode: System.Net.HttpStatusCode.TooManyRequests };
+
+    private static bool HasActiveImageGenerationLease(BookChapter chapter) =>
+        chapter.ImageStatus == GenerationStatus.Processing &&
+        chapter.ImageGenerationRequestId is not null &&
+        chapter.ImageGenerationStartedAt > DateTimeOffset.UtcNow - BookImageGenerationLease.Duration;
+
+    private static void EnsureBookPlanReady(ProjectDocument project)
+    {
+        if (project.BookPlan?.Status is GenerationStatus.Pending or GenerationStatus.Processing)
+        {
+            throw new ArgumentException("The book plan must finish before chapter images can be generated.");
+        }
+
+        if (project.BookPlan?.Chapters.Any(chapter =>
+                chapter.ProseStatus == GenerationStatus.Processing) == true)
+        {
+            throw new ArgumentException(
+                "Chapter prose generation must finish before chapter images can be generated.");
+        }
+    }
+
+    private sealed record ChapterImageWorkItem(
+        BookChapter Chapter,
+        string RequestId,
+        AiGenerationTrace Trace);
 
     public async Task<Stream?> OpenImageAsync(
         ProjectDocument project,
@@ -285,8 +474,32 @@ public sealed class BookService
     {
         project.SchemaVersion = 3;
         project.UpdatedAt = DateTimeOffset.UtcNow;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            var current = await LoadCurrentProjectAsync(project, cancellationToken);
+            if (current is not null && BookImageGenerationLease.IsActive(current, DateTimeOffset.UtcNow))
+            {
+                throw new ArgumentException(
+                    "Chapter images are currently being generated. Retry after the image batch completes.");
+            }
+
+            throw;
+        }
     }
+
+    private Task<ProjectDocument?> LoadCurrentProjectAsync(
+        ProjectDocument project,
+        CancellationToken cancellationToken) =>
+        _dbContext.Projects
+            .AsNoTracking()
+            .WithPartitionKey(project.OwnerId)
+            .SingleOrDefaultAsync(
+                item => item.Id == project.Id && item.OwnerId == project.OwnerId,
+                cancellationToken);
 
     private static void EnsureBook(ProjectDocument project)
     {

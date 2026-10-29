@@ -1,6 +1,8 @@
+using MaiImageGenerator.Shared.Services;
+
 namespace MaiImageGenerator.Api.Services;
 
-public sealed class FoundryGenerationException : Exception
+public sealed class FoundryGenerationException : Exception, IImageGenerationRetryAfter
 {
     public FoundryGenerationException(string message, int? upstreamStatusCode = null)
         : base(message)
@@ -18,4 +20,5 @@ public sealed class FoundryGenerationException : Exception
     }
 
     public int? UpstreamStatusCode { get; }
+    public TimeSpan? RetryAfter { get; init; }
 }

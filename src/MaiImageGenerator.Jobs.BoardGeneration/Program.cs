@@ -1,13 +1,13 @@
 using Azure.Core;
-using Azure.Storage.Queues;
+using Azure.Messaging.ServiceBus;
 using MaiImageGenerator.Api.Configuration;
 using MaiImageGenerator.Jobs.BoardGeneration.Hosting;
 using MaiImageGenerator.Jobs.BoardGeneration.Services;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Messages;
+using MaiImageGenerator.Shared.Services;
 using MDev.Dotnet.AspNetCore.Apis.Extensions;
 using MDev.Dotnet.Azure.CosmosDb.Startup;
-using MDev.Dotnet.Azure.StorageAccount.Settings;
 using MDev.Dotnet.Azure.StorageAccount.Startup;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,7 +19,7 @@ using OpenAI.Chat;
 using OpenAI.Images;
 using System.ClientModel.Primitives;
 
-const int maximumDequeueCount = 5;
+const int maximumDeliveryCount = 5;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -29,17 +29,21 @@ var credential = builder.Services.GetManagedIdentity(builder.Configuration);
 // Register configuration
 var customMeters = new List<string>
 {
+    ImageGenerationCoordinator.MeterName
 };
 
 builder.RegisterConfiguration()
         .RegisterCosmosDb<MaiImageGeneratorDbContext>(credential)
         .RegisterAzureStorage(credential)
-        .BindConfiguration<FoundryOptions>(FoundryOptions.SectionName)
-        .BindConfiguration(out StorageAccountSettings storageSettings, StorageAccountSettings.SectionName);
+        .BindConfiguration<FoundryOptions>(FoundryOptions.SectionName);
 
 builder.Services.AddLogging(builder.Configuration, "BoardGenerationJob");
 
 builder.Services.AddSingleton<TokenCredential>(credential);
+var serviceBusNamespace = builder.Configuration["ServiceBus:FullyQualifiedNamespace"]
+    ?? throw new InvalidOperationException("Configuration 'ServiceBus:FullyQualifiedNamespace' is required.");
+var serviceBusClient = new ServiceBusClient(serviceBusNamespace, credential);
+builder.Services.AddSingleton(serviceBusClient);
 builder.Services.AddSingleton(serviceProvider =>
 {
     var options = serviceProvider.GetRequiredService<IOptions<FoundryOptions>>().Value;
@@ -75,22 +79,12 @@ builder.Services.AddSingleton<ImageClient>(serviceProvider =>
     return client.GetImageClient(options.ImageModel);
 });
 builder.Services.AddHttpClient<FoundryImageClient>(client => client.Timeout = TimeSpan.FromMinutes(10));
+builder.Services.AddSingleton(serviceProvider =>
+    new ImageGenerationCoordinator(serviceProvider.GetRequiredService<IOptions<FoundryOptions>>().Value));
 
-var notificationQueueOptions = new QueueClientOptions
-{
-    MessageEncoding = storageSettings.QueueMessagesEncodeBase64
-        ? QueueMessageEncoding.Base64
-        : QueueMessageEncoding.None
-};
 builder.Services.AddSingleton(new PanelGenerationNotifier(
-    new QueueClient(
-        new Uri($"{storageSettings.QueuesEndpoint.TrimEnd('/')}/{PanelGenerationNotifications.Started}"),
-        credential,
-        notificationQueueOptions),
-    new QueueClient(
-        new Uri($"{storageSettings.QueuesEndpoint.TrimEnd('/')}/{PanelGenerationNotifications.Completed}"),
-        credential,
-        notificationQueueOptions)));
+    serviceBusClient.CreateSender(PanelGenerationNotifications.Started),
+    serviceBusClient.CreateSender(PanelGenerationNotifications.Completed)));
 builder.Services.AddScoped<ReferenceService>();
 builder.Services.AddScoped<ImageComposer>();
 builder.Services.AddScoped<GenerationService>();
@@ -100,48 +94,73 @@ using var host = builder.Build();
 await host.StartAsync();
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("BoardGenerationJob");
 
-var queueClientOptions = new QueueClientOptions();
-if (storageSettings.QueueMessagesEncodeBase64)
-    queueClientOptions.MessageEncoding = QueueMessageEncoding.Base64;
-    
-var jobsQueueName = builder.Configuration["Storage:JobsQueueName"] ?? "generation-jobs";
-var jobsQueue = new QueueClient(
-    new Uri($"{storageSettings.QueuesEndpoint.TrimEnd('/')}/{jobsQueueName}"),
-    credential,
-    queueClientOptions);
+var jobsQueueName = builder.Configuration["ServiceBus:JobsQueueName"] ?? "generation-jobs";
+await using var jobsQueue = serviceBusClient.CreateReceiver(
+    jobsQueueName,
+    new ServiceBusReceiverOptions { ReceiveMode = ServiceBusReceiveMode.PeekLock });
 
-var received = await jobsQueue.ReceiveMessageAsync(TimeSpan.FromHours(6));
-if (received.Value is null)
+var stopping = host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping;
+var queueMessage = await jobsQueue.ReceiveMessageAsync(TimeSpan.FromSeconds(30), stopping);
+if (queueMessage is null)
 {
     logger.LogInformation("No board generation message is available.");
     await host.StopAsync();
     return 0;
 }
 
-var queueMessage = received.Value;
+using var processingCancellation = CancellationTokenSource.CreateLinkedTokenSource(stopping);
+using var renewalCancellation = CancellationTokenSource.CreateLinkedTokenSource(stopping);
+var renewalTask = RenewMessageLockAsync(
+    jobsQueue,
+    queueMessage,
+    processingCancellation,
+    renewalCancellation.Token,
+    logger);
 try
 {
     var request = queueMessage.Body.ToObjectFromJson<BoardGenerationRequestMessage>()
         ?? throw new InvalidDataException("The queue message body is empty.");
     using var scope = host.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<GenerationService>()
-        .ProcessAsync(request, CancellationToken.None);
-    await jobsQueue.DeleteMessageAsync(queueMessage.MessageId, queueMessage.PopReceipt);
+        .ProcessAsync(request, processingCancellation.Token);
+    renewalCancellation.Cancel();
+    await ObserveRenewalAsync(renewalTask);
+    await jobsQueue.CompleteMessageAsync(queueMessage, CancellationToken.None);
     logger.LogInformation("Generated board {BoardId} for owner {OwnerId}.", request.BoardId, request.OwnerId);
     await host.StopAsync();
     return 0;
 }
+catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+{
+    renewalCancellation.Cancel();
+    await ObserveRenewalAsync(renewalTask);
+    await jobsQueue.AbandonMessageAsync(queueMessage, cancellationToken: CancellationToken.None);
+    logger.LogInformation("Board generation was cancelled; message {MessageId} was released for retry.", queueMessage.MessageId);
+    await host.StopAsync(CancellationToken.None);
+    return 0;
+}
 catch (Exception exception)
 {
-    logger.LogError(exception, "Board generation failed for queue message {MessageId} on attempt {Attempt}.",
-        queueMessage.MessageId, queueMessage.DequeueCount);
-    if (queueMessage.DequeueCount >= maximumDequeueCount)
+    renewalCancellation.Cancel();
+    await ObserveRenewalAsync(renewalTask);
+    logger.LogError(exception, "Board generation failed for queue message {MessageId} on delivery {DeliveryCount}.",
+        queueMessage.MessageId, queueMessage.DeliveryCount);
+    if (queueMessage.DeliveryCount >= maximumDeliveryCount)
     {
-        await jobsQueue.DeleteMessageAsync(queueMessage.MessageId, queueMessage.PopReceipt);
-        logger.LogError("Deleted queue message {MessageId} after {Attempt} attempts.", queueMessage.MessageId, queueMessage.DequeueCount);
+        await jobsQueue.DeadLetterMessageAsync(
+            queueMessage,
+            "MaximumDeliveryCountExceeded",
+            exception.Message,
+            CancellationToken.None);
+        logger.LogError("Dead-lettered message {MessageId} after {DeliveryCount} deliveries.",
+            queueMessage.MessageId, queueMessage.DeliveryCount);
+    }
+    else
+    {
+        await jobsQueue.AbandonMessageAsync(queueMessage, cancellationToken: CancellationToken.None);
     }
 
-    await host.StopAsync();
+    await host.StopAsync(CancellationToken.None);
     return 1;
 }
 
@@ -157,4 +176,51 @@ static Uri GetMaiImageEndpoint(string endpoint)
     builder.Path = "/mai/v1";
     builder.Query = string.Empty;
     return builder.Uri;
+}
+
+static async Task RenewMessageLockAsync(
+    ServiceBusReceiver receiver,
+    ServiceBusReceivedMessage message,
+    CancellationTokenSource processingCancellation,
+    CancellationToken renewalCancellation,
+    ILogger logger)
+{
+    var delay = TimeSpan.FromMinutes(2);
+    while (!renewalCancellation.IsCancellationRequested)
+    {
+        try
+        {
+            await Task.Delay(delay, renewalCancellation);
+            await receiver.RenewMessageLockAsync(message, renewalCancellation);
+            delay = TimeSpan.FromMinutes(2);
+        }
+        catch (OperationCanceledException) when (renewalCancellation.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (ServiceBusException exception) when (
+            exception.IsTransient &&
+            message.LockedUntil > DateTimeOffset.UtcNow.AddSeconds(15))
+        {
+            logger.LogWarning(exception, "Transient failure renewing the lock for message {MessageId}.", message.MessageId);
+            delay = TimeSpan.FromSeconds(5);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Lost the lock for message {MessageId}; cancelling generation.", message.MessageId);
+            processingCancellation.Cancel();
+            return;
+        }
+    }
+}
+
+static async Task ObserveRenewalAsync(Task renewalTask)
+{
+    try
+    {
+        await renewalTask;
+    }
+    catch (OperationCanceledException)
+    {
+    }
 }

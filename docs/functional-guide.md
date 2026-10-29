@@ -21,6 +21,12 @@ Sign in with Microsoft Entra ID before using the workshop. Project metadata, ref
 
 Light/dark themes follow the browser preference initially; an explicit selection is stored locally. Library artwork indicates the project format and is not an AI-generated project cover.
 
+## Functional overview
+
+![Functional workflow: private story library, comic scenes with per-image updates, and book planning followed by explicit chapter actions](images/functional-workflow.svg)
+
+The [editable Excalidraw source](images/functional-workflow.excalidraw) accompanies this overview. Detailed processing flows below distinguish what continues in the background from actions that require keeping the book editor open.
+
 ## Create a comic
 
 1. Start a new story, enter the idea, and select the comic format.
@@ -29,7 +35,8 @@ Light/dark themes follow the browser preference initially; an explicit selection
 4. Add named project characters and optionally upload PNG/JPEG reference images. Select the characters appearing in each scene.
 5. Choose a layout and edit or reorder scene prompts. Changing the layout rebuilds the scene slots; review the editor before submitting.
 6. Choose whether to rewrite prompts, then generate a new board version.
-7. Follow per-panel progress. Inspect the final prompts and any panel errors, then download available panel PNGs and the composed board PNG.
+7. In **Scenes** (`1. Les scènes`), follow per-panel progress: the selected illustration and layout thumbnails update as each image becomes available, without waiting for the composed board. Changing the selected scene remains your choice.
+8. Inspect the effective prompts and any panel errors. **The board** (`3. La planche`) shows the assembled PNG after composition; download available panel PNGs and the composed board PNG.
 
 Character references guide identity but do not guarantee visual consistency. The worker uses the project's character/reference metadata when it processes the board; avoid changing that metadata during generation.
 
@@ -55,24 +62,32 @@ flowchart TD
     Correct --> Edit
     Validate -->|Yes| Queue[Save Pending board and enqueue work]
     Queue --> Worker[Background job starts Processing]
-    Worker --> Panel[Prepare and generate the next panel]
+    Worker --> Prepare[Prepare effective prompts and character references]
+    Prepare --> Panel[Generate independent panels within the concurrency limit]
     Panel --> Result{Panel outcome}
     Result -->|Generated| Save[Save PNG and panel status]
-    Result -->|Content safety rejection| Placeholder[Record panel error and placeholder]
+    Result -->|Transient provider failure| Retry{Image retries remaining?}
+    Retry -->|Yes| Wait[Wait for provider Retry-After or bounded backoff]
+    Wait --> Panel
+    Retry -->|No| Placeholder[Record panel error and placeholder]
+    Result -->|Permanent failure or safety rejection| Placeholder
     Save --> Notify[Notify the owning user's workshop]
     Placeholder --> Notify
-    Notify --> More{More panels?}
-    More -->|Yes| Panel
-    More -->|No| Compose[Compose and save board PNG]
+    Notify --> Scenes[Refresh saved status and render each available scene and thumbnail]
+    Scenes -.-> Poll[While active, refresh status every 5 seconds even without push]
+    Notify --> Settled{All panel tasks settled?}
+    Settled -->|No| Other[Other panel tasks continue]
+    Settled -->|Yes| Compose[Compose and save board PNG]
     Compose --> Completed[Mark Completed and retrieve artifacts through API]
-    Result -->|Technical failure| Failed[Save failure and allow queue retry]
+    Poll -.-> Scenes
+    Worker -->|Uncaught job or persistence failure| Failed[Save board failure and allow queue redelivery]
 ```
 
-The board can be `Completed` while individual panels are `Failed` due to content-safety rejection. Those slots contain placeholders; completion does not mean every scene produced an image.
+The board can be `Completed` while individual panels are `Failed`, including content-safety rejections or exhausted image-provider retries. Those slots contain placeholders; completion does not mean every scene produced an image. An isolated panel failure does not cancel other panels.
 
-Board generation continues if the page closes. Reopen the project or generation to retrieve durable status. Progress events help refresh the editor but are not the authoritative record; stored API status is. A notification can arrive before the latest image/status is visible, so the frontend performs bounded refresh retries.
+Board generation continues if the page closes. Reopen the project or generation to retrieve durable status. Progress events help refresh the editor but are not the authoritative record; stored API status is. A notification can arrive before the latest image/status is visible, so the frontend performs bounded refresh retries and explicitly renders each downloaded image. While a board is pending or processing, a five-second status refresh also recovers missed events and detects final composition. Normal progress does not require a manual refresh.
 
-Technical failures can trigger automatic queue redelivery. Completed panels with existing blobs are reused. To change a prompt or retry a blocked scene as a user, edit the board and submit a new version; there is no dedicated single-panel retry endpoint.
+Uncaught job failures can trigger automatic queue redelivery. Completed panels with existing blobs are reused when an unfinished board resumes; a terminal `Completed` board is not automatically replayed even if it contains failed panels. To change a prompt or retry a failed scene as a user, edit the board and submit a new version; there is no dedicated single-panel retry endpoint.
 
 ## How a panel image is produced
 
@@ -91,7 +106,12 @@ flowchart TD
     EditImage --> MAI
     MAI --> Outcome{Outcome}
     Outcome -->|Image| Store[Store private panel PNG and Completed status]
-    Outcome -->|Content safety rejection| Error[Store Failed status and visible error]
+    Outcome -->|Transient failure| Retry{Retries remaining?}
+    Retry -->|Yes| Delay[Honor Retry-After; 429 without a delay waits at least 60 seconds]
+    Delay --> MAI
+    Retry -->|No| Error[Store Failed status and visible error]
+    Outcome -->|Permanent failure or content safety rejection| Error
+    Store --> Progress[Notify owner and display this image in Scenes]
     Store --> Board[Crop to the board slot without distortion]
     Error --> Blank[Use a placeholder in the board]
 ```
@@ -144,8 +164,10 @@ flowchart TD
 | --- | --- |
 | Invalid title, panel count, chapter count, or reference | Correct the input before resubmitting. |
 | Board Pending for a long time | Work may be queued or waiting for a retry; use the deployment checks to inspect job executions. |
+| Provider HTTP `429` | Image retries wait for the provider's requested delay; this is not necessarily a stuck generation. Exhausted retries leave an explicit failed panel. |
 | Blocked comic panel | Read the panel error, revise the request appropriately, and create a new version; do not attempt to bypass safety controls. |
-| Board technical failure | Durable failure is recorded; queue retries may reuse completed panels. |
+| Board technical failure | An isolated image failure can leave a placeholder in a completed board. Uncaught job failures record a board failure and can trigger queue retries that reuse completed panels. |
+| Live notifications unavailable | Active generation status refreshes every five seconds. If progress still appears stale, check API connectivity; operators can inspect the Service Bus notification bindings. |
 | Book plan failure | Retry planning. The invalid model response does not replace the saved chapters. |
 | Chapter prose/image failure | Retry only the affected stage after reviewing its error. |
 | Another user's project/artifact identifier | It must not grant access; the API resolves records within the authenticated owner's partition. |

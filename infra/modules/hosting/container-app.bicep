@@ -46,8 +46,8 @@ param cosmosDbDatabaseName string = ''
 @description('Storage Account blob endpoint')
 param storageAccountBlobEndpoint string
 
-@description('Storage Account queue endpoint')
-param storageAccountQueueEndpoint string
+@description('Fully qualified Service Bus namespace')
+param serviceBusFullyQualifiedNamespace string
 
 @description('Queue used to submit board generation jobs')
 param jobsQueueName string
@@ -57,6 +57,11 @@ param bookPlanJobsQueueName string
 
 @description('Azure Foundry endpoint')
 param azureFoundryEndpoint string
+
+@description('Maximum number of concurrent image provider requests')
+@minValue(1)
+@maxValue(16)
+param maxParallelImages int = 3
 
 @description('AI Search endpoint')
 param azureAISearchEndpoint string
@@ -175,6 +180,10 @@ resource containerApp 'Microsoft.App/containerApps@2025-07-01' = {
                 value: '1024'
               }
               {
+                name: 'Foundry__MaxParallelImages'
+                value: string(maxParallelImages)
+              }
+              {
                 name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
                 value: appInsightsConnectionString
               }
@@ -195,15 +204,15 @@ resource containerApp 'Microsoft.App/containerApps@2025-07-01' = {
                 value: storageAccountBlobEndpoint
               }
               {
-                name: 'StorageAccount__QueuesEndpoint'
-                value: storageAccountQueueEndpoint
+                name: 'ServiceBus__FullyQualifiedNamespace'
+                value: serviceBusFullyQualifiedNamespace
               }
               {
-                name: 'Storage__JobsQueueName'
+                name: 'ServiceBus__JobsQueueName'
                 value: jobsQueueName
               }
               {
-                name: 'Storage__BookPlanJobsQueueName'
+                name: 'ServiceBus__BookPlanJobsQueueName'
                 value: bookPlanJobsQueueName
               }
               {

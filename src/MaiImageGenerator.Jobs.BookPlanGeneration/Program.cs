@@ -1,6 +1,5 @@
 using Azure.Core;
-using Azure.Storage.Queues;
-using Azure.Storage.Queues.Models;
+using Azure.Messaging.ServiceBus;
 using MaiImageGenerator.Api.Configuration;
 using MaiImageGenerator.Jobs.BoardGeneration.Hosting;
 using MaiImageGenerator.Jobs.BookPlanGeneration.Services;
@@ -8,7 +7,6 @@ using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Messages;
 using MDev.Dotnet.AspNetCore.Apis.Extensions;
 using MDev.Dotnet.Azure.CosmosDb.Startup;
-using MDev.Dotnet.Azure.StorageAccount.Settings;
 using MDev.Dotnet.Azure.StorageAccount.Startup;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -17,7 +15,7 @@ using Microsoft.Extensions.Options;
 using OpenAI;
 using System.ClientModel.Primitives;
 
-const int maximumDequeueCount = 5;
+const int maximumDeliveryCount = 5;
 
 var builder = Host.CreateApplicationBuilder(args);
 var credential = builder.Services.GetManagedIdentity(builder.Configuration);
@@ -25,11 +23,14 @@ var credential = builder.Services.GetManagedIdentity(builder.Configuration);
 builder.RegisterConfiguration()
     .RegisterCosmosDb<MaiImageGeneratorDbContext>(credential)
     .RegisterAzureStorage(credential)
-    .BindConfiguration<FoundryOptions>(FoundryOptions.SectionName)
-    .BindConfiguration(out StorageAccountSettings storageSettings, StorageAccountSettings.SectionName);
+    .BindConfiguration<FoundryOptions>(FoundryOptions.SectionName);
 
 builder.Services.AddLogging(builder.Configuration, "BookPlanGenerationJob");
 builder.Services.AddSingleton<TokenCredential>(credential);
+var serviceBusNamespace = builder.Configuration["ServiceBus:FullyQualifiedNamespace"]
+    ?? throw new InvalidOperationException("Configuration 'ServiceBus:FullyQualifiedNamespace' is required.");
+var serviceBusClient = new ServiceBusClient(serviceBusNamespace, credential);
+builder.Services.AddSingleton(serviceBusClient);
 builder.Services.AddSingleton(serviceProvider =>
 {
     var options = serviceProvider.GetRequiredService<IOptions<FoundryOptions>>().Value;
@@ -47,35 +48,38 @@ using var host = builder.Build();
 
 await host.StartAsync();
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("BookPlanGenerationJob");
-var queueClientOptions = new QueueClientOptions
-{
-    MessageEncoding = storageSettings.QueueMessagesEncodeBase64
-        ? QueueMessageEncoding.Base64
-        : QueueMessageEncoding.None
-};
-var jobsQueueName = builder.Configuration["Storage:JobsQueueName"] ?? "book-plan-jobs";
-var jobsQueue = new QueueClient(
-    new Uri($"{storageSettings.QueuesEndpoint.TrimEnd('/')}/{jobsQueueName}"),
-    credential,
-    queueClientOptions);
+var jobsQueueName = builder.Configuration["ServiceBus:JobsQueueName"] ?? "book-plan-jobs";
+await using var jobsQueue = serviceBusClient.CreateReceiver(
+    jobsQueueName,
+    new ServiceBusReceiverOptions { ReceiveMode = ServiceBusReceiveMode.PeekLock });
 
-var received = await jobsQueue.ReceiveMessageAsync(TimeSpan.FromHours(6));
-if (received.Value is null)
+var stopping = host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping;
+var queueMessage = await jobsQueue.ReceiveMessageAsync(TimeSpan.FromSeconds(30), stopping);
+if (queueMessage is null)
 {
     logger.LogInformation("No book plan generation message is available.");
     await host.StopAsync();
     return 0;
 }
 
-var queueMessage = received.Value;
+using var processingCancellation = CancellationTokenSource.CreateLinkedTokenSource(stopping);
+using var renewalCancellation = CancellationTokenSource.CreateLinkedTokenSource(stopping);
+var renewalTask = RenewMessageLockAsync(
+    jobsQueue,
+    queueMessage,
+    processingCancellation,
+    renewalCancellation.Token,
+    logger);
 try
 {
     var request = queueMessage.Body.ToObjectFromJson<BookPlanGenerationRequestMessage>()
         ?? throw new InvalidDataException("The queue message body is empty.");
     using var scope = host.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<BookPlanGenerationService>()
-        .ProcessAsync(request, CancellationToken.None);
-    await jobsQueue.DeleteMessageAsync(queueMessage.MessageId, queueMessage.PopReceipt);
+        .ProcessAsync(request, processingCancellation.Token);
+    renewalCancellation.Cancel();
+    await ObserveRenewalAsync(renewalTask);
+    await jobsQueue.CompleteMessageAsync(queueMessage, CancellationToken.None);
     logger.LogInformation(
         "Generated book plan for project {ProjectId} and owner {OwnerId}.",
         request.ProjectId,
@@ -83,22 +87,88 @@ try
     await host.StopAsync();
     return 0;
 }
+catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+{
+    renewalCancellation.Cancel();
+    await ObserveRenewalAsync(renewalTask);
+    await jobsQueue.AbandonMessageAsync(queueMessage, cancellationToken: CancellationToken.None);
+    logger.LogInformation("Book plan generation was cancelled; message {MessageId} was released for retry.", queueMessage.MessageId);
+    await host.StopAsync(CancellationToken.None);
+    return 0;
+}
 catch (Exception exception)
 {
+    renewalCancellation.Cancel();
+    await ObserveRenewalAsync(renewalTask);
     logger.LogError(
         exception,
-        "Book plan generation failed for queue message {MessageId} on attempt {Attempt}.",
+        "Book plan generation failed for queue message {MessageId} on delivery {DeliveryCount}.",
         queueMessage.MessageId,
-        queueMessage.DequeueCount);
-    if (queueMessage.DequeueCount >= maximumDequeueCount)
+        queueMessage.DeliveryCount);
+    if (queueMessage.DeliveryCount >= maximumDeliveryCount)
     {
-        await jobsQueue.DeleteMessageAsync(queueMessage.MessageId, queueMessage.PopReceipt);
+        await jobsQueue.DeadLetterMessageAsync(
+            queueMessage,
+            "MaximumDeliveryCountExceeded",
+            exception.Message,
+            CancellationToken.None);
         logger.LogError(
-            "Deleted queue message {MessageId} after {Attempt} attempts.",
+            "Dead-lettered message {MessageId} after {DeliveryCount} deliveries.",
             queueMessage.MessageId,
-            queueMessage.DequeueCount);
+            queueMessage.DeliveryCount);
+    }
+    else
+    {
+        await jobsQueue.AbandonMessageAsync(queueMessage, cancellationToken: CancellationToken.None);
     }
 
-    await host.StopAsync();
+    await host.StopAsync(CancellationToken.None);
     return 1;
+}
+
+static async Task RenewMessageLockAsync(
+    ServiceBusReceiver receiver,
+    ServiceBusReceivedMessage message,
+    CancellationTokenSource processingCancellation,
+    CancellationToken renewalCancellation,
+    ILogger logger)
+{
+    var delay = TimeSpan.FromMinutes(2);
+    while (!renewalCancellation.IsCancellationRequested)
+    {
+        try
+        {
+            await Task.Delay(delay, renewalCancellation);
+            await receiver.RenewMessageLockAsync(message, renewalCancellation);
+            delay = TimeSpan.FromMinutes(2);
+        }
+        catch (OperationCanceledException) when (renewalCancellation.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (ServiceBusException exception) when (
+            exception.IsTransient &&
+            message.LockedUntil > DateTimeOffset.UtcNow.AddSeconds(15))
+        {
+            logger.LogWarning(exception, "Transient failure renewing the lock for message {MessageId}.", message.MessageId);
+            delay = TimeSpan.FromSeconds(5);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Lost the lock for message {MessageId}; cancelling generation.", message.MessageId);
+            processingCancellation.Cancel();
+            return;
+        }
+    }
+}
+
+static async Task ObserveRenewalAsync(Task renewalTask)
+{
+    try
+    {
+        await renewalTask;
+    }
+    catch (OperationCanceledException)
+    {
+    }
 }

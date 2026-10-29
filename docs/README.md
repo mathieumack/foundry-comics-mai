@@ -9,10 +9,11 @@
 
 ## Diagrams
 
-- [Application overview (SVG)](images/solution-architecture.svg) and its [editable Excalidraw source](images/solution-architecture.excalidraw).
+- [Technical application overview (SVG)](images/solution-architecture.svg) and its [editable Excalidraw source](images/solution-architecture.excalidraw).
+- [Functional workflow (SVG)](images/functional-workflow.svg) and its [editable Excalidraw source](images/functional-workflow.excalidraw).
 - [Technical topology and sequence diagrams](architecture.md#azure-topology) in Mermaid.
 - [Functional board and image flows](functional-guide.md#board-processing-flow) in Mermaid.
 
-The SVG and Excalidraw source represent the same application-level view; update both when that view changes. The detailed Mermaid topology additionally covers infrastructure and network boundaries.
+Each SVG and its Excalidraw source represent the same view; update both together. The technical overview shows application ownership, Service Bus transport and per-image progress. The functional overview separates background comic generation and book planning from foreground chapter actions. The detailed Mermaid diagrams additionally cover infrastructure boundaries, retries, status refresh and composition.
 
 The root [README](../README.md) is the project overview. Keep detailed operational guidance in this directory so the landing page remains concise.

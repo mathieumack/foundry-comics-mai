@@ -2,6 +2,7 @@ using Azure.Core;
 using MaiImageGenerator.Api.Configuration;
 using MaiImageGenerator.Shared.Data.Entities;
 using MaiImageGenerator.Shared.Generation;
+using MaiImageGenerator.Shared.Services;
 using Microsoft.Extensions.Options;
 using OpenAI.Images;
 using System.ClientModel;
@@ -136,7 +137,12 @@ public sealed class FoundryImageGenerator(
             throw new FoundryGenerationException(
                 $"Image generation failed with HTTP status {exception.Status}.",
                 exception,
-                exception.Status);
+                exception.Status)
+            {
+                RetryAfter = ImageGenerationRetry.ReadRetryAfter(name =>
+                    exception.GetRawResponse() is { } response &&
+                    response.Headers.TryGetValue(name, out var value) ? value : null)
+            };
         }
     }
 
@@ -171,7 +177,11 @@ public sealed class FoundryImageGenerator(
         {
             throw new FoundryGenerationException(
                 $"Image generation failed with HTTP status {(int)response.StatusCode}.",
-                (int)response.StatusCode);
+                (int)response.StatusCode)
+            {
+                RetryAfter = ImageGenerationRetry.ReadRetryAfter(name =>
+                    response.Headers.TryGetValues(name, out var values) ? values.FirstOrDefault() : null)
+            };
         }
 
         using var document = JsonDocument.Parse(responseBody);

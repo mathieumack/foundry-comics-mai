@@ -1,5 +1,5 @@
 using Azure.Storage.Blobs;
-using Azure.Storage.Queues;
+using Azure.Messaging.ServiceBus;
 using MaiImageGenerator.Api.Contracts;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Data.Entities;
@@ -12,7 +12,7 @@ public sealed class GenerationService(
     MaiImageGeneratorDbContext dbContext,
     ReferenceService referenceService,
     BlobServiceClient blobServiceClient,
-    QueueClient jobsQueue,
+    ServiceBusSender jobsQueue,
     ScaffoldTraceStore scaffoldTraceStore)
 {
     private readonly BlobContainerClient _container = blobServiceClient.GetBlobContainerClient("generations");
@@ -226,7 +226,13 @@ public sealed class GenerationService(
                 ProjectId = project.Id,
                 RewritePrompt = document.RewritePrompt
             };
-            await jobsQueue.SendMessageAsync(BinaryData.FromObjectAsJson(message).ToString(), cancellationToken);
+            await jobsQueue.SendMessageAsync(
+                new ServiceBusMessage(BinaryData.FromObjectAsJson(message))
+                {
+                    MessageId = document.Id,
+                    ContentType = "application/json"
+                },
+                cancellationToken);
         }
         catch
         {

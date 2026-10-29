@@ -31,6 +31,7 @@ public partial class Home : IAsyncDisposable
     private readonly List<GenerationSummaryResponse> projectBoards = [];
     private readonly CancellationTokenSource lifetime = new();
     private HubConnection? notificationConnection;
+    private Task statusRefreshTask = Task.CompletedTask;
     private CancellationTokenSource? boardCancellation;
     private Guid? activeGenerationId, loadedProjectId, loadedGenerationId;
     private ElementReference imageViewerDialog;
@@ -52,6 +53,7 @@ public partial class Home : IAsyncDisposable
 
     protected override async Task OnInitializedAsync()
     {
+        statusRefreshTask = RefreshActiveGenerationPeriodicallyAsync();
         notificationConnection = new HubConnectionBuilder()
             .WithUrl(new Uri(new Uri(Configuration["ApiBaseUrl"] ?? throw new InvalidOperationException("ApiBaseUrl is required.")), "hubs/notifications"), options =>
             {
@@ -68,6 +70,11 @@ public partial class Home : IAsyncDisposable
         {
             if (TryGetNotifiedPanel(n, out var panel))
             {
+                if (panel.Status is PanelUiStatus.Ready or PanelUiStatus.Error)
+                {
+                    return;
+                }
+
                 panel.Status = PanelUiStatus.Generating;
                 isGenerating = true;
                 progressMessage = $"Illustration de la case {n.PanelNumber} sur {panels.Count}";
@@ -80,7 +87,7 @@ public partial class Home : IAsyncDisposable
         catch (AccessTokenNotAvailableException exception) { exception.Redirect(); }
         catch (Exception exception) when (exception is HttpRequestException or HubException)
         {
-            Notify(NotificationSeverity.Warning, "Suivi en direct indisponible", $"{exception.Message} Utilisez Actualiser la planche.");
+            Notify(NotificationSeverity.Warning, "Suivi en direct indisponible", $"{exception.Message} L'avancement sera actualisé automatiquement.");
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
     }
@@ -321,7 +328,28 @@ public partial class Home : IAsyncDisposable
         catch (AccessTokenNotAvailableException exception) { exception.Redirect(); }
         catch (Exception exception) when (exception is GenerationApiException or HttpRequestException) { workspaceError = exception.Message; }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
-        finally { isRefreshing = false; }
+        finally
+        {
+            isRefreshing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshActiveGenerationPeriodicallyAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(lifetime.Token))
+            {
+                await InvokeAsync(async () =>
+                {
+                    if (!isGenerating || isBoardLoading) return;
+                    await RefreshGenerationAsync();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
     }
 
     private async Task ApplyGenerationAsync(GenerationResponse generation, CancellationToken token)
@@ -343,7 +371,10 @@ public partial class Home : IAsyncDisposable
             panel.Error = status.Error;
             panel.Traces = status.Traces;
             if (panel.ImageDataUrl is null && status.ImageUri is not null)
+            {
                 panel.ImageDataUrl = await GenerationClient.DownloadDataUrlAsync(status.ImageUri, token);
+                StateHasChanged();
+            }
         }
         if (generation.Status == GenerationStatus.Completed && generation.BoardUri is not null && boardDataUrl is null)
             boardDataUrl = await GenerationClient.DownloadDataUrlAsync(generation.BoardUri, token);
@@ -545,6 +576,7 @@ public partial class Home : IAsyncDisposable
     {
         lifetime.Cancel();
         boardCancellation?.Cancel();
+        await statusRefreshTask;
         boardCancellation?.Dispose();
         if (notificationConnection is not null) await notificationConnection.DisposeAsync();
         lifetime.Dispose();

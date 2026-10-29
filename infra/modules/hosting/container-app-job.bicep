@@ -34,20 +34,27 @@ param cosmosDbDatabaseName string
 @description('Storage Blob service endpoint')
 param storageBlobEndpoint string
 
-@description('Storage Queue service endpoint')
-param storageQueueEndpoint string
+@description('Service Bus namespace name used by the scaler')
+param serviceBusNamespace string
 
-@description('Storage account name used by the Queue scaler')
-param storageAccountName string
+@description('Fully qualified Service Bus namespace used by the worker')
+param serviceBusFullyQualifiedNamespace string
 
 @description('Queue that triggers this generation job')
 param jobsQueueName string
 
-@description('Queue that receives messages after the maximum dequeue count')
-param poisonQueueName string
-
 @description('Microsoft Foundry account endpoint')
 param foundryEndpoint string
+
+@description('Maximum number of concurrent image provider requests')
+@minValue(1)
+@maxValue(16)
+param maxParallelImages int = 3
+
+@description('Maximum concurrent job executions')
+@minValue(1)
+@maxValue(10)
+param maxExecutions int = 3
 
 @description('azd service name')
 param serviceName string = 'generationjob'
@@ -75,16 +82,16 @@ resource job 'Microsoft.App/jobs@2025-07-01' = {
         replicaCompletionCount: 1
         scale: {
           minExecutions: 0
-          maxExecutions: 1
+          maxExecutions: maxExecutions
           pollingInterval: 30
           rules: [
             {
               name: 'generation-queue'
-              type: 'azure-queue'
+              type: 'azure-servicebus'
               metadata: {
-                accountName: storageAccountName
+                namespace: serviceBusNamespace
                 queueName: jobsQueueName
-                queueLength: '1'
+                messageCount: '1'
               }
               identity: managedIdentityId
             }
@@ -129,16 +136,12 @@ resource job 'Microsoft.App/jobs@2025-07-01' = {
               value: storageBlobEndpoint
             }
             {
-              name: 'StorageAccount__QueuesEndpoint'
-              value: storageQueueEndpoint
+              name: 'ServiceBus__FullyQualifiedNamespace'
+              value: serviceBusFullyQualifiedNamespace
             }
             {
-              name: 'Storage__JobsQueueName'
+              name: 'ServiceBus__JobsQueueName'
               value: jobsQueueName
-            }
-            {
-              name: 'Storage__PoisonQueueName'
-              value: poisonQueueName
             }
             {
               name: 'Foundry__Endpoint'
@@ -155,6 +158,10 @@ resource job 'Microsoft.App/jobs@2025-07-01' = {
             {
               name: 'Foundry__ImageSize'
               value: '1024'
+            }
+            {
+              name: 'Foundry__MaxParallelImages'
+              value: string(maxParallelImages)
             }
           ]
           resources: {

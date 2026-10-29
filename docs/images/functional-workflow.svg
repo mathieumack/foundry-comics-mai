@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="1020" viewBox="0 0 1160 1020" role="img" aria-labelledby="title description">
+  <title id="title">MAI Comic Studio - functional workflow</title>
+  <desc id="description">Sign in to a private library, describe a story and choose a comic or book. Comics have editable scenes and characters, background panel generation, per-image scene and thumbnail updates, and final board composition. Books have background planning followed by explicit foreground prose and illustration actions. Review errors and saved results, download available PNGs and reopen private projects. Active comic progress refreshes every five seconds if notifications are missed.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 Z" fill="#495057"/></marker>
+  </defs>
+  <rect width="1160" height="1020" fill="#ffffff"/>
+  <g font-family="Segoe UI, Arial, sans-serif" fill="#000000">
+    <text x="40" y="60" font-size="28" font-weight="600">MAI Comic Studio - functional workflow</text>
+    <text x="40" y="92" font-size="15">Two creative journeys; private saved work and explicit human review</text>
+  </g>
+  <g fill="none" stroke="#495057" stroke-width="2" marker-end="url(#arrow)">
+    <path d="M 280 210 H 400"/>
+    <path d="M 680 210 H 800"/>
+    <path d="M 900 290 V 330 H 540 V 380"/>
+    <path d="M 1020 290 V 380"/>
+    <path d="M 540 540 V 620"/>
+    <path d="M 960 540 V 620"/>
+    <path d="M 540 780 V 860"/>
+    <path d="M 960 780 V 860"/>
+  </g>
+  <g stroke-width="2">
+    <rect x="40" y="130" width="240" height="160" rx="10" stroke="#0078D4" fill="#CFE4FA"/>
+    <rect x="400" y="130" width="280" height="160" rx="10" stroke="#0078D4" fill="#CFE4FA"/>
+    <rect x="800" y="130" width="320" height="160" rx="10" stroke="#0078D4" fill="#CFE4FA"/>
+    <rect x="400" y="380" width="280" height="160" rx="10" stroke="#F7630C" fill="#FFF4CE"/>
+    <rect x="800" y="380" width="320" height="160" rx="10" stroke="#107C10" fill="#DFF6DD"/>
+    <rect x="400" y="620" width="280" height="160" rx="10" stroke="#F7630C" fill="#FFF4CE"/>
+    <rect x="800" y="620" width="320" height="160" rx="10" stroke="#107C10" fill="#DFF6DD"/>
+    <rect x="400" y="860" width="720" height="100" rx="10" stroke="#0078D4" fill="#CFE4FA"/>
+    <rect x="40" y="380" width="280" height="400" rx="10" stroke="#5C2D91" fill="#E8DAEF"/>
+  </g>
+  <g font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#000000" text-anchor="middle">
+    <text x="160" y="182"><tspan font-weight="600">Sign in</tspan><tspan x="160" dy="28">Private story library</tspan><tspan x="160" dy="28">Create or reopen a project</tspan></text>
+    <text x="540" y="182"><tspan font-weight="600">Describe a story</tspan><tspan x="540" dy="28">Set the creative direction</tspan><tspan x="540" dy="28">Choose your creative format</tspan></text>
+    <text x="960" y="182"><tspan font-weight="600">Comic or illustrated book?</tspan><tspan x="960" dy="28">Prepare the selected format</tspan><tspan x="960" dy="28">No automatic publication</tspan></text>
+    <text x="540" y="432"><tspan font-weight="600">Prepare comic scenes</tspan><tspan x="540" dy="28">Layout, prompts, characters</tspan><tspan x="540" dy="28">Submit a new board version</tspan></text>
+    <text x="960" y="432"><tspan font-weight="600">Prepare a book plan</tspan><tspan x="960" dy="28">Background chapter planning</tspan><tspan x="960" dy="28">Review and save chapter edits</tspan></text>
+    <text x="540" y="660"><tspan font-weight="600">Background illustrations</tspan><tspan x="540" dy="28">Scenes update per image</tspan><tspan x="540" dy="28">Thumbnails update in place</tspan><tspan x="540" dy="28">Then compose the final board</tspan></text>
+    <text x="960" y="660"><tspan font-weight="600">Work chapter by chapter</tspan><tspan x="960" dy="28">Generate prose or illustration</tspan><tspan x="960" dy="28">Keep this editor open</tspan><tspan x="960" dy="28">Save edits; retry stages</tspan></text>
+    <text x="760" y="900"><tspan font-weight="600">Review saved results and any errors</tspan><tspan x="760" dy="30">Download available PNGs; reopen private projects later</tspan></text>
+  </g>
+  <g font-family="Segoe UI, Arial, sans-serif" font-size="14" fill="#000000">
+    <text x="550" y="365">COMIC</text>
+    <text x="1030" y="365">BOOK</text>
+    <text x="65" y="425" font-size="17" font-weight="600">Comic progress</text>
+    <text x="65" y="470">Each image appears before<tspan x="65" dy="25">the final board is ready.</tspan></text>
+    <text x="65" y="545">Selection stays unchanged.<tspan x="65" dy="25">No manual refresh needed.</tspan></text>
+    <text x="65" y="620">Missed live events?<tspan x="65" dy="25">Active status refresh: 5 s.</tspan></text>
+    <text x="65" y="695">Background work continues<tspan x="65" dy="25">if the comic page closes.</tspan></text>
+    <text x="40" y="995" font-size="13">Completed boards can contain failed-panel placeholders. Inspect every image; no whole-book PDF/EPUB export is implemented.</text>
+  </g>
+</svg>

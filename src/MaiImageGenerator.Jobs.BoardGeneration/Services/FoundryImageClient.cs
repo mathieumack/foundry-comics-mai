@@ -1,6 +1,7 @@
 using MaiImageGenerator.Api.Configuration;
 using MaiImageGenerator.Shared.Data.Entities;
 using MaiImageGenerator.Shared.Generation;
+using MaiImageGenerator.Shared.Services;
 using Azure.Core;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Options;
@@ -149,7 +150,10 @@ public sealed class FoundryImageClient(
         }
         catch (HttpRequestException exception)
         {
-            throw new FoundryGenerationException("Image generation request failed.", exception);
+            throw new FoundryGenerationException(
+                "Image generation request failed.",
+                exception,
+                exception.StatusCode is null ? null : (int)exception.StatusCode);
         }
         catch (ClientResultException exception)
         {
@@ -170,7 +174,13 @@ public sealed class FoundryImageClient(
 
             throw new FoundryGenerationException(
                 $"Image generation failed with HTTP status {exception.Status}.",
-                exception);
+                exception,
+                exception.Status)
+            {
+                RetryAfter = ImageGenerationRetry.ReadRetryAfter(name =>
+                    exception.GetRawResponse() is { } response &&
+                    response.Headers.TryGetValue(name, out var value) ? value : null)
+            };
         }
     }
 
@@ -211,7 +221,12 @@ public sealed class FoundryImageClient(
             }
 
             throw new FoundryGenerationException(
-                $"Image generation failed with HTTP status {(int)response.StatusCode}.");
+                $"Image generation failed with HTTP status {(int)response.StatusCode}.",
+                status: (int)response.StatusCode)
+            {
+                RetryAfter = ImageGenerationRetry.ReadRetryAfter(name =>
+                    response.Headers.TryGetValues(name, out var values) ? values.FirstOrDefault() : null)
+            };
         }
 
         using var document = JsonDocument.Parse(responseBody);
@@ -244,15 +259,29 @@ public sealed class FoundryImageClient(
 
 }
 
-public class FoundryGenerationException : Exception
+public class FoundryGenerationException : Exception, IImageGenerationRetryAfter
 {
+    public int? Status { get; }
+    public TimeSpan? RetryAfter { get; init; }
+
     public FoundryGenerationException(string message) : base(message)
     {
+    }
+
+    public FoundryGenerationException(string message, int status) : base(message)
+    {
+        Status = status;
     }
 
     public FoundryGenerationException(string message, Exception innerException)
         : base(message, innerException)
     {
+    }
+
+    public FoundryGenerationException(string message, Exception innerException, int? status)
+        : base(message, innerException)
+    {
+        Status = status;
     }
 }
 

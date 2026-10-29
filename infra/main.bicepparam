@@ -5,6 +5,8 @@ param environmentName = readEnvironmentVariable('AZURE_ENV_NAME', 'demo')
 param location = readEnvironmentVariable('AZURE_LOCATION', 'swedencentral')
 param existingEntraClientId = readEnvironmentVariable('EXISTING_ENTRA_CLIENT_ID', '')
 param existingEntraApiAudience = readEnvironmentVariable('EXISTING_ENTRA_API_AUDIENCE', '')
+param imageGenerationMaxParallelism = int(readEnvironmentVariable('IMAGE_GENERATION_MAX_PARALLELISM', '3'))
+param generationJobMaxExecutions = int(readEnvironmentVariable('GENERATION_JOB_MAX_EXECUTIONS', '3'))
 
 param apiContainerImage = readEnvironmentVariable(
 	'SERVICE_API_IMAGE_NAME',

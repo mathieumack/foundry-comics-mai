@@ -186,7 +186,7 @@ resource privateEndpointBlob 'Microsoft.Network/privateEndpoints@2023-05-01' = i
 }
 
 // Private endpoint for queue service
-resource privateEndpointQueue 'Microsoft.Network/privateEndpoints@2023-05-01' = if (enablePrivateEndpoint && !empty(privateEndpointSubnetId)) {
+resource privateEndpointQueue 'Microsoft.Network/privateEndpoints@2023-05-01' = if (enablePrivateEndpoint && !empty(privateEndpointSubnetId) && !empty(queuePrivateDnsZoneId)) {
   name: '${name}-queue-pe'
   location: location
   tags: tags

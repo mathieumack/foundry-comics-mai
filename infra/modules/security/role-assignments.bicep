@@ -30,6 +30,9 @@ param cosmosDbAccountName string
 @description('Storage Account name for role assignment')
 param storageAccountName string
 
+@description('Service Bus namespace name for role assignment')
+param serviceBusNamespaceName string = ''
+
 @description('Container Registry name hosting the hosted-agent image (for Foundry project AcrPull)')
 param containerRegistryName string = ''
 
@@ -40,13 +43,14 @@ param signalRName string = ''
 var cosmosDbAccountReaderRoleId = 'fbdf93bf-df7d-467e-a4d2-9458aa1360c8' // Cosmos DB Account Reader Role
 var cognitiveServicesUserRoleId = 'a97b65f3-24c7-4388-baec-2e87135dc908' // Cognitive Services User
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe' // Storage Blob Data Contributor
-var storageQueueDataContributorRoleId = '974c5e8b-45b9-4653-ba55-5f855dd0fb88' // Storage Queue Data Contributor
 var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3' // Storage Table Data Contributor
 var storageFileDataSMBShareContributorRoleId = '0c867c2a-1d8c-454a-a3db-ab2ea1bdc8bb' // Storage File Data SMB Share Contributor
 var azureAIUserRoleId = '53ca6127-db72-4b80-b1b0-d745d6d5456d' // Azure AI User
 var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d' // AcrPull
 var signalRAppServerRoleId = '420fcaa2-552c-430f-98ca-3264be4806c7' // SignalR App Server
 var signalRRestApiOwnerRoleId = 'fd53cd77-2268-407a-8f46-7e7863d0f521' // SignalR REST API Owner
+var serviceBusDataSenderRoleId = '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39' // Azure Service Bus Data Sender
+var serviceBusDataReceiverRoleId = '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0' // Azure Service Bus Data Receiver
 
 resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' existing = if (!empty(cosmosDbAccountName)) {
   name: cosmosDbAccountName
@@ -79,12 +83,25 @@ resource storageBlobDataContributorRoleAssignmentMI 'Microsoft.Authorization/rol
   }
 }
 
-// Storage Account Queue Data Contributor role assignment for the API and job managed identity
-resource storageQueueDataContributorRoleAssignmentMI 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(storageAccountName)) {
-  name: guid(storageAccount.id, principalId, storageQueueDataContributorRoleId)
-  scope: storageAccount
+resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2024-01-01' existing = if (!empty(serviceBusNamespaceName)) {
+  name: serviceBusNamespaceName
+}
+
+resource serviceBusDataSenderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(serviceBusNamespaceName)) {
+  name: guid(serviceBusNamespace.id, principalId, serviceBusDataSenderRoleId)
+  scope: serviceBusNamespace
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageQueueDataContributorRoleId)
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', serviceBusDataSenderRoleId)
+    principalId: principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource serviceBusDataReceiverRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(serviceBusNamespaceName)) {
+  name: guid(serviceBusNamespace.id, principalId, serviceBusDataReceiverRoleId)
+  scope: serviceBusNamespace
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', serviceBusDataReceiverRoleId)
     principalId: principalId
     principalType: 'ServicePrincipal'
   }
@@ -162,17 +179,6 @@ resource storageBlobDataContributorRoleAssignmentFoundryProject 'Microsoft.Autho
   scope: storageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
-    principalId: foundryProjectPrincipalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-// Storage Account Queue Data Contributor role assignment for Foundry Project
-resource storageQueueDataContributorRoleAssignmentFoundryProject 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(storageAccountName) && !empty(foundryProjectPrincipalId)) {
-  name: guid(storageAccount.id, foundryProjectPrincipalId, storageQueueDataContributorRoleId)
-  scope: storageAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageQueueDataContributorRoleId)
     principalId: foundryProjectPrincipalId
     principalType: 'ServicePrincipal'
   }
