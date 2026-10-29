@@ -85,6 +85,7 @@
                                 <textarea class="text" id="story-description" @bind="storyDescription" rows="4" disabled="@EditingLocked" placeholder="Personnages, lieu, ton, rebondissements…"></textarea>
                                 <button class="btn" style="margin-top:12px" @onclick="CreateScaffoldAsync" disabled="@EditingLocked"><RadzenIcon Icon="auto_fix_high" />@(isScaffolding ? "MAI imagine vos scènes…" : "Proposer mes scènes")</button>
                             </details>
+                            <AiTraceMetadata Traces="scaffoldTraces" Label="Story scaffold requests" />
                             <label class="field" for="board-title">Titre de la planche</label><input class="text" id="board-title" @bind="boardTitle" @bind:event="oninput" disabled="@EditingLocked" />
                             <div class="panel-picks" role="group" aria-label="Choisir une case">
                                 @for (var index = 0; index < panels.Count; index++)
@@ -112,11 +113,13 @@
                                     }
                                     <figcaption>Case @(selectedPanel + 1) · @PanelStatusLabel(panel.Status)@(panel.ImageDataUrl is not null ? " · Cliquez pour agrandir" : "")</figcaption>
                                 </figure>
+                                <AiTraceMetadata Traces="panel.Traces" Images="true" Label="Panel image requests" />
                                 @if (panel.Status == PanelUiStatus.Error)
                                 {
                                     <p class="error" role="alert">@panel.Error</p>
                                 }
                                 <label class="field" for="panel-prompt">Que se passe-t-il dans la case @(selectedPanel + 1) ?</label>
+                                <AiTraceMetadata Traces="panel.Traces" Images="false" Label="Prompt rewrite requests" />
                                 <textarea @key="panel.Id" class="text" id="panel-prompt" @bind="panel.Prompt" @bind:event="oninput" rows="5" disabled="@EditingLocked" placeholder="Cadrage, action, décor, dialogue…"></textarea>
                                 @if (characters.Count > 0)
                                 {

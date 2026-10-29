@@ -9,6 +9,11 @@
   </PropertyGroup>
 
 <ItemGroup>
+    <!-- Link the SDK adapter into model-calling projects without adding AI SDK dependencies to Shared. -->
+    <Compile Remove="Generation/FoundryChatTraceClient.cs" />
+</ItemGroup>
+
+<ItemGroup>
 	<!-- EF Core with Cosmos DB provider -->
 	<PackageReference Include="Microsoft.EntityFrameworkCore.Cosmos" Version="10.0.11" />
 	<!-- Azure Storage -->

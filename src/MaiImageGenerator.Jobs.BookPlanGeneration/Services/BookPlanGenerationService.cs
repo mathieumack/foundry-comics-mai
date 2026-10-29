@@ -2,6 +2,7 @@ using System.Text.Json;
 using MaiImageGenerator.Api.Configuration;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Data.Entities;
+using MaiImageGenerator.Shared.Generation;
 using MaiImageGenerator.Shared.Messages;
 using MaiImageGenerator.Shared.Services;
 using Microsoft.Agents.AI;
@@ -15,21 +16,22 @@ namespace MaiImageGenerator.Jobs.BookPlanGeneration.Services;
 public sealed class BookPlanGenerationService
 {
     private const int MaximumChapterCount = 30;
-    private readonly AIAgent _agent;
+    private const string Instructions = """
+        You are a professional book editor and fiction writer. Follow the requested output format exactly,
+        preserve the supplied plot and character continuity, and do not add Markdown or commentary unless asked.
+        """;
+    private readonly ChatClient _client;
     private readonly MaiImageGeneratorDbContext _dbContext;
+    private readonly string _model;
 
     public BookPlanGenerationService(
         OpenAIClient client,
         IOptions<FoundryOptions> options,
         MaiImageGeneratorDbContext dbContext)
     {
-        _agent = client.GetChatClient(options.Value.PromptModel).AsAIAgent(
-            instructions: """
-                You are a professional book editor and fiction writer. Follow the requested output format exactly,
-                preserve the supplied plot and character continuity, and do not add Markdown or commentary unless asked.
-                """,
-            name: "BookPlanGenerationJob");
+        _client = client.GetChatClient(options.Value.PromptModel);
         _dbContext = dbContext;
+        _model = options.Value.PromptModel;
     }
 
     public async Task ProcessAsync(
@@ -71,19 +73,40 @@ public sealed class BookPlanGenerationService
         plan.Status = GenerationStatus.Processing;
         plan.Prompt = BuildPlanPrompt(project, request.ChapterCount);
         plan.Error = null;
+        project.SchemaVersion = 3;
+        var trace = new AiGenerationTrace
+        {
+            Operation = "book-plan", Model = _model, StartedAt = DateTimeOffset.UtcNow
+        };
+        plan.Traces.Add(trace);
         project.UpdatedAt = DateTimeOffset.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         try
         {
-            var response = await _agent.RunAsync(plan.Prompt, cancellationToken: cancellationToken);
-            var generatedChapters = ParsePlan(response.ToString(), request.ChapterCount);
-            for (var index = 0; index < Math.Min(generatedChapters.Count, plan.Chapters.Count); index++)
+            using (var capture = AiTraceCapture.Begin(trace, "book-plan", _model))
             {
-                PreserveChapterWork(generatedChapters[index], plan.Chapters[index]);
+                try
+                {
+                    var agent = new FoundryChatTraceClient(_client, trace).AsAIAgent(
+                        instructions: Instructions, name: "BookPlanGenerationJob");
+                    var response = await agent.RunAsync(plan.Prompt, cancellationToken: cancellationToken);
+                    var generatedChapters = ParsePlan(response.ToString(), request.ChapterCount);
+                    for (var index = 0; index < Math.Min(generatedChapters.Count, plan.Chapters.Count); index++)
+                    {
+                        PreserveChapterWork(generatedChapters[index], plan.Chapters[index]);
+                    }
+
+                    plan.Chapters = generatedChapters;
+                    capture.Complete();
+                }
+                catch (OperationCanceledException)
+                {
+                    capture.Cancel();
+                    throw;
+                }
             }
 
-            plan.Chapters = generatedChapters;
             plan.Status = GenerationStatus.Completed;
             plan.Error = null;
             project.UpdatedAt = DateTimeOffset.UtcNow;
@@ -190,6 +213,8 @@ public sealed class BookPlanGenerationService
         generated.ImageBlobName = saved.ImageBlobName;
         generated.ImageStatus = saved.ImageStatus;
         generated.ImageError = saved.ImageError;
+        generated.ProseTraces = saved.ProseTraces.Select(AiTraceCapture.Clone).ToList();
+        generated.ImageTraces = saved.ImageTraces.Select(AiTraceCapture.Clone).ToList();
     }
 
     private sealed record PlanResult(IReadOnlyList<PlanChapter>? Chapters);

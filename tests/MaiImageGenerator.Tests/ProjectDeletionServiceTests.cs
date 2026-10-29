@@ -47,6 +47,24 @@ public sealed class ProjectDeletionServiceTests
     }
 
     [Fact]
+    public async Task DeleteAsync_IncludesProjectAndBoardScaffoldSidecars()
+    {
+        var projectId = Guid.NewGuid();
+        var generationId = Guid.NewGuid();
+        var projectScaffoldId = Guid.NewGuid();
+        var boardScaffoldId = Guid.NewGuid();
+        var deletion = CreateDeletion(projectId, ProjectType.Comic, generationId);
+        deletion.Project.ScaffoldId = projectScaffoldId;
+        deletion.Generations[0].ScaffoldId = boardScaffoldId;
+        var artifacts = new FakeArtifactStore();
+        var service = CreateService(new FakeRepository(OwnerId, deletion), artifacts);
+
+        await service.DeleteAsync(OwnerId, projectId, CancellationToken.None);
+
+        Assert.Equal([generationId, boardScaffoldId, projectScaffoldId], artifacts.GenerationIds);
+    }
+
+    [Fact]
     public async Task DeleteAsync_DoesNotCleanProjectOutsideAuthenticatedOwner()
     {
         var projectId = Guid.NewGuid();

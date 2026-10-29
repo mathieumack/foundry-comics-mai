@@ -11,6 +11,7 @@ using MaiImageGenerator.Jobs.BoardGeneration.Configuration;
 using MaiImageGenerator.Jobs.BoardGeneration.Hosting;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Services;
+using MaiImageGenerator.Shared.Generation;
 using MDev.Dotnet.Azure.CosmosDb.Startup;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion.Internal;
 using Microsoft.Extensions.Configuration;
@@ -86,6 +87,8 @@ public static class ServiceCollectionExtensions
             {
                 metrics.SetResourceBuilder(resourceBuilder)
                        .AddMeter(ImageGenerationCoordinator.MeterName)
+                       .AddMeter(ImageGenerationCoordinator.MeterName)
+                       .AddMeter(AiTraceCapture.MeterName)
                        .AddRuntimeInstrumentation();
 
                 if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))

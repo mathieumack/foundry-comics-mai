@@ -53,6 +53,7 @@ public sealed class GenerationService(
         }
 
         document.Status = GenerationStatus.Processing;
+        document.SchemaVersion = 3;
         document.Error = null;
         foreach (var failedPanel in document.Panels.Where(panel => panel.Status == PanelGenerationStatus.Failed))
         {
@@ -99,9 +100,20 @@ public sealed class GenerationService(
                 var panel = document.Panels[panelIndex];
                 try
                 {
-                    panel.EffectivePrompt = request.RewritePrompt
-                        ? await foundryClient.RewritePromptAsync(document.Context, panel.Prompt, cancellationToken)
-                        : panel.Prompt;
+                    if (request.RewritePrompt)
+                    {
+                        var rewriteTrace = new AiGenerationTrace { Operation = "prompt-rewrite" };
+                        panel.Traces.Add(rewriteTrace);
+                        panel.EffectivePrompt = await foundryClient.RewritePromptAsync(
+                            document.Context,
+                            panel.Prompt,
+                            cancellationToken,
+                            rewriteTrace);
+                    }
+                    else
+                    {
+                        panel.EffectivePrompt = panel.Prompt;
+                    }
                     var (selectedCharacters, referenceSheet) = await PrepareReferencesAsync(
                         request.OwnerId,
                         project,
@@ -111,12 +123,15 @@ public sealed class GenerationService(
                         ? panel.EffectivePrompt
                         : $"Use the reference sheet only as identity guidance for {string.Join(", ", selectedCharacters.Select(item => item.Name))}. Preserve their identity and create this new scene: {panel.EffectivePrompt}";
                     var slot = layout.Slots[panelIndex];
+                    var imageTrace = new AiGenerationTrace { Operation = "panel-image" };
+                    panel.Traces.Add(imageTrace);
                     workItems.Add(new PanelWorkItem(
                         panelIndex,
                         panel,
                         prompt!,
                         referenceSheet,
-                        slot.ColumnSpan > slot.RowSpan));
+                        slot.ColumnSpan > slot.RowSpan,
+                        imageTrace));
                 }
                 catch (Exception exception) when (
                     exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -147,7 +162,8 @@ public sealed class GenerationService(
                                 workItem.Prompt,
                                 workItem.ReferenceSheet,
                                 workItem.Landscape,
-                                retryToken),
+                                retryToken,
+                                workItem.Trace),
                             IsTransient,
                             IsThrottled,
                             token);
@@ -353,5 +369,6 @@ public sealed class GenerationService(
         GenerationPanel Panel,
         string Prompt,
         byte[]? ReferenceSheet,
-        bool Landscape);
+        bool Landscape,
+        AiGenerationTrace Trace);
 }

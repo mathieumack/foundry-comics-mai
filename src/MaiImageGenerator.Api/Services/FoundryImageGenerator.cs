@@ -1,5 +1,7 @@
 using Azure.Core;
 using MaiImageGenerator.Api.Configuration;
+using MaiImageGenerator.Shared.Data.Entities;
+using MaiImageGenerator.Shared.Generation;
 using Microsoft.Extensions.Options;
 using OpenAI.Images;
 using System.ClientModel;
@@ -32,14 +34,19 @@ public sealed class FoundryImageGenerator(
     public async Task<byte[]> GenerateAsync(
         string prompt,
         byte[]? referenceSheet,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AiGenerationTrace? trace = null)
     {
+        trace ??= new AiGenerationTrace();
+        using var capture = AiTraceCapture.Begin(
+            trace, "image-generation", _imageModel, $"{_squareImageSize}x{_squareImageSize}");
         try
         {
-            GeneratedImage image;
             if (referenceSheet is null)
             {
-                return await GenerateFromPromptAsync(prompt, cancellationToken);
+                var bytes = await GenerateFromPromptAsync(prompt, cancellationToken, trace);
+                capture.Complete();
+                return bytes;
             }
             else
             {
@@ -64,27 +71,46 @@ public sealed class FoundryImageGenerator(
                     {
                         CancellationToken = cancellationToken
                     });
-#pragma warning disable OPENAI001
-                image = ((GeneratedImageCollection)result).FirstOrDefault()
-                    ?? throw new FoundryGenerationException("The image model returned no image.");
-#pragma warning restore OPENAI001
-            }
+                AiTraceCapture.CaptureRequestId(trace, name =>
+                    result.GetRawResponse().Headers.TryGetValue(name, out var value) ? value : null);
+                AiTraceCapture.CaptureImageResponse(trace, () =>
+                    JsonDocument.Parse(result.GetRawResponse().Content.ToMemory()));
+                using var document = JsonDocument.Parse(result.GetRawResponse().Content.ToMemory());
+                if (!document.RootElement.TryGetProperty("data", out var data) ||
+                    data.ValueKind != JsonValueKind.Array || data.GetArrayLength() == 0)
+                {
+                    throw new FoundryGenerationException("The image model returned no image.");
+                }
 
-            if (image.ImageBytes is not null)
-            {
-                return image.ImageBytes.ToArray();
-            }
+                var image = data[0];
+                byte[] bytes;
+                if (image.TryGetProperty("b64_json", out var encoded) && encoded.ValueKind == JsonValueKind.String &&
+                    encoded.GetString() is { } base64)
+                {
+                    bytes = Convert.FromBase64String(base64);
+                }
+                else if (image.TryGetProperty("url", out var url) && url.ValueKind == JsonValueKind.String &&
+                    url.GetString() is { } imageUrl)
+                {
+                    bytes = await httpClientFactory.CreateClient().GetByteArrayAsync(new Uri(imageUrl), cancellationToken);
+                }
+                else
+                {
+                    throw new FoundryGenerationException("The image model returned no image.");
+                }
 
-            if (image.ImageUri is not null)
-            {
-                return await httpClientFactory.CreateClient().GetByteArrayAsync(image.ImageUri, cancellationToken);
+                capture.Complete();
+                return bytes;
             }
-
-            throw new FoundryGenerationException("The image model returned no image.");
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
             throw new FoundryGenerationException("Image generation request timed out.", exception);
+        }
+        catch (OperationCanceledException)
+        {
+            capture.Cancel();
+            throw;
         }
         catch (HttpRequestException exception)
         {
@@ -100,6 +126,13 @@ public sealed class FoundryImageGenerator(
         }
         catch (ClientResultException exception)
         {
+            AiTraceCapture.CaptureRequestId(trace, name =>
+            {
+                var response = exception.GetRawResponse();
+                return response is not null && response.Headers.TryGetValue(name, out var value) ? value : null;
+            });
+            AiTraceCapture.CaptureImageResponse(trace, () =>
+                JsonDocument.Parse(exception.GetRawResponse()!.Content.ToMemory()));
             throw new FoundryGenerationException(
                 $"Image generation failed with HTTP status {exception.Status}.",
                 exception,
@@ -109,7 +142,8 @@ public sealed class FoundryImageGenerator(
 
     private async Task<byte[]> GenerateFromPromptAsync(
         string prompt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AiGenerationTrace trace)
     {
         var token = await credential.GetTokenAsync(
             new TokenRequestContext(CognitiveServicesScopes),
@@ -129,6 +163,10 @@ public sealed class FoundryImageGenerator(
 
         using var response = await httpClientFactory.CreateClient(HttpClientName)
             .SendAsync(request, cancellationToken);
+        AiTraceCapture.CaptureRequestId(trace, name =>
+            response.Headers.TryGetValues(name, out var values) ? values.FirstOrDefault() : null);
+        var responseBody = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        AiTraceCapture.CaptureImageResponse(trace, () => JsonDocument.Parse(responseBody));
         if (!response.IsSuccessStatusCode)
         {
             throw new FoundryGenerationException(
@@ -136,10 +174,7 @@ public sealed class FoundryImageGenerator(
                 (int)response.StatusCode);
         }
 
-        await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(
-            responseStream,
-            cancellationToken: cancellationToken);
+        using var document = JsonDocument.Parse(responseBody);
         if (document.RootElement.TryGetProperty("data", out var data) &&
             data.ValueKind == JsonValueKind.Array)
         {

@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace MaiImageGenerator.Api.Services;
 
-public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
+public sealed class ProjectService(MaiImageGeneratorDbContext dbContext, ScaffoldTraceStore scaffoldTraceStore)
 {
     public async Task<ProjectResponse> CreateAsync(
         string ownerId,
@@ -14,12 +14,15 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         CancellationToken cancellationToken)
     {
         Validate(request);
+        var scaffoldTraces = await scaffoldTraceStore.ReadAsync(ownerId, request.ScaffoldId, cancellationToken);
         var now = DateTimeOffset.UtcNow;
         var project = new ProjectDocument
         {
             Id = Guid.NewGuid().ToString("D"),
             OwnerId = ownerId,
-            SchemaVersion = 2,
+            SchemaVersion = 3,
+            ScaffoldId = request.ScaffoldId,
+            ScaffoldTraces = scaffoldTraces,
             Type = request.Type,
             Title = request.Title.Trim(),
             Context = request.Context?.Trim(),
@@ -180,7 +183,8 @@ public sealed class ProjectService(MaiImageGeneratorDbContext dbContext)
         project.SourceIdea,
         project.CreatedAt,
         project.UpdatedAt,
-        project.Characters.Select(ToResponse).ToArray());
+        project.Characters.Select(ToResponse).ToArray(),
+        project.ScaffoldTraces.ToArray());
 
     public static ProjectCharacterResponse ToResponse(ProjectCharacter character) => new(
         character.Id,
