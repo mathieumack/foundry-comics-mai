@@ -22,7 +22,8 @@ public sealed partial class GenerationService(
     PanelGenerationNotifier notifier,
     ImageGenerationCoordinator imageGeneration,
     ILogger<GenerationService> logger,
-    TimeProvider? commandTimeProvider = null)
+    TimeProvider? commandTimeProvider = null,
+    IOptions<GenerationBudgetOptions>? budgetOptions = null)
 {
     private readonly BlobContainerClient _container = blobServiceClient.GetBlobContainerClient("generations");
     private readonly TimeProvider _commandTime = commandTimeProvider ?? TimeProvider.System;
@@ -68,7 +69,12 @@ public sealed partial class GenerationService(
 
         if (request.SchemaVersion == 4)
         {
-            await ProcessPanelCommandAsync(request, document, project, cancellationToken);
+            if (project.DeletionRequestedAt is not null ||
+                !PanelVersionCommands.Matches(document, request.CommandId, request.Revision))
+                return;
+            if (PanelVersionCommands.HasActiveLease(document, _commandTime.GetUtcNow()))
+                throw new PanelCommandBusyException(document.CommandLeaseExpiresAt!.Value);
+            await ProcessBudgetedAsync(request, document, project, cancellationToken);
             return;
         }
         // Old deliveries must never regenerate a board after panel editing begins.
@@ -83,6 +89,13 @@ public sealed partial class GenerationService(
             return;
         }
 
+        await ProcessBudgetedAsync(request, document, project, cancellationToken);
+    }
+
+    private async Task ProcessBoardAsync(
+        BoardGenerationRequestMessage request, GenerationDocument document, ProjectDocument project,
+        GenerationRunGuard guard, CancellationToken cancellationToken)
+    {
         document.Status = GenerationStatus.Processing;
         var snapshot = document.InputSnapshot;
         var attempt = new GenerationAttempt
@@ -123,7 +136,9 @@ public sealed partial class GenerationService(
                 client = foundryClient.ForSnapshot(snapshot);
                 coordinator = new ImageGenerationCoordinator(snapshot.Settings.ToOptions(string.Empty));
                 composer = new ImageComposer(Options.Create(snapshot.Settings.ToOptions(string.Empty)));
-                retainedReferences = await LoadSnapshotReferencesAsync(document, snapshot, cancellationToken);
+                retainedReferences = await guard.StageAsync(
+                    "references", "prepare-references", attempt.Id,
+                    token => LoadSnapshotReferencesAsync(document, snapshot, token), cancellationToken);
             }
             else if (document.SchemaVersion >= 4 || request.SchemaVersion == 3)
             {
@@ -174,13 +189,11 @@ public sealed partial class GenerationService(
                     }
                     else if (snapshot?.RewritePrompt ?? request.RewritePrompt)
                     {
-                        var rewriteTrace = new AiGenerationTrace { Operation = "prompt-rewrite", AttemptId = attempt.Id };
-                        panel.Traces.Add(rewriteTrace);
-                        panel.EffectivePrompt = await client.RewritePromptAsync(
-                            snapshot is null ? document.Context : snapshot.Context,
-                            input?.Prompt ?? panel.Prompt,
-                            cancellationToken,
-                            rewriteTrace);
+                        panel.EffectivePrompt = await guard.InvokeAsync(
+                            $"panel-{panel.Number}/prompt-rewrite", "prompt-rewrite", attempt.Id, 0, panel.Traces,
+                            (trace, token) => client.RewritePromptAsync(
+                                snapshot is null ? document.Context : snapshot.Context,
+                                input?.Prompt ?? panel.Prompt, token, trace), cancellationToken);
                     }
                     else
                     {
@@ -206,7 +219,7 @@ public sealed partial class GenerationService(
                         slot.ColumnSpan > slot.RowSpan));
                 }
                 catch (Exception exception) when (
-                    exception is not DbUpdateConcurrencyException &&
+                    exception is not (DbUpdateConcurrencyException or GenerationBudgetExceededException or GenerationBudgetCheckpointException) &&
                     (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested))
                 {
                     panel.Status = PanelGenerationStatus.Failed;
@@ -220,7 +233,7 @@ public sealed partial class GenerationService(
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);
-            using var persistenceLock = new SemaphoreSlim(1, 1);
+            var persistenceLock = guard.Gate;
             await coordinator.RunAsync(
                 workItems,
                 "comic-panel",
@@ -239,23 +252,12 @@ public sealed partial class GenerationService(
                                 {
                                     await SaveIssueAsync(null, retryToken);
                                 }
-                                var imageTrace = new AiGenerationTrace { Operation = "panel-image", AttemptId = attempt.Id };
-                                await persistenceLock.WaitAsync(retryToken);
-                                try
-                                {
-                                    workItem.Panel.Traces.Add(imageTrace);
-                                    await dbContext.SaveChangesAsync(retryToken);
-                                }
-                                finally
-                                {
-                                    persistenceLock.Release();
-                                }
-                                return await client.GenerateAsync(
-                                    workItem.Prompt,
-                                    workItem.ReferenceSheet,
-                                    workItem.Landscape,
-                                    retryToken,
-                                    imageTrace);
+                                return await guard.InvokeAsync(
+                                    $"panel-{workItem.Panel.Number}/panel-image", "panel-image", attempt.Id,
+                                    snapshot?.Settings.ImageRetryCount ?? guard.Budget.MaxRetriesPerStage,
+                                    workItem.Panel.Traces,
+                                    (trace, callToken) => client.GenerateAsync(workItem.Prompt,
+                                        workItem.ReferenceSheet, workItem.Landscape, callToken, trace), retryToken);
                             },
                             IsTransient,
                             IsThrottled,
@@ -274,7 +276,7 @@ public sealed partial class GenerationService(
                         await UploadPngAsync(blobName, image, token);
                     }
                     catch (Exception exception) when (
-                        exception is not DbUpdateConcurrencyException &&
+                        exception is not (DbUpdateConcurrencyException or GenerationBudgetExceededException or GenerationBudgetCheckpointException) &&
                         (exception is not OperationCanceledException || !token.IsCancellationRequested))
                     {
                         issue = GetPanelIssue(exception);
@@ -330,23 +332,30 @@ public sealed partial class GenerationService(
                 },
                 cancellationToken);
 
-            var board = await composer.BuildBoardAsync(
-                snapshot?.Title ?? document.Title,
-                panelImages,
-                template,
+            cancellationToken.ThrowIfCancellationRequested();
+            if (guard.Budget.StopReason is { } stopReason)
+                throw new GenerationBudgetExceededException(stopReason);
+            var board = await guard.StageAsync(
+                "composition", "compose", attempt.Id,
+                token => composer.BuildBoardAsync(snapshot?.Title ?? document.Title, panelImages, template, token),
                 cancellationToken);
-            document.BoardBlobName = ArtifactPathBuilder.GetGenerationBlobName(
+            var boardBlobName = ArtifactPathBuilder.GetGenerationBlobName(
                 request.OwnerId,
                 Guid.Parse(document.Id),
                 $"initial-board-{Guid.Parse(attempt.Id):N}.png");
-            await UploadPngAsync(document.BoardBlobName, board, cancellationToken);
+            await guard.StageAsync("board-artifact", "save-artifact", attempt.Id, async token =>
+            {
+                await UploadPngAsync(boardBlobName, board, token);
+                return true;
+            }, cancellationToken);
+            document.BoardBlobName = boardBlobName;
             document.Status = GenerationStatus.Completed;
             attempt.Status = "completed";
             attempt.CompletedAt = DateTimeOffset.UtcNow;
             document.UpdatedAt = DateTimeOffset.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (Exception exception) when (exception is DbUpdateConcurrencyException or GenerationBudgetExceededException or GenerationBudgetCheckpointException)
         {
             throw;
         }
@@ -364,6 +373,21 @@ public sealed partial class GenerationService(
             document.UpdatedAt = DateTimeOffset.UtcNow;
             await dbContext.SaveChangesAsync(CancellationToken.None);
             throw;
+        }
+        catch (AggregateException exception) when (exception.Flatten().InnerExceptions
+            .OfType<DbUpdateConcurrencyException>().Any())
+        {
+            throw exception.Flatten().InnerExceptions.OfType<DbUpdateConcurrencyException>().First();
+        }
+        catch (AggregateException exception) when (exception.Flatten().InnerExceptions.Any(item =>
+            item is GenerationBudgetCheckpointException))
+        {
+            throw new GenerationBudgetCheckpointException(exception);
+        }
+        catch (AggregateException exception) when (exception.Flatten().InnerExceptions
+            .OfType<GenerationBudgetExceededException>().FirstOrDefault() is not null)
+        {
+            throw exception.Flatten().InnerExceptions.OfType<GenerationBudgetExceededException>().First();
         }
         catch (Exception)
         {

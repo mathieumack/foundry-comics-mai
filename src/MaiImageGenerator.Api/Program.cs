@@ -41,7 +41,8 @@ builder.RegisterConfiguration()
         .RegisterOpenApi(forceHttpsServers: true, includeServerUrls: false)
         .RegisterAzureStorage(credential)
         .RegisterCosmosDb<MaiImageGeneratorDbContext>(credential)
-        .BindConfiguration<FoundryOptions>(FoundryOptions.SectionName);
+        .BindConfiguration<FoundryOptions>(FoundryOptions.SectionName)
+        .BindConfiguration<GenerationBudgetOptions>(GenerationBudgetOptions.SectionName);
 
 var serviceBusNamespace = builder.Configuration["ServiceBus:FullyQualifiedNamespace"]
     ?? throw new InvalidOperationException("Configuration 'ServiceBus:FullyQualifiedNamespace' is required.");

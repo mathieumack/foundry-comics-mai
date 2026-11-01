@@ -59,6 +59,15 @@ public sealed class MaiImageGeneratorDbContext(
             attempt.ToJsonProperty("attempts");
             attempt.Property(item => item.Id).ValueGeneratedNever();
         });
+        generation.OwnsOne(item => item.Budget, budget =>
+        {
+            budget.ToJsonProperty("budget");
+            budget.OwnsMany(item => item.Stages, stage =>
+            {
+                stage.ToJsonProperty("stages");
+                stage.Property(item => item.Id).ValueGeneratedNever();
+            });
+        });
         generation.OwnsOne(item => item.InputSnapshot, snapshot =>
         {
             snapshot.ToJsonProperty("inputSnapshot");
@@ -146,6 +155,12 @@ public sealed class MaiImageGeneratorDbContext(
         trace.Property(item => item.Model).ToJsonProperty("model");
         trace.Property(item => item.RequestId).ToJsonProperty("requestId");
         trace.Property(item => item.AttemptId).ToJsonProperty("attemptId");
+        trace.Property(item => item.RunId).ToJsonProperty("runId");
+        trace.Property(item => item.StageId).ToJsonProperty("stageId");
+        trace.Property(item => item.InputVersion).ToJsonProperty("inputVersion");
+        trace.Property(item => item.RetryNumber).ToJsonProperty("retryNumber");
+        trace.Property(item => item.StopReason).ToJsonProperty("stopReason");
+        trace.Property(item => item.ProviderOutcome).ToJsonProperty("providerOutcome");
         trace.Property(item => item.InputTokens).ToJsonProperty("inputTokens");
         trace.Property(item => item.OutputTokens).ToJsonProperty("outputTokens");
         trace.Property(item => item.TotalTokens).ToJsonProperty("totalTokens");

@@ -35,7 +35,8 @@ var customMeters = new List<string>
 builder.RegisterConfiguration()
         .RegisterCosmosDb<MaiImageGeneratorDbContext>(credential)
         .RegisterAzureStorage(credential)
-        .BindConfiguration<FoundryOptions>(FoundryOptions.SectionName);
+        .BindConfiguration<FoundryOptions>(FoundryOptions.SectionName)
+        .BindConfiguration<GenerationBudgetOptions>(GenerationBudgetOptions.SectionName);
 
 builder.Services.AddLogging(builder.Configuration, "BoardGenerationJob");
 
@@ -52,7 +53,11 @@ builder.Services.AddSingleton(serviceProvider =>
         serviceProvider.GetRequiredService<TokenCredential>(),
         "https://ai.azure.com/.default");
 #pragma warning disable OPENAI001 // Required for Entra ID token authentication with the OpenAI v1 endpoint.
-    return new OpenAIClient(authenticationPolicy, new OpenAIClientOptions { Endpoint = endpoint });
+    return new OpenAIClient(authenticationPolicy, new OpenAIClientOptions
+    {
+        Endpoint = endpoint,
+        RetryPolicy = new ClientRetryPolicy(maxRetries: 0)
+    });
 #pragma warning restore OPENAI001
 });
 builder.Services.AddSingleton<AIAgent>(serviceProvider =>
@@ -73,7 +78,8 @@ builder.Services.AddSingleton<ImageClient>(serviceProvider =>
 #pragma warning disable OPENAI001 // Required for Entra ID token authentication with the MAI v1 endpoint.
     var client = new OpenAIClient(authenticationPolicy, new OpenAIClientOptions
     {
-        Endpoint = GetMaiImageEndpoint(options.Endpoint)
+        Endpoint = GetMaiImageEndpoint(options.Endpoint),
+        RetryPolicy = new ClientRetryPolicy(maxRetries: 0)
     });
 #pragma warning restore OPENAI001
     return client.GetImageClient(options.ImageModel);

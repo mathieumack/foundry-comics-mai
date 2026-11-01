@@ -213,7 +213,7 @@ public sealed class GenerationSnapshotTests
     }
 
     [Fact]
-    public async Task Worker_RedeliveryRetainsRunAndPreparedPrompt_ButRecordsSeparateAttemptsAndRetryTraces()
+    public async Task Worker_RedeliveryRetainsRunAndPreparedPrompt_WithoutResettingRetryBudget()
     {
         var project = CreateProject();
         var document = CreateDocument(project);
@@ -234,8 +234,12 @@ public sealed class GenerationSnapshotTests
         Assert.Equal(2, document.Attempts.Count);
         Assert.NotEqual(document.Attempts[0].Id, document.Attempts[1].Id);
         Assert.Equal(document.Id, document.InputSnapshot.RunId);
-        Assert.Equal(document.Attempts[1].Id, document.Panels[0].Traces.Last().AttemptId);
-        Assert.Equal(GenerationStatus.Completed, document.Status);
+        Assert.All(document.Panels[0].Traces, trace => Assert.Equal(document.Attempts[0].Id, trace.AttemptId));
+        Assert.Equal(2, document.Panels[0].Traces.Count);
+        Assert.Equal(2, document.Budget!.ReservedModelCalls);
+        Assert.Equal("retry-limit", document.Budget.StopReason);
+        Assert.Equal(GenerationStatus.Failed, document.Status);
+        Assert.Contains("retry limit", document.Error);
     }
 
     [Fact]

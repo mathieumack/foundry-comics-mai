@@ -127,7 +127,24 @@ public sealed record GenerationResponse(
     GenerationCompleteness? Completeness = null,
     long Revision = 0,
     bool CanEditPanels = false,
-    string? PendingCommandId = null);
+    string? PendingCommandId = null,
+    GenerationRunBudget? Budget = null);
+
+public sealed record GenerationRunBudget(
+    int Version,
+    int MaxModelCalls,
+    int MaxAttempts,
+    int MaxRetriesPerStage,
+    DateTimeOffset Deadline,
+    int ReservedModelCalls,
+    int ReservedAttempts,
+    string? StopReason,
+    IReadOnlyList<GenerationStage> Stages,
+    bool HistoricalConsumptionKnown = true);
+
+public sealed record GenerationStage(
+    string Id, string Operation, string? AttemptId, int ReservedCalls,
+    string Status, DateTimeOffset UpdatedAt, string? StopReason);
 
 public sealed record PanelGenerationResponse(
     int Number,

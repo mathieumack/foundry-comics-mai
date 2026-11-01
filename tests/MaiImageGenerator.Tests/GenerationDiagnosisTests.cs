@@ -11,6 +11,42 @@ namespace MaiImageGenerator.Tests;
 
 public sealed class GenerationDiagnosisTests
 {
+    [Fact]
+    public void BudgetAndCorrelation_RoundTripFromCosmosToBrowserWithoutPayloadMetadata()
+    {
+        var document = new GenerationDocument
+        {
+            Id = Guid.NewGuid().ToString("D"), OwnerId = "private-owner", Context = "private-story",
+            Budget = new()
+            {
+                MaxModelCalls = 7, ReservedModelCalls = 2, StopReason = "deadline",
+                Stages = [new() { Id = "panel-1/panel-image", Operation = "panel-image", Status = "stopped" }]
+            },
+            Panels = [new() { Number = 1, Traces = [new()
+            {
+                RunId = "run-id", StageId = "panel-1/panel-image", AttemptId = "attempt-id",
+                InputVersion = 1, RetryNumber = 1, StopReason = "deadline", ProviderOutcome = "unknown"
+            }] }]
+        };
+        var response = GenerationService.ToResponse(document, new());
+        var web = JsonSerializer.Deserialize<WebGenerationResponse>(
+            JsonSerializer.Serialize(response, JsonSerializerOptions.Web), JsonSerializerOptions.Web)!;
+        Assert.Equal(7, web.Budget!.MaxModelCalls);
+        Assert.Equal(2, web.Budget.ReservedModelCalls);
+        Assert.Equal("deadline", web.Budget.StopReason);
+        Assert.Equal("panel-1/panel-image", Assert.Single(web.Budget.Stages).Id);
+        var trace = Assert.Single(web.Panels[0].Traces!);
+        Assert.Equal("run-id", trace.RunId);
+        Assert.Equal("attempt-id", trace.AttemptId);
+        Assert.Equal(1, trace.InputVersion);
+        Assert.Equal(1, trace.RetryNumber);
+        Assert.Equal("unknown", trace.ProviderOutcome);
+        Assert.Null(trace.TotalTokens);
+        var metadata = JsonSerializer.Serialize(new { web.Budget, trace });
+        Assert.DoesNotContain("private-story", metadata);
+        Assert.DoesNotContain("private-owner", metadata);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -86,5 +122,10 @@ public sealed class GenerationDiagnosisTests
         Assert.Equal(typeof(string), panel.FindProperty(nameof(GenerationPanel.Status))!.GetProviderClrType());
         Assert.Equal(2, (int)GenerationStatus.Completed);
         Assert.Equal(2, (int)PanelGenerationStatus.Completed);
+        var budget = context.Model.FindEntityType(typeof(GenerationDocument))!
+            .FindNavigation(nameof(GenerationDocument.Budget))!;
+        Assert.True(budget.ForeignKey.IsOwnership);
+        Assert.NotNull(budget.TargetEntityType.FindProperty(nameof(GenerationRunBudget.ReservedModelCalls)));
+        Assert.NotNull(budget.TargetEntityType.FindNavigation(nameof(GenerationRunBudget.Stages)));
     }
 }
