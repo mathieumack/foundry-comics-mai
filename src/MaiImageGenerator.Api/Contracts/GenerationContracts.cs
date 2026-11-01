@@ -56,7 +56,20 @@ public sealed record GenerationResponse(
     string? Error,
     IReadOnlyList<AiGenerationTrace>? ScaffoldTraces = null,
     int FailedPanelCount = 0,
-    GenerationCompleteness Completeness = GenerationCompleteness.None);
+    GenerationCompleteness Completeness = GenerationCompleteness.None,
+    GenerationRunResponse? Run = null);
+
+public sealed record GenerationRunResponse(
+    string RunId,
+    int SnapshotVersion,
+    DateTimeOffset AcceptedAt,
+    string PromptTemplateVersion,
+    string LayoutVersion,
+    GenerationModelSettings Settings,
+    IReadOnlyList<GenerationAttempt> Attempts,
+    IReadOnlyList<GenerationReferenceVersionResponse> References);
+
+public sealed record GenerationReferenceVersionResponse(string ReferenceId, string ContentSha256);
 
 public sealed record PanelGenerationResponse(
     int Number,
@@ -74,7 +87,7 @@ public sealed record CharacterGenerationResponse(
     string Name,
     IReadOnlyList<CharacterReferenceResponse> References);
 
-public sealed record CharacterReferenceResponse(string ReferenceId, string FileName);
+public sealed record CharacterReferenceResponse(string ReferenceId, string FileName, Uri? ContentUri = null);
 
 public sealed record GenerationSummaryResponse(
     Guid GenerationId,

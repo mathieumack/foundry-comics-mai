@@ -4,6 +4,7 @@ using MaiImageGenerator.Api.Contracts;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Data.Entities;
 using MaiImageGenerator.Shared.Messages;
+using MaiImageGenerator.Shared.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace MaiImageGenerator.Api.Services;
@@ -13,7 +14,9 @@ public sealed class GenerationService(
     ReferenceService referenceService,
     BlobServiceClient blobServiceClient,
     ServiceBusSender jobsQueue,
-    ScaffoldTraceStore scaffoldTraceStore)
+    ScaffoldTraceStore scaffoldTraceStore,
+    GenerationSnapshotStore snapshotStore,
+    ILogger<GenerationService> logger)
 {
     private readonly BlobContainerClient _container = blobServiceClient.GetBlobContainerClient("generations");
 
@@ -38,7 +41,7 @@ public sealed class GenerationService(
             Id = Guid.NewGuid().ToString("D"),
             OwnerId = ownerId,
             ProjectId = project.Id,
-            SchemaVersion = 3,
+            SchemaVersion = 4,
             ScaffoldId = request.ScaffoldId,
             ScaffoldTraces = scaffoldTraces,
             Title = request.Title.Trim(),
@@ -58,9 +61,7 @@ public sealed class GenerationService(
             }).ToList()
         };
 
-        dbContext.Generations.Add(document);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await QueueAsync(document, project, cancellationToken);
+        await SubmitAsync(document, project, cancellationToken);
         return ToResponse(document, project);
     }
 
@@ -102,7 +103,7 @@ public sealed class GenerationService(
             Id = Guid.NewGuid().ToString("D"),
             OwnerId = ownerId,
             ProjectId = project.Id,
-            SchemaVersion = 3,
+            SchemaVersion = 4,
             ScaffoldId = request.ScaffoldId,
             ScaffoldTraces = scaffoldTraces,
             Title = request.Title.Trim(),
@@ -123,10 +124,7 @@ public sealed class GenerationService(
         };
 
         dbContext.Projects.Add(project);
-        dbContext.Generations.Add(document);
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        await QueueAsync(document, project, cancellationToken);
+        await SubmitAsync(document, project, cancellationToken);
 
         return ToResponse(document, project);
     }
@@ -143,6 +141,11 @@ public sealed class GenerationService(
         if (document is null)
         {
             return null;
+        }
+
+        if (document.InputSnapshot is not null)
+        {
+            return ToResponse(document, new ProjectDocument());
         }
 
         var project = await dbContext.Projects
@@ -196,35 +199,73 @@ public sealed class GenerationService(
             : (await _container.GetBlobClient(blobName).OpenReadAsync(cancellationToken: cancellationToken), "image/png");
     }
 
-    private async Task<IReadOnlyDictionary<string, GenerationDocumentReference>> LoadReferencesAsync(
+    public async Task<(Stream Content, string ContentType)?> OpenReferenceAsync(
+        string ownerId,
+        Guid generationId,
+        string referenceId,
+        CancellationToken cancellationToken)
+    {
+        var id = generationId.ToString("D");
+        var document = await dbContext.Generations
+            .WithPartitionKey(ownerId)
+            .SingleOrDefaultAsync(item => item.Id == id && item.OwnerId == ownerId, cancellationToken);
+        var reference = document?.InputSnapshot?.Characters.SelectMany(character => character.References)
+            .FirstOrDefault(item => item.Id == referenceId);
+        return reference is null ? null :
+            (await snapshotStore.OpenReferenceAsync(ownerId, generationId, reference, cancellationToken), reference.ContentType);
+    }
+
+    private async Task<IReadOnlyDictionary<string, ReferenceDocument>> LoadReferencesAsync(
         string ownerId,
         CreateGenerationRequest request,
         CancellationToken cancellationToken)
     {
-        var references = new Dictionary<string, GenerationDocumentReference>(StringComparer.Ordinal);
+        var references = new Dictionary<string, ReferenceDocument>(StringComparer.Ordinal);
         foreach (var referenceId in request.Characters.SelectMany(character => character.ReferenceIds).Distinct())
         {
             var reference = await referenceService.GetAsync(ownerId, referenceId, cancellationToken)
                 ?? throw new ArgumentException($"Reference '{referenceId}' was not found.");
-            references[referenceId] = new(reference.FileName);
+            references[referenceId] = reference;
         }
 
         return references;
     }
 
-    private async Task QueueAsync(
+    private async Task SubmitAsync(
         GenerationDocument document,
         ProjectDocument project,
         CancellationToken cancellationToken)
     {
+        if (project.OwnerId != document.OwnerId)
+        {
+            throw new ArgumentException("The generation does not belong to this owner.");
+        }
+        var submissionId = BoardSubmissionLease.Acquire(project, DateTimeOffset.UtcNow);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(BoardSubmissionLease.SubmissionTimeout);
         try
         {
+            dbContext.Generations.Add(document);
+            await dbContext.SaveChangesAsync(timeout.Token);
+            var selectedIds = document.Panels.SelectMany(panel => panel.CharacterIds).ToHashSet(StringComparer.Ordinal);
+            var references = new Dictionary<string, ReferenceDocument>(StringComparer.Ordinal);
+            foreach (var referenceId in project.Characters.Where(character => selectedIds.Contains(character.Id))
+                         .SelectMany(character => character.References).Select(reference => reference.Id).Distinct())
+            {
+                references[referenceId] = await referenceService.GetAsync(document.OwnerId, referenceId, timeout.Token)
+                    ?? throw new ArgumentException("A selected reference was not found.");
+            }
+            document.InputSnapshot = await snapshotStore.CaptureAsync(document, project, references, timeout.Token);
+            await dbContext.SaveChangesAsync(timeout.Token);
             var message = new BoardGenerationRequestMessage
             {
+                SchemaVersion = 3,
                 BoardId = document.Id,
                 OwnerId = document.OwnerId,
                 ProjectId = project.Id,
-                RewritePrompt = document.RewritePrompt
+                RewritePrompt = document.InputSnapshot.RewritePrompt,
+                RunId = document.InputSnapshot.RunId
             };
             await jobsQueue.SendMessageAsync(
                 new ServiceBusMessage(BinaryData.FromObjectAsJson(message))
@@ -232,43 +273,63 @@ public sealed class GenerationService(
                     MessageId = document.Id,
                     ContentType = "application/json"
                 },
-                cancellationToken);
+                timeout.Token);
         }
         catch
         {
             document.Status = GenerationStatus.Failed;
-            document.Error = "The generation could not be queued.";
+            document.Error = document.InputSnapshot is null
+                ? "The generation inputs could not be retained."
+                : "The generation could not be queued.";
             document.UpdatedAt = DateTimeOffset.UtcNow;
             await dbContext.SaveChangesAsync(CancellationToken.None);
             throw;
+        }
+        finally
+        {
+            BoardSubmissionLease.Release(project, submissionId);
+            try
+            {
+                await dbContext.SaveChangesAsync(CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                // Never overwrite concurrent project edits to clear a lease; it will expire.
+                logger.LogWarning(exception, "Could not release the board submission lease; deletion remains protected until expiry.");
+            }
         }
     }
 
     public static GenerationResponse ToResponse(GenerationDocument document, ProjectDocument project)
     {
         var result = GenerationResult.From(document);
+        var snapshot = document.InputSnapshot;
+        var characters = snapshot is null
+            ? project.Characters.Select(character => new CharacterGenerationResponse(
+                character.Id, character.Name, character.References.Select(reference =>
+                    new CharacterReferenceResponse(reference.Id, reference.FileName)).ToArray())).ToArray()
+            : snapshot.Characters.Select(character => new CharacterGenerationResponse(
+                character.Id, character.Name, character.References.Select(reference =>
+                    new CharacterReferenceResponse(reference.Id, reference.FileName,
+                        new Uri($"api/generations/{document.Id}/references/{reference.Id}/content", UriKind.Relative)))
+                    .ToArray())).ToArray();
         return new(
         Guid.Parse(document.Id),
-        document.Title,
-        document.Description,
-        document.Context,
+        snapshot?.Title ?? document.Title,
+        snapshot is null ? document.Description : snapshot.Description,
+        snapshot is null ? document.Context : snapshot.Context,
         document.CreatedAt,
-        document.RewritePrompt,
-        document.Template,
-        project.Characters.Select(character => new CharacterGenerationResponse(
-            character.Id,
-            character.Name,
-            character.References.Select(reference => new CharacterReferenceResponse(
-                reference.Id,
-                reference.FileName)).ToArray())).ToArray(),
+        snapshot?.RewritePrompt ?? document.RewritePrompt,
+        snapshot?.Template ?? document.Template,
+        characters,
         document.Status,
         result.PanelCount,
         result.CompletedPanelCount,
         document.Panels.Select(panel => new PanelGenerationResponse(
             panel.Number,
-            panel.Prompt,
-            panel.CharacterIds
-                .Where(characterId => project.Characters.Any(character => character.Id == characterId))
+            snapshot?.Panels.Single(input => input.Number == panel.Number).Prompt ?? panel.Prompt,
+            (snapshot?.Panels.Single(input => input.Number == panel.Number).CharacterIds ?? panel.CharacterIds)
+                .Where(characterId => characters.Any(character => character.Id == characterId))
                 .ToArray(),
             panel.Status,
             panel.EffectivePrompt,
@@ -280,7 +341,15 @@ public sealed class GenerationService(
         document.Error,
         document.ScaffoldTraces.ToArray(),
         result.FailedPanelCount,
-        result.Completeness);
+        result.Completeness,
+        snapshot is null ? null : new GenerationRunResponse(
+            snapshot.RunId, snapshot.Version, snapshot.AcceptedAt,
+            snapshot.PromptTemplateVersion, snapshot.LayoutVersion, snapshot.Settings,
+            document.Attempts.ToArray(),
+            snapshot.Characters.SelectMany(character => character.References)
+                .DistinctBy(reference => reference.Id)
+                .Select(reference => new GenerationReferenceVersionResponse(reference.Id, reference.ContentSha256))
+                .ToArray()));
     }
 
     public static GenerationSummaryResponse ToSummaryResponse(GenerationDocument document)
@@ -303,6 +372,4 @@ public sealed class GenerationService(
             result.FailedPanelCount,
             result.Completeness);
     }
-
-    private sealed record GenerationDocumentReference(string FileName);
 }

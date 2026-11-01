@@ -16,6 +16,8 @@ public sealed class ProjectDocument
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletionRequestedAt { get; set; }
+    public string? BoardSubmissionId { get; set; }
+    public DateTimeOffset? BoardSubmissionStartedAt { get; set; }
     public string? ETag { get; set; }
 }
 

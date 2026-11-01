@@ -2,6 +2,7 @@ using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using MaiImageGenerator.Shared.Data.DatabaseContext;
 using MaiImageGenerator.Shared.Data.Entities;
+using MaiImageGenerator.Shared.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace MaiImageGenerator.Api.Services;
@@ -107,7 +108,8 @@ public sealed class CosmosProjectDeletionRepository(MaiImageGeneratorDbContext d
             .WithPartitionKey(ownerId)
             .Where(item => item.OwnerId == ownerId && item.ProjectId == id)
             .ToListAsync(cancellationToken);
-        if (generations.Any(item => item.Status == GenerationStatus.Processing) ||
+        if (BoardSubmissionLease.IsActive(project, DateTimeOffset.UtcNow) ||
+            generations.Any(item => item.Status == GenerationStatus.Processing) ||
             project.BookPlan?.Status == GenerationStatus.Processing ||
             project.BookPlan?.Chapters.Any(chapter =>
                 chapter.ProseStatus == GenerationStatus.Processing ||
@@ -147,6 +149,10 @@ public sealed class CosmosProjectDeletionRepository(MaiImageGeneratorDbContext d
         var linkedReferenceIds = project.Characters
             .SelectMany(character => character.References)
             .Select(reference => reference.Id)
+            .Concat(generations.Where(generation => generation.InputSnapshot is not null)
+                .SelectMany(generation => generation.InputSnapshot!.Characters)
+                .SelectMany(character => character.References)
+                .Select(reference => reference.Id))
             .ToHashSet(StringComparer.Ordinal);
         var otherProjects = await dbContext.Projects
             .WithPartitionKey(ownerId)

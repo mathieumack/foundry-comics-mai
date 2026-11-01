@@ -7,6 +7,9 @@ using MaiImageGenerator.Shared.Messages;
 using MaiImageGenerator.Shared.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
+using MaiImageGenerator.Shared.Generation;
+using Microsoft.Extensions.Options;
 
 namespace MaiImageGenerator.Jobs.BoardGeneration.Services;
 
@@ -40,6 +43,21 @@ public sealed class GenerationService(
                 cancellationToken)
             ?? throw new InvalidOperationException($"Project '{request.ProjectId}' was not found.");
 
+        await ProcessAsync(request, document, project, cancellationToken);
+    }
+
+    internal async Task ProcessAsync(
+        BoardGenerationRequestMessage request,
+        GenerationDocument document,
+        ProjectDocument project,
+        CancellationToken cancellationToken)
+    {
+        Validate(request);
+        if (document.OwnerId != request.OwnerId || project.OwnerId != request.OwnerId ||
+            document.Id != request.BoardId || project.Id != request.ProjectId)
+        {
+            throw new InvalidDataException("The board generation message has invalid ownership.");
+        }
         if (document.ProjectId != project.Id)
         {
             throw new InvalidOperationException(
@@ -53,7 +71,13 @@ public sealed class GenerationService(
         }
 
         document.Status = GenerationStatus.Processing;
-        document.SchemaVersion = 3;
+        var snapshot = document.InputSnapshot;
+        var attempt = new GenerationAttempt
+        {
+            Id = Guid.NewGuid().ToString("D"),
+            StartedAt = DateTimeOffset.UtcNow
+        };
+        document.Attempts.Add(attempt);
         document.Error = null;
         foreach (var failedPanel in document.Panels.Where(panel => panel.Status == PanelGenerationStatus.Failed))
         {
@@ -66,9 +90,37 @@ public sealed class GenerationService(
 
         try
         {
+            var client = foundryClient;
+            var coordinator = imageGeneration;
+            var composer = imageComposer;
+            IReadOnlyDictionary<string, byte[]> retainedReferences = new Dictionary<string, byte[]>();
+            if (snapshot is not null)
+            {
+                if (snapshot.Version != 1 || snapshot.RunId != document.Id ||
+                    (request.SchemaVersion == 3 && request.RunId != snapshot.RunId) ||
+                    snapshot.PromptTemplateVersion != BoardInputVersions.PromptTemplate ||
+                    snapshot.LayoutVersion != BoardInputVersions.Layout ||
+                    snapshot.Settings.Provider != "Microsoft Foundry" ||
+                    string.IsNullOrWhiteSpace(snapshot.Settings.PromptDeployment) ||
+                    string.IsNullOrWhiteSpace(snapshot.Settings.ImageDeployment) ||
+                    !snapshot.Panels.Select(panel => panel.Number).SequenceEqual(document.Panels.Select(panel => panel.Number)))
+                {
+                    throw new InvalidDataException("The generation input snapshot is unsupported or invalid.");
+                }
+                client = foundryClient.ForSnapshot(snapshot);
+                coordinator = new ImageGenerationCoordinator(snapshot.Settings.ToOptions(string.Empty));
+                composer = new ImageComposer(Options.Create(snapshot.Settings.ToOptions(string.Empty)));
+                retainedReferences = await LoadSnapshotReferencesAsync(document, snapshot, cancellationToken);
+            }
+            else if (document.SchemaVersion >= 4 || request.SchemaVersion == 3)
+            {
+                throw new InvalidDataException("The generation input snapshot is missing.");
+            }
+
             var panelImages = new byte[]?[document.Panels.Count];
             var panelIndexesToGenerate = new List<int>();
-            var layout = BoardTemplateDefinitions.Resolve(document.Template, document.Panels.Count);
+            var template = snapshot?.Template ?? document.Template;
+            var layout = BoardTemplateDefinitions.Resolve(template, document.Panels.Count);
             for (var panelIndex = 0; panelIndex < document.Panels.Count; panelIndex++)
             {
                 var panel = document.Panels[panelIndex];
@@ -100,40 +152,45 @@ public sealed class GenerationService(
             foreach (var panelIndex in panelIndexesToGenerate)
             {
                 var panel = document.Panels[panelIndex];
+                var input = snapshot?.Panels[panelIndex];
                 try
                 {
-                    if (request.RewritePrompt)
+                    if (snapshot is not null && panel.EffectivePrompt is not null)
                     {
-                        var rewriteTrace = new AiGenerationTrace { Operation = "prompt-rewrite" };
+                        // Reuse a prepared prompt when recovering the same accepted run.
+                    }
+                    else if (snapshot?.RewritePrompt ?? request.RewritePrompt)
+                    {
+                        var rewriteTrace = new AiGenerationTrace { Operation = "prompt-rewrite", AttemptId = attempt.Id };
                         panel.Traces.Add(rewriteTrace);
-                        panel.EffectivePrompt = await foundryClient.RewritePromptAsync(
-                            document.Context,
-                            panel.Prompt,
+                        panel.EffectivePrompt = await client.RewritePromptAsync(
+                            snapshot is null ? document.Context : snapshot.Context,
+                            input?.Prompt ?? panel.Prompt,
                             cancellationToken,
                             rewriteTrace);
                     }
                     else
                     {
-                        panel.EffectivePrompt = panel.Prompt;
+                        panel.EffectivePrompt = input?.Prompt ?? panel.Prompt;
                     }
                     var (selectedCharacters, referenceSheet) = await PrepareReferencesAsync(
                         request.OwnerId,
+                        snapshot,
+                        retainedReferences,
+                        composer,
                         project,
                         panel,
                         cancellationToken);
                     var prompt = selectedCharacters.Length == 0
                         ? panel.EffectivePrompt
-                        : $"Use the reference sheet only as identity guidance for {string.Join(", ", selectedCharacters.Select(item => item.Name))}. Preserve their identity and create this new scene: {panel.EffectivePrompt}";
+                        : $"Use the reference sheet only as identity guidance for {string.Join(", ", selectedCharacters)}. Preserve their identity and create this new scene: {panel.EffectivePrompt}";
                     var slot = layout.Slots[panelIndex];
-                    var imageTrace = new AiGenerationTrace { Operation = "panel-image" };
-                    panel.Traces.Add(imageTrace);
                     workItems.Add(new PanelWorkItem(
                         panelIndex,
                         panel,
                         prompt!,
                         referenceSheet,
-                        slot.ColumnSpan > slot.RowSpan,
-                        imageTrace));
+                        slot.ColumnSpan > slot.RowSpan));
                 }
                 catch (Exception exception) when (
                     exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -148,8 +205,9 @@ public sealed class GenerationService(
                 }
             }
 
+            await dbContext.SaveChangesAsync(cancellationToken);
             using var persistenceLock = new SemaphoreSlim(1, 1);
-            await imageGeneration.RunAsync(
+            await coordinator.RunAsync(
                 workItems,
                 "comic-panel",
                 async (workItem, token) =>
@@ -159,7 +217,7 @@ public sealed class GenerationService(
                     PanelGenerationIssue? issue = null;
                     try
                     {
-                        image = await imageGeneration.ExecuteWithRetryAsync(
+                        image = await coordinator.ExecuteWithRetryAsync(
                             "comic-panel",
                             async retryToken =>
                             {
@@ -167,12 +225,23 @@ public sealed class GenerationService(
                                 {
                                     await SaveIssueAsync(null, retryToken);
                                 }
-                                return await foundryClient.GenerateAsync(
+                                var imageTrace = new AiGenerationTrace { Operation = "panel-image", AttemptId = attempt.Id };
+                                await persistenceLock.WaitAsync(retryToken);
+                                try
+                                {
+                                    workItem.Panel.Traces.Add(imageTrace);
+                                    await dbContext.SaveChangesAsync(retryToken);
+                                }
+                                finally
+                                {
+                                    persistenceLock.Release();
+                                }
+                                return await client.GenerateAsync(
                                     workItem.Prompt,
                                     workItem.ReferenceSheet,
                                     workItem.Landscape,
                                     retryToken,
-                                    workItem.Trace);
+                                    imageTrace);
                             },
                             IsTransient,
                             IsThrottled,
@@ -246,10 +315,10 @@ public sealed class GenerationService(
                 },
                 cancellationToken);
 
-            var board = await imageComposer.BuildBoardAsync(
-                document.Title,
+            var board = await composer.BuildBoardAsync(
+                snapshot?.Title ?? document.Title,
                 panelImages,
-                document.Template,
+                template,
                 cancellationToken);
             document.BoardBlobName = ArtifactPathBuilder.GetGenerationBlobName(
                 request.OwnerId,
@@ -257,12 +326,16 @@ public sealed class GenerationService(
                 "board.png");
             await UploadPngAsync(document.BoardBlobName, board, cancellationToken);
             document.Status = GenerationStatus.Completed;
+            attempt.Status = "completed";
+            attempt.CompletedAt = DateTimeOffset.UtcNow;
             document.UpdatedAt = DateTimeOffset.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             document.Status = GenerationStatus.Pending;
+            attempt.Status = "canceled";
+            attempt.CompletedAt = DateTimeOffset.UtcNow;
             foreach (var panel in document.Panels.Where(panel => panel.Status == PanelGenerationStatus.Processing))
             {
                 panel.Status = PanelGenerationStatus.Pending;
@@ -276,6 +349,8 @@ public sealed class GenerationService(
         catch (Exception)
         {
             document.Status = GenerationStatus.Failed;
+            attempt.Status = "failed";
+            attempt.CompletedAt = DateTimeOffset.UtcNow;
             document.Error = "The generation could not be completed.";
             document.UpdatedAt = DateTimeOffset.UtcNow;
             foreach (var panel in document.Panels.Where(panel => panel.Status == PanelGenerationStatus.Processing))
@@ -289,12 +364,70 @@ public sealed class GenerationService(
         }
     }
 
-    private async Task<(ProjectCharacter[] Characters, byte[]? ReferenceSheet)> PrepareReferencesAsync(
+    private async Task<IReadOnlyDictionary<string, byte[]>> LoadSnapshotReferencesAsync(
+        GenerationDocument document,
+        GenerationInputSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        var references = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        foreach (var reference in snapshot.Characters.SelectMany(character => character.References))
+        {
+            var expectedPath = ArtifactPathBuilder.GetGenerationBlobName(
+                document.OwnerId, Guid.Parse(document.Id), $"input-{reference.Id}-{reference.ContentSha256}");
+            if (reference.BlobName != expectedPath || reference.ContentSha256.Length != 64)
+            {
+                throw new InvalidDataException("A retained reference has an invalid artifact path.");
+            }
+            if (references.ContainsKey(reference.BlobName))
+            {
+                continue;
+            }
+            var bytes = (await _container.GetBlobClient(reference.BlobName)
+                .DownloadContentAsync(cancellationToken)).Value.Content.ToArray();
+            if (!string.Equals(Convert.ToHexString(SHA256.HashData(bytes)), reference.ContentSha256,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException("A retained reference failed its content-version check.");
+            }
+            references.Add(reference.BlobName, bytes);
+        }
+        return references;
+    }
+
+    private async Task<(string[] Characters, byte[]? ReferenceSheet)> PrepareReferencesAsync(
         string ownerId,
+        GenerationInputSnapshot? snapshot,
+        IReadOnlyDictionary<string, byte[]> retainedReferences,
+        ImageComposer composer,
         ProjectDocument project,
         GenerationPanel panel,
         CancellationToken cancellationToken)
     {
+        if (snapshot is not null)
+        {
+            var input = snapshot.Panels.Single(item => item.Number == panel.Number);
+            var characters = snapshot.Characters.Where(character => input.CharacterIds.Contains(character.Id)).ToArray();
+            if (characters.Length != input.CharacterIds.Distinct().Count())
+            {
+                throw new InvalidDataException("A selected snapshot character is missing.");
+            }
+            var streams = characters.SelectMany(character => character.References)
+                .DistinctBy(reference => reference.Id)
+                .Select(reference => (Stream)new MemoryStream(retainedReferences[reference.BlobName], writable: false))
+                .ToArray();
+            try
+            {
+                return (characters.Select(character => character.Name).ToArray(),
+                    streams.Length == 0 ? null : await composer.BuildReferenceSheetAsync(streams, cancellationToken));
+            }
+            finally
+            {
+                foreach (var stream in streams)
+                {
+                    await stream.DisposeAsync();
+                }
+            }
+        }
         var selectedCharacters = project.Characters
             .Where(character => panel.CharacterIds.Contains(character.Id, StringComparer.Ordinal))
             .ToArray();
@@ -322,8 +455,8 @@ public sealed class GenerationService(
 
             var referenceSheet = referenceStreams.Count == 0
                 ? null
-                : await imageComposer.BuildReferenceSheetAsync(referenceStreams, cancellationToken);
-            return (selectedCharacters, referenceSheet);
+                : await composer.BuildReferenceSheetAsync(referenceStreams, cancellationToken);
+            return (selectedCharacters.Select(character => character.Name).ToArray(), referenceSheet);
         }
         finally
         {
@@ -393,7 +526,7 @@ public sealed class GenerationService(
 
     private static void Validate(BoardGenerationRequestMessage request)
     {
-        if (request.SchemaVersion != 2)
+        if (request.SchemaVersion is not (2 or 3))
         {
             throw new InvalidDataException($"Unsupported board generation message schema {request.SchemaVersion}.");
         }
@@ -404,6 +537,10 @@ public sealed class GenerationService(
         {
             throw new InvalidDataException("The board generation message has invalid identifiers.");
         }
+        if (request.SchemaVersion == 3 && request.RunId != request.BoardId)
+        {
+            throw new InvalidDataException("The board generation message has an invalid run identifier.");
+        }
     }
 
     private sealed record PanelWorkItem(
@@ -411,6 +548,5 @@ public sealed class GenerationService(
         GenerationPanel Panel,
         string Prompt,
         byte[]? ReferenceSheet,
-        bool Landscape,
-        AiGenerationTrace Trace);
+        bool Landscape);
 }

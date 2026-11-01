@@ -7,6 +7,8 @@ public sealed class FoundryOptions
     public string Endpoint { get; init; } = string.Empty;
     public string PromptModel { get; init; } = "MAI-Thinking-1";
     public string ImageModel { get; init; } = "MAI-Image-2.5-Pro";
+    public string? PromptModelVersion { get; init; }
+    public string? ImageModelVersion { get; init; }
     public int ImageSize { get; init; } = 1024;
     public int MaxParallelImages { get; init; } = 3;
     public int ImageRetryCount { get; init; } = 3;

@@ -41,6 +41,23 @@ public sealed class MaiImageGeneratorDbContext(
             panel.Property(item => item.Issue).HasConversion<string>();
             panel.OwnsMany(item => item.Traces, trace => ConfigureTrace(trace, "traces"));
         });
+        generation.OwnsMany(item => item.Attempts, attempt =>
+        {
+            attempt.ToJsonProperty("attempts");
+            attempt.Property(item => item.Id).ValueGeneratedNever();
+        });
+        generation.OwnsOne(item => item.InputSnapshot, snapshot =>
+        {
+            snapshot.ToJsonProperty("inputSnapshot");
+            snapshot.OwnsOne(item => item.Settings);
+            snapshot.OwnsMany(item => item.Panels);
+            snapshot.OwnsMany(item => item.Characters, character =>
+            {
+                character.Property(item => item.Id).ValueGeneratedNever();
+                character.OwnsMany(item => item.References, reference =>
+                    reference.Property(item => item.Id).ValueGeneratedNever());
+            });
+        });
         var project = modelBuilder.Entity<ProjectDocument>();
         project.ToContainer("projects");
         project.HasKey(item => item.Id);
@@ -58,6 +75,8 @@ public sealed class MaiImageGeneratorDbContext(
         project.Property(item => item.CreatedAt).ToJsonProperty("createdAt");
         project.Property(item => item.UpdatedAt).ToJsonProperty("updatedAt");
         project.Property(item => item.DeletionRequestedAt).ToJsonProperty("deletionRequestedAt");
+        project.Property(item => item.BoardSubmissionId).ToJsonProperty("boardSubmissionId");
+        project.Property(item => item.BoardSubmissionStartedAt).ToJsonProperty("boardSubmissionStartedAt");
         project.Property(item => item.ETag).ToJsonProperty("_etag").IsETagConcurrency();
         project.OwnsMany(item => item.Characters, character =>
         {
@@ -113,6 +132,7 @@ public sealed class MaiImageGeneratorDbContext(
         trace.Property(item => item.Provider).ToJsonProperty("provider");
         trace.Property(item => item.Model).ToJsonProperty("model");
         trace.Property(item => item.RequestId).ToJsonProperty("requestId");
+        trace.Property(item => item.AttemptId).ToJsonProperty("attemptId");
         trace.Property(item => item.InputTokens).ToJsonProperty("inputTokens");
         trace.Property(item => item.OutputTokens).ToJsonProperty("outputTokens");
         trace.Property(item => item.TotalTokens).ToJsonProperty("totalTokens");
