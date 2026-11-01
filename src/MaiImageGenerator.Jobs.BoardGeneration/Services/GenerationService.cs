@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 
 namespace MaiImageGenerator.Jobs.BoardGeneration.Services;
 
-public sealed class GenerationService(
+public sealed partial class GenerationService(
     MaiImageGeneratorDbContext dbContext,
     ReferenceService referenceService,
     BlobServiceClient blobServiceClient,
@@ -21,9 +21,11 @@ public sealed class GenerationService(
     ImageComposer imageComposer,
     PanelGenerationNotifier notifier,
     ImageGenerationCoordinator imageGeneration,
-    ILogger<GenerationService> logger)
+    ILogger<GenerationService> logger,
+    TimeProvider? commandTimeProvider = null)
 {
     private readonly BlobContainerClient _container = blobServiceClient.GetBlobContainerClient("generations");
+    private readonly TimeProvider _commandTime = commandTimeProvider ?? TimeProvider.System;
 
     public async Task ProcessAsync(
         BoardGenerationRequestMessage request,
@@ -62,6 +64,17 @@ public sealed class GenerationService(
         {
             throw new InvalidOperationException(
                 $"Generation '{request.BoardId}' does not belong to project '{request.ProjectId}'.");
+        }
+
+        if (request.SchemaVersion == 4)
+        {
+            await ProcessPanelCommandAsync(request, document, project, cancellationToken);
+            return;
+        }
+        // Old deliveries must never regenerate a board after panel editing begins.
+        if (document.Revision > 0)
+        {
+            return;
         }
 
         if (document.Status is GenerationStatus.Completed or GenerationStatus.Canceled ||
@@ -193,7 +206,8 @@ public sealed class GenerationService(
                         slot.ColumnSpan > slot.RowSpan));
                 }
                 catch (Exception exception) when (
-                    exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                    exception is not DbUpdateConcurrencyException &&
+                    (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested))
                 {
                     panel.Status = PanelGenerationStatus.Failed;
                     panel.ImageBlobName = null;
@@ -256,11 +270,12 @@ public sealed class GenerationService(
                         var blobName = ArtifactPathBuilder.GetGenerationBlobName(
                             request.OwnerId,
                             Guid.Parse(document.Id),
-                            $"panel-{workItem.Panel.Number:00}.png");
+                            $"initial-panel-{workItem.Panel.Number:00}-{Guid.Parse(attempt.Id):N}.png");
                         await UploadPngAsync(blobName, image, token);
                     }
                     catch (Exception exception) when (
-                        exception is not OperationCanceledException || !token.IsCancellationRequested)
+                        exception is not DbUpdateConcurrencyException &&
+                        (exception is not OperationCanceledException || !token.IsCancellationRequested))
                     {
                         issue = GetPanelIssue(exception);
                     }
@@ -274,7 +289,7 @@ public sealed class GenerationService(
                             workItem.Panel.ImageBlobName = ArtifactPathBuilder.GetGenerationBlobName(
                                 request.OwnerId,
                                 Guid.Parse(document.Id),
-                                $"panel-{workItem.Panel.Number:00}.png");
+                                $"initial-panel-{workItem.Panel.Number:00}-{Guid.Parse(attempt.Id):N}.png");
                             workItem.Panel.Status = PanelGenerationStatus.Completed;
                             workItem.Panel.Error = null;
                             workItem.Panel.Issue = null;
@@ -323,13 +338,17 @@ public sealed class GenerationService(
             document.BoardBlobName = ArtifactPathBuilder.GetGenerationBlobName(
                 request.OwnerId,
                 Guid.Parse(document.Id),
-                "board.png");
+                $"initial-board-{Guid.Parse(attempt.Id):N}.png");
             await UploadPngAsync(document.BoardBlobName, board, cancellationToken);
             document.Status = GenerationStatus.Completed;
             attempt.Status = "completed";
             attempt.CompletedAt = DateTimeOffset.UtcNow;
             document.UpdatedAt = DateTimeOffset.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -474,7 +493,7 @@ public sealed class GenerationService(
     {
         try
         {
-            await notifier.NotifyStartedAsync(request.OwnerId, request.BoardId, panelNumber, cancellationToken);
+            await notifier.NotifyStartedAsync(request.OwnerId, request.BoardId, panelNumber, cancellationToken, request.CommandId);
         }
         catch (Exception exception) when (
             exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -490,7 +509,7 @@ public sealed class GenerationService(
     {
         try
         {
-            await notifier.NotifyCompletedAsync(request.OwnerId, request.BoardId, panelNumber, cancellationToken);
+            await notifier.NotifyCompletedAsync(request.OwnerId, request.BoardId, panelNumber, cancellationToken, request.CommandId);
         }
         catch (Exception exception) when (
             exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -518,7 +537,7 @@ public sealed class GenerationService(
     private async Task UploadPngAsync(string blobName, byte[] bytes, CancellationToken cancellationToken)
     {
         var blob = _container.GetBlobClient(blobName);
-        await blob.UploadAsync(BinaryData.FromBytes(bytes), overwrite: true, cancellationToken);
+        await blob.UploadAsync(BinaryData.FromBytes(bytes), overwrite: false, cancellationToken);
         await blob.SetHttpHeadersAsync(
             new BlobHttpHeaders { ContentType = "image/png" },
             cancellationToken: cancellationToken);
@@ -526,7 +545,7 @@ public sealed class GenerationService(
 
     private static void Validate(BoardGenerationRequestMessage request)
     {
-        if (request.SchemaVersion is not (2 or 3))
+        if (request.SchemaVersion is not (2 or 3 or 4))
         {
             throw new InvalidDataException($"Unsupported board generation message schema {request.SchemaVersion}.");
         }
@@ -537,9 +556,16 @@ public sealed class GenerationService(
         {
             throw new InvalidDataException("The board generation message has invalid identifiers.");
         }
-        if (request.SchemaVersion == 3 && request.RunId != request.BoardId)
+        if (request.SchemaVersion is 3 or 4 && request.RunId != request.BoardId)
         {
             throw new InvalidDataException("The board generation message has an invalid run identifier.");
+        }
+        if (request.SchemaVersion == 4 &&
+            (request.Operation is not ("panel" or "compose") ||
+             !Guid.TryParse(request.CommandId, out var commandId) || commandId == Guid.Empty ||
+             request.PanelNumber is not > 0 || request.Revision is not > 0))
+        {
+            throw new InvalidDataException("The panel command message is invalid.");
         }
     }
 

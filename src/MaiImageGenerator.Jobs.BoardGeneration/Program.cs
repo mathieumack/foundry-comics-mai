@@ -121,8 +121,19 @@ try
     var request = queueMessage.Body.ToObjectFromJson<BoardGenerationRequestMessage>()
         ?? throw new InvalidDataException("The queue message body is empty.");
     using var scope = host.Services.CreateScope();
-    await scope.ServiceProvider.GetRequiredService<GenerationService>()
-        .ProcessAsync(request, processingCancellation.Token);
+    try
+    {
+        await scope.ServiceProvider.GetRequiredService<GenerationService>()
+            .ProcessAsync(request, processingCancellation.Token);
+    }
+    catch (PanelCommandBusyException exception)
+    {
+        await using var sender = serviceBusClient.CreateSender(jobsQueueName);
+        await PanelCommandWakeup.ScheduleAsync(sender, queueMessage, request.CommandId!,
+            exception.RetryAt, processingCancellation.Token);
+        // Complete below only after scheduling succeeds. Scheduling failures take the normal
+        // abandonment path, never acknowledge work with no recovery delivery.
+    }
     renewalCancellation.Cancel();
     await ObserveRenewalAsync(renewalTask);
     await jobsQueue.CompleteMessageAsync(queueMessage, CancellationToken.None);

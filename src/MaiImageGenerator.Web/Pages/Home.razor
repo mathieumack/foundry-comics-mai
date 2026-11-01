@@ -23,6 +23,16 @@
     </header>
     @if (projectError is not null) { <div class="error" role="alert">@projectError</div> }
     @if (workspaceError is not null) { <div class="error" role="alert">@workspaceError</div> }
+    @if (panelCommandError is not null) { <div class="error" role="alert">@panelCommandError</div> }
+    @if (uncertainPanelCommand is not null)
+    {
+        <button type="button" class="btn" disabled="@UncertainCommandRetryLocked" @onclick="ResubmitUncertainPanelCommandAsync">Réessayer l'envoi non confirmé · même commande @(uncertainPanelCommand.Resume is null ? $"· case {uncertainPanelCommand.Number}" : "")</button>
+    }
+    @if (generationResult?.CanEditPanels == true && generationResult.PendingCommandId is not null)
+    {
+        <button type="button" class="btn" disabled="@UncertainCommandRetryLocked" @onclick="ResumePendingPanelCommandAsync">Reprendre la commande acceptée</button>
+    }
+    @if (isPanelCommandSubmitting) { <p role="status">Envoi de la commande de case…</p> }
     @if (isProjectLoading || isBoardLoading)
     {
         <div class="loading-state" role="status"><RadzenProgressBarCircular ShowValue="false" /><span>Ouverture de votre atelier…</span></div>
@@ -152,6 +162,17 @@
                                     <RadzenDropDown @bind-Value="panel.CharacterIds" TValue="IEnumerable<string>" Data="characters" TextProperty="Name" ValueProperty="Id" Multiple="true" Name="panel-characters" aria-label="Personnages présents dans la case" Disabled="EditingLocked" Style="width:100%" />
                                 }
                                 <div class="row-actions" style="margin-top:16px"><button class="btn quiet" disabled="@(EditingLocked || selectedPanel == 0)" @onclick="() => MovePanel(-1)">← Avant</button><button class="btn quiet" disabled="@(EditingLocked || selectedPanel == panels.Count - 1)" @onclick="() => MovePanel(1)">Après →</button></div>
+                                @if (generationResult?.Panels.SingleOrDefault(p => p.Number == panel.GenerationPanelNumber) is { } savedPanel)
+                                {
+                                    <PanelVersionEditor @key="(activeGenerationId, panel.Id)" Panel="savedPanel"
+                                                        CanEdit="generationResult.CanEditPanels" Disabled="PanelCommandsLocked"
+                                                        RetryComposition="@(generationResult.Status == GenerationStatus.Failed)"
+                                                        RevisedPrompt="@RevisedPrompt(savedPanel.Number)"
+                                                        RevisedPromptChanged="value => SetRevisedPrompt(savedPanel.Number, value)"
+                                                        OnCreate="() => CreatePanelAttemptAsync(savedPanel.Number, false)"
+                                                        OnRetry="source => CreatePanelAttemptAsync(savedPanel.Number, true, source)"
+                                                        OnSelect="version => SelectPanelVersionAsync(savedPanel.Number, version)" />
+                                }
                             }
                             <details><summary>Direction artistique & réglages</summary>
                                 <label class="field" for="description">Résumé du projet</label><textarea class="text" id="description" @bind="projectDescription" rows="3" disabled="@EditingLocked"></textarea>
@@ -173,7 +194,7 @@
                                 }
                                 @if (activeGenerationId is not null)
                                 {
-                                    <button class="btn quiet" @onclick="RefreshGenerationAsync" disabled="@isRefreshing"><RadzenIcon Icon="refresh" />@(isRefreshing ? "Actualisation…" : "Actualiser la planche")</button>
+                                    <button class="btn quiet" @onclick="RefreshGenerationAsync" disabled="@(isRefreshing || isPanelCommandSubmitting)"><RadzenIcon Icon="refresh" />@(isRefreshing ? "Actualisation…" : "Actualiser la planche")</button>
                                 }
                             </div>
                         </section>

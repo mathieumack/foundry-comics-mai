@@ -155,6 +155,17 @@ public sealed class EpubExportTests
         Assert.Equal(0, source.ImageCalls);
     }
 
+    [Fact]
+    public async Task ChangedPanelSelectionCannotExportAnOlderComposition()
+    {
+        var source = await CreateSourceAsync(ProjectType.Comic);
+        source.Boards[0].SelectedRevision = 2;
+        source.Boards[0].ComposedRevision = 1;
+        var error = await Assert.ThrowsAsync<EpubExportException>(() => ExportAsync(source));
+        Assert.Contains("Recompose", error.Message);
+        Assert.Equal(0, source.ImageCalls);
+    }
+
     [Theory]
     [InlineData(GenerationStatus.Failed)]
     [InlineData(GenerationStatus.Canceled)]

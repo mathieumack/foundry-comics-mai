@@ -32,6 +32,11 @@ public sealed record ProjectScaffoldResponse(
 
 public sealed record PanelRequest(string Prompt, IReadOnlyList<string> CharacterIds);
 
+public sealed record CreatePanelAttemptRequest(
+    Guid AttemptId, long ExpectedRevision, bool Retry, string? Prompt = null, Guid? SourceVersionId = null);
+
+public sealed record SelectPanelVersionRequest(Guid CommandId, Guid VersionId, long ExpectedRevision);
+
 public sealed record CharacterRequest(
     string Id,
     string Name,
@@ -57,7 +62,10 @@ public sealed record GenerationResponse(
     IReadOnlyList<AiGenerationTrace>? ScaffoldTraces = null,
     int FailedPanelCount = 0,
     GenerationCompleteness Completeness = GenerationCompleteness.None,
-    GenerationRunResponse? Run = null);
+    GenerationRunResponse? Run = null,
+    long Revision = 0,
+    bool CanEditPanels = false,
+    string? PendingCommandId = null);
 
 public sealed record GenerationRunResponse(
     string RunId,
@@ -80,7 +88,19 @@ public sealed record PanelGenerationResponse(
     Uri? ImageUri,
     string? Error,
     IReadOnlyList<AiGenerationTrace>? Traces = null,
-    PanelGenerationIssue? Issue = null);
+    PanelGenerationIssue? Issue = null,
+    string? SelectedVersionId = null,
+    IReadOnlyList<PanelVersionResponse>? Versions = null);
+
+public sealed record PanelVersionResponse(
+    string Id,
+    string Prompt,
+    string? EffectivePrompt,
+    PanelGenerationStatus Status,
+    Uri? ImageUri,
+    PanelGenerationIssue? Issue,
+    IReadOnlyList<AiGenerationTrace> Traces,
+    DateTimeOffset CreatedAt);
 
 public sealed record CharacterGenerationResponse(
     string Id,

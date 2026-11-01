@@ -11,22 +11,24 @@ public sealed class PanelGenerationNotifier(
         string ownerId,
         string boardId,
         int panelNumber,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        string? commandId = null) =>
         startedQueue.SendMessageAsync(
             CreateMessage(
                 new PanelGenerationStarted(ownerId, boardId, panelNumber),
-                $"{boardId}:{panelNumber}:started"),
+                $"{boardId}:{panelNumber}:{(commandId is null ? "" : commandId + ":")}started"),
             cancellationToken);
 
     public Task NotifyCompletedAsync(
         string ownerId,
         string boardId,
         int panelNumber,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        string? commandId = null) =>
         completedQueue.SendMessageAsync(
             CreateMessage(
                 new PanelGenerationCompleted(ownerId, boardId, panelNumber),
-                $"{boardId}:{panelNumber}:completed"),
+                $"{boardId}:{panelNumber}:{(commandId is null ? "" : commandId + ":")}completed"),
             cancellationToken);
 
     private static ServiceBusMessage CreateMessage<T>(T notification, string messageId) =>

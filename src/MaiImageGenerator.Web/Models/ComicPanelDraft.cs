@@ -3,10 +3,12 @@ namespace MaiImageGenerator.Web.Models;
 public sealed class ComicPanelDraft
 {
     public Guid Id { get; } = Guid.NewGuid();
+    public int? GenerationPanelNumber { get; set; }
     public string Prompt { get; set; } = string.Empty;
     public IEnumerable<string> CharacterIds { get; set; } = [];
     public string? EffectivePrompt { get; set; }
     public string? ImageDataUrl { get; set; }
+    public Uri? LoadedImageUri { get; set; }
     public string? Error { get; set; }
     public PanelUiStatus Status { get; set; }
     public PanelGenerationIssue? Issue { get; set; }

@@ -47,13 +47,14 @@ public partial class Home : IAsyncDisposable
     private StudioTab activeTab;
     private bool initialized, rewritePrompt = true, isGenerating, isSubmitting, isRefreshing, isScaffolding, isProjectLoading, isBoardLoading = true, isCharacterSaving;
     private bool refreshRequested, allowNavigation, viewerOpening;
-    private bool EditingLocked => isGenerating || isSubmitting || isScaffolding || isCharacterSaving || isBoardLoading;
-    private bool HasUnsavedChanges => !allowNavigation && initialized && (isScaffolding || isCharacterSaving || !string.IsNullOrWhiteSpace(newCharacterName) || CaptureDraft() != baseline || CaptureCharacters() != characterBaseline);
+    private bool EditingLocked => isGenerating || isSubmitting || isScaffolding || isCharacterSaving || isBoardLoading || isPanelCommandSubmitting;
+    private bool HasUnsavedChanges => !allowNavigation && initialized && (isScaffolding || isCharacterSaving || !string.IsNullOrWhiteSpace(newCharacterName) || revisedPanelPrompts.Values.Any(value => !string.IsNullOrWhiteSpace(value)) || CaptureDraft() != baseline || CaptureCharacters() != characterBaseline);
     private BoardTemplateDefinition DisplayTemplateDefinition => BoardTemplateDefinitions.Resolve(selectedTemplate, panels.Count);
     private string BoardGridStyle => $"grid-template-columns:repeat({DisplayTemplateDefinition.Columns},minmax(0,1fr));";
     private bool HasPendingArtifacts => generationResult is { } result &&
-        (result.BoardUri is not null && boardDataUrl is null ||
-         result.Panels.Any(panel => panel.ImageUri is not null && panels[panel.Number - 1].ImageDataUrl is null));
+        (result.BoardUri is not null && (boardDataUrl is null || loadedBoardUri != result.BoardUri) ||
+         result.Panels.Any(panel => panel.ImageUri is not null &&
+             (PanelForGenerationNumber(panel.Number).ImageDataUrl is null || PanelForGenerationNumber(panel.Number).LoadedImageUri != panel.ImageUri)));
     private GenerationCompleteness ResultCompleteness => generationResult?.Completeness ??
         (generationResult?.Panels.Count(panel => panel.Status == PanelGenerationStatus.Completed && panel.ImageUri is not null) is not > 0
             ? GenerationCompleteness.None
@@ -152,6 +153,7 @@ public partial class Home : IAsyncDisposable
                 panels.AddRange(generation.Panels.OrderBy(p => p.Number).Select(p => new ComicPanelDraft
                 {
                     Prompt = p.Prompt,
+                    GenerationPanelNumber = p.Number,
                     CharacterIds = p.CharacterIds.Where(id => characters.Any(c => c.Id == id)).ToArray()
                 }));
                 await ApplyGenerationAsync(generation, token);
@@ -185,6 +187,7 @@ public partial class Home : IAsyncDisposable
 
     private void ResetBoard()
     {
+        ResetPanelVersionState();
         activeGenerationId = null;
         generationResult = null;
         scaffoldTraces = null;
@@ -220,7 +223,7 @@ public partial class Home : IAsyncDisposable
     private async Task CreateScaffoldAsync()
     {
         if (string.IsNullOrWhiteSpace(storyDescription)) { workspaceError = "Décrivez votre idée avant de proposer les scènes."; return; }
-        if (panels.Any(p => !string.IsNullOrWhiteSpace(p.Prompt)) && !await ConfirmAsync("Remplacer vos descriptions actuelles par de nouvelles propositions ?")) return;
+        if (panels.Any(p => !string.IsNullOrWhiteSpace(p.Prompt)) && !await ConfirmAsync("Remplacer vos descriptions et consignes révisées actuelles par de nouvelles propositions ?")) return;
         isScaffolding = true;
         workspaceError = null;
         try
@@ -237,6 +240,7 @@ public partial class Home : IAsyncDisposable
 
     private void ApplyScaffold(ProjectScaffoldResponse scaffold, bool preserveTitle = false)
     {
+        ResetPanelVersionState();
         boardTitle = preserveTitle ? project!.Title : scaffold.Title;
         projectDescription = scaffold.Description;
         context = preserveTitle ? project!.Context : scaffold.Context;
@@ -261,6 +265,7 @@ public partial class Home : IAsyncDisposable
 
     private async Task GenerateBoardAsync()
     {
+        if (EditingLocked || isRefreshing) return;
         workspaceError = null;
         var emptyPanel = panels.FindIndex(p => string.IsNullOrWhiteSpace(p.Prompt));
         if (string.IsNullOrWhiteSpace(boardTitle)) { workspaceError = "Donnez un titre à votre planche."; return; }
@@ -277,6 +282,9 @@ public partial class Home : IAsyncDisposable
             activeTab = StudioTab.Characters;
             return;
         }
+        if (revisedPanelPrompts.Values.Any(value => !string.IsNullOrWhiteSpace(value)) &&
+            !await ConfirmAsync("Les consignes révisées des versions de cases ne font pas partie de cette nouvelle planche et seront effacées du brouillon. Continuer ?")) return;
+        if (EditingLocked || isRefreshing) return;
         isSubmitting = true;
         try
         {
@@ -300,7 +308,9 @@ public partial class Home : IAsyncDisposable
             activeGenerationId = generation.GenerationId;
             loadedGenerationId = activeGenerationId;
             boardDataUrl = null;
-            foreach (var panel in panels) { panel.ImageDataUrl = panel.EffectivePrompt = panel.Error = null; panel.Traces = null; panel.Issue = null; panel.Status = PanelUiStatus.Pending; }
+            ResetPanelVersionState();
+            foreach (var panel in panels) { panel.LoadedImageUri = null; panel.ImageDataUrl = panel.EffectivePrompt = panel.Error = null; panel.Traces = null; panel.Issue = null; panel.Status = PanelUiStatus.Pending; }
+            for (var index = 0; index < panels.Count; index++) panels[index].GenerationPanelNumber = index + 1;
             baseline = CaptureDraft();
             characterBaseline = CaptureCharacters();
             await ApplyGenerationAsync(generation, lifetime.Token);
@@ -320,6 +330,7 @@ public partial class Home : IAsyncDisposable
     private async Task RefreshGenerationAsync()
     {
         if (activeGenerationId is not Guid id) return;
+        if (isPanelCommandSubmitting) { refreshRequested = true; return; }
         if (isRefreshing) { refreshRequested = true; return; }
         var token = boardCancellation?.Token ?? lifetime.Token;
         isRefreshing = true;
@@ -362,12 +373,16 @@ public partial class Home : IAsyncDisposable
 
     private async Task ApplyGenerationAsync(GenerationResponse generation, CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
+        if (generationResult is { } current && current.GenerationId == generation.GenerationId && current.Revision > generation.Revision) return;
         workspaceError = null;
         generationResult = generation;
         scaffoldTraces = generation.ScaffoldTraces is { Count: > 0 } boardTraces
             ? boardTraces
             : project?.ScaffoldTraces;
-        isGenerating = generation.Status is GenerationStatus.Pending or GenerationStatus.Processing;
+        isGenerating = generation.Status is GenerationStatus.Pending or GenerationStatus.Processing ||
+            generation.Panels.Any(p => p.Versions?.Any(v =>
+                v.Status is PanelGenerationStatus.Pending or PanelGenerationStatus.Processing) == true);
         generatedPanelCount = generation.CompletedPanelCount;
         progressMessage = generation.Status == GenerationStatus.Pending ? "En attente d'un atelier de génération disponible…" : $"{generatedPanelCount} / {generation.PanelCount} cases illustrées";
         var boardIndex = projectBoards.FindIndex(b => b.GenerationId == generation.GenerationId);
@@ -379,7 +394,8 @@ public partial class Home : IAsyncDisposable
         };
         foreach (var status in generation.Panels)
         {
-            var panel = panels[status.Number - 1];
+            var panel = PanelForGenerationNumber(status.Number);
+            panel.GenerationPanelNumber = status.Number;
             panel.Status = status.Status switch { PanelGenerationStatus.Processing => PanelUiStatus.Generating, PanelGenerationStatus.Completed => PanelUiStatus.Ready, PanelGenerationStatus.Failed => PanelUiStatus.Error, _ => PanelUiStatus.Pending };
             panel.EffectivePrompt = status.EffectivePrompt;
             panel.Issue = status.Issue;
@@ -389,15 +405,23 @@ public partial class Home : IAsyncDisposable
         StateHasChanged();
         foreach (var status in generation.Panels)
         {
-            var panel = panels[status.Number - 1];
-            if (panel.ImageDataUrl is null && status.ImageUri is not null)
+            var panel = PanelForGenerationNumber(status.Number);
+            if (status.ImageUri is not null && (panel.ImageDataUrl is null || panel.LoadedImageUri != status.ImageUri))
             {
-                panel.ImageDataUrl = await DownloadArtifactAsync(status.ImageUri, token);
+                var data = await DownloadArtifactAsync(status.ImageUri, token);
+                token.ThrowIfCancellationRequested();
+                if (!ReferenceEquals(generationResult, generation)) return;
+                if (data is not null) { panel.ImageDataUrl = data; panel.LoadedImageUri = status.ImageUri; }
                 StateHasChanged();
             }
         }
-        if (generation.BoardUri is not null && boardDataUrl is null)
-            boardDataUrl = await DownloadArtifactAsync(generation.BoardUri, token);
+        if (generation.BoardUri is not null && (boardDataUrl is null || loadedBoardUri != generation.BoardUri))
+        {
+            var data = await DownloadArtifactAsync(generation.BoardUri, token);
+            token.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(generationResult, generation)) return;
+            if (data is not null) { boardDataUrl = data; loadedBoardUri = generation.BoardUri; }
+        }
         if (generation.Status is GenerationStatus.Failed or GenerationStatus.Canceled)
             workspaceError = generation.Error ?? (generation.Status == GenerationStatus.Failed ? "La planche n'a pas pu être générée. Vous pouvez créer une nouvelle version." : "La génération a été annulée.");
     }
@@ -418,7 +442,7 @@ public partial class Home : IAsyncDisposable
     private bool TryGetNotifiedPanel(PanelNotification n, out ComicPanelDraft panel)
     {
         if (Guid.TryParse(n.BoardId, out var id) && id == activeGenerationId && n.PanelNumber > 0 && n.PanelNumber <= panels.Count)
-        { panel = panels[n.PanelNumber - 1]; return true; }
+        { panel = PanelForGenerationNumber(n.PanelNumber); return true; }
         panel = null!;
         return false;
     }
@@ -440,7 +464,8 @@ public partial class Home : IAsyncDisposable
     private async Task ChangeTemplateAsync(ChangeEventArgs args)
     {
         if (!Enum.TryParse<BoardTemplate>(args.Value?.ToString(), out var template) || template == selectedTemplate) return;
-        if (panels.Any(p => !string.IsNullOrWhiteSpace(p.Prompt)) && !await ConfirmAsync("Changer de mise en page réinitialise les descriptions des cases. Continuer ?")) return;
+        if (panels.Any(p => !string.IsNullOrWhiteSpace(p.Prompt)) && !await ConfirmAsync("Changer de mise en page réinitialise les descriptions et consignes révisées des cases. Continuer ?")) return;
+        ResetPanelVersionState();
         selectedTemplate = template;
         panels.Clear();
         panels.AddRange(Enumerable.Range(0, BoardTemplateDefinitions.Get(template).Slots.Count).Select(_ => new ComicPanelDraft()));
@@ -477,6 +502,8 @@ public partial class Home : IAsyncDisposable
         viewerOpening = false;
     }
     private void SelectPanel(int index) { selectedPanel = index; activeTab = StudioTab.Scenes; }
+    private ComicPanelDraft PanelForGenerationNumber(int number) =>
+        panels.FirstOrDefault(panel => panel.GenerationPanelNumber == number) ?? panels[number - 1];
     private void MovePanel(int offset)
     {
         var next = selectedPanel + offset;

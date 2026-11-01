@@ -8,4 +8,8 @@ public sealed record BoardGenerationRequestMessage
     public string ProjectId { get; init; } = string.Empty;
     public bool RewritePrompt { get; init; }
     public string? RunId { get; init; }
+    public string? Operation { get; init; }
+    public string? CommandId { get; init; }
+    public int? PanelNumber { get; init; }
+    public long? Revision { get; init; }
 }

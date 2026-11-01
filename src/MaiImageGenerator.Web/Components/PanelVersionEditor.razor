@@ -1,0 +1,153 @@
+@implements IDisposable
+@inject GenerationApiClient GenerationClient
+
+<section class="panel-versions" aria-label="@($"Versions de la case {Panel.Number}")">
+    <h3>Versions de la case @Panel.Number</h3>
+    <p class="hint">Une tentative conserve l'illustration sélectionnée. Choisissez explicitement une version réussie pour recomposer la planche.</p>
+    @if (CanEdit)
+    {
+        <p class="hint">Contexte, personnages, références et réglages restent ceux de la génération sauvegardée. Les autres modifications du brouillon ne sont pas envoyées.</p>
+        @if (Panel.Versions is not { Count: > 0 } && Panel.Status == PanelGenerationStatus.Failed && Panel.Issue != PanelGenerationIssue.ContentSafetyRejected)
+        {
+            <button type="button" class="btn" disabled="@Disabled" @onclick="() => OnRetry.InvokeAsync(null)">Réessayer la case en échec · entrées figées</button>
+        }
+        <label class="field" for="@($"revised-panel-prompt-{Panel.Number}")">Consigne révisée pour une autre version</label>
+        <textarea class="text" id="@($"revised-panel-prompt-{Panel.Number}")" value="@RevisedPrompt"
+                  @oninput="args => RevisedPromptChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty)"
+                  rows="4" disabled="@Disabled"></textarea>
+        <button type="button" class="btn" disabled="@(Disabled || !IsRevisedPrompt(Panel, RevisedPrompt))"
+                @onclick="() => OnCreate.InvokeAsync()">Créer une autre version de la case @Panel.Number</button>
+    }
+    else
+    {
+        <p class="hint">Cette ancienne planche ne dispose pas des entrées figées nécessaires. Créez une nouvelle planche pour modifier ses illustrations.</p>
+    }
+    @if (Panel.Issue == PanelGenerationIssue.ContentSafetyRejected || Panel.Versions?.Any(v => v.Issue == PanelGenerationIssue.ContentSafetyRejected) == true)
+    {
+        <p class="error" role="note">Refus de sécurité du contenu : révisez la consigne avant de créer une autre version. La relance à l'identique n'est pas proposée.</p>
+    }
+    @if (Panel.Versions is { Count: > 0 } versions)
+    {
+        <ol class="version-list">
+            @foreach (var version in versions)
+            {
+                var validId = Guid.TryParse(version.Id, out var versionId);
+                var selected = string.Equals(version.Id, Panel.SelectedVersionId, StringComparison.OrdinalIgnoreCase) ||
+                    Panel.SelectedVersionId is null && validId && versionId == Guid.Empty;
+                <li class="version-card" @key="version.Id">
+                    <strong>@(selected ? "Version sélectionnée" : "Version alternative") · @VersionStatus(version)</strong>
+                    <p class="hint">@version.CreatedAt.ToString("g")</p>
+                    <p>@version.Prompt</p>
+                    @if (version.EffectivePrompt is not null)
+                    {
+                        <details><summary>Consigne effective de cette version</summary><p>@version.EffectivePrompt</p></details>
+                    }
+                    <AiTraceMetadata Traces="version.Traces" Label="Requêtes de cette version" />
+                    @if (version.Status == PanelGenerationStatus.Failed)
+                    {
+                        <p class="error" role="status">@VersionFailure(version)</p>
+                        @if (CanEdit && validId && CanRetry(Panel, version))
+                        {
+                            <button type="button" class="btn" disabled="@Disabled" @onclick="() => OnRetry.InvokeAsync(versionId)"
+                                    aria-label="@($"Réessayer la version {version.Id} de la case {Panel.Number}, entrées figées")">Réessayer cette version · entrées figées</button>
+                        }
+                    }
+                    @if (version.Status == PanelGenerationStatus.Completed && version.ImageUri is not null)
+                    {
+                        <div class="row-actions">
+                            <button type="button" class="btn quiet" disabled="@loading.Contains(version.Id)" @onclick="() => LoadPreviewAsync(version)"
+                                    aria-label="@($"Aperçu et téléchargement de la version {version.Id} de la case {Panel.Number}")">@(loading.Contains(version.Id) ? "Chargement…" : "Aperçu / téléchargement")</button>
+                            @if (CanEdit && validId)
+                            {
+                                <button type="button" class="btn" disabled="@(Disabled || (selected && !RetryComposition))" @onclick="() => OnSelect.InvokeAsync(versionId)"
+                                        aria-label="@($"Sélectionner la version {version.Id} pour la case {Panel.Number}")">@(selected ? RetryComposition ? "Réessayer la composition" : "Déjà sélectionnée" : "Sélectionner pour la planche")</button>
+                            }
+                        </div>
+                        @if (previews.TryGetValue(version.Id, out var preview) && preview.Uri == version.ImageUri)
+                        {
+                            <img class="version-preview" src="@preview.Data" alt="@($"Aperçu de la version {version.Id}, case {Panel.Number}")" />
+                            <a class="btn" href="@preview.Data" download="@($"mai-comic-panel-{Panel.Number}-version-{version.Id}.png")">Télécharger cette version</a>
+                        }
+                        @if (errors.TryGetValue(version.Id, out var error))
+                        {
+                            <p class="error" role="alert">@error</p>
+                        }
+                    }
+                </li>
+            }
+        </ol>
+    }
+    else
+    {
+        <p class="hint">Aucune version alternative enregistrée.</p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PanelGenerationResponse Panel { get; set; } = default!;
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool RetryComposition { get; set; }
+    [Parameter] public string RevisedPrompt { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> RevisedPromptChanged { get; set; }
+    [Parameter] public EventCallback OnCreate { get; set; }
+    [Parameter] public EventCallback<Guid?> OnRetry { get; set; }
+    [Parameter] public EventCallback<Guid> OnSelect { get; set; }
+
+    private readonly CancellationTokenSource lifetime = new();
+    private readonly Dictionary<string, (Uri Uri, string Data)> previews = [];
+    private readonly Dictionary<string, string> errors = [];
+    private readonly HashSet<string> loading = [];
+
+    public static bool IsRevisedPrompt(PanelGenerationResponse panel, string? prompt) =>
+        !string.IsNullOrWhiteSpace(prompt) && prompt.Trim() != panel.Prompt.Trim() &&
+        !(panel.Issue == PanelGenerationIssue.ContentSafetyRejected && SamePrompt(panel.EffectivePrompt, prompt)) &&
+        !HasSafetyRejection(panel, prompt, prompt);
+
+    public static bool CanRetry(PanelGenerationResponse panel, PanelVersionResponse version) =>
+        version.Status == PanelGenerationStatus.Failed && version.Issue != PanelGenerationIssue.ContentSafetyRejected &&
+        !HasSafetyRejection(panel, version.Prompt, version.EffectivePrompt);
+
+    private static bool HasSafetyRejection(PanelGenerationResponse panel, string prompt, string? effectivePrompt) =>
+        panel.Versions?.Any(item => item.Issue == PanelGenerationIssue.ContentSafetyRejected &&
+            (SamePrompt(item.Prompt, prompt) || SamePrompt(item.EffectivePrompt, prompt) ||
+             SamePrompt(item.Prompt, effectivePrompt) || SamePrompt(item.EffectivePrompt, effectivePrompt))) == true;
+
+    private static bool SamePrompt(string? left, string? right) =>
+        left is not null && right is not null && string.Equals(left.Trim(), right.Trim(), StringComparison.Ordinal);
+
+    private async Task LoadPreviewAsync(PanelVersionResponse version)
+    {
+        if (version.ImageUri is not { } uri || !loading.Add(version.Id)) return;
+        var token = lifetime.Token;
+        errors.Remove(version.Id);
+        try
+        {
+            var data = await GenerationClient.DownloadDataUrlAsync(uri, token);
+            token.ThrowIfCancellationRequested();
+            previews[version.Id] = (uri, data);
+        }
+        catch (Microsoft.AspNetCore.Components.WebAssembly.Authentication.AccessTokenNotAvailableException exception) { exception.Redirect(); }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception exception) when (exception is GenerationApiException or HttpRequestException or OperationCanceledException)
+        {
+            errors[version.Id] = "L'aperçu n'a pas pu être téléchargé. Réessayez ; la sélection est inchangée.";
+        }
+        finally { loading.Remove(version.Id); }
+    }
+
+    private static string VersionStatus(PanelVersionResponse version) => version.Status switch
+    {
+        PanelGenerationStatus.Pending => "En attente",
+        PanelGenerationStatus.Processing => "Illustration en cours",
+        PanelGenerationStatus.Completed => "Réussie",
+        _ => "En échec"
+    };
+    private static string VersionFailure(PanelVersionResponse version) => version.Issue switch
+    {
+        PanelGenerationIssue.ContentSafetyRejected => "Refus de sécurité : une consigne révisée est nécessaire.",
+        PanelGenerationIssue.ProviderThrottled => "Limite du fournisseur atteinte ; la tentative est terminée en échec.",
+        _ => "Échec technique de cette tentative. L'illustration sélectionnée est conservée."
+    };
+    public void Dispose() { lifetime.Cancel(); lifetime.Dispose(); }
+}

@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace MaiImageGenerator.Api.Services;
 
-public sealed class GenerationService(
+public sealed partial class GenerationService(
     MaiImageGeneratorDbContext dbContext,
     ReferenceService referenceService,
     BlobServiceClient blobServiceClient,
@@ -194,6 +194,9 @@ public sealed class GenerationService(
         var blobName = panelNumber is null
             ? document?.BoardBlobName
             : document?.Panels.SingleOrDefault(panel => panel.Number == panelNumber)?.ImageBlobName;
+        if (blobName is not null && !blobName.StartsWith(
+                ArtifactPathBuilder.GetGenerationBlobName(ownerId, generationId, string.Empty), StringComparison.Ordinal))
+            throw new InvalidDataException("The generation has an invalid artifact path.");
         return blobName is null
             ? null
             : (await _container.GetBlobClient(blobName).OpenReadAsync(cancellationToken: cancellationToken), "image/png");
@@ -327,17 +330,23 @@ public sealed class GenerationService(
         result.CompletedPanelCount,
         document.Panels.Select(panel => new PanelGenerationResponse(
             panel.Number,
-            snapshot?.Panels.Single(input => input.Number == panel.Number).Prompt ?? panel.Prompt,
+            panel.Versions.SingleOrDefault(version => version.Id == panel.SelectedVersionId)?.Prompt ??
+                snapshot?.Panels.Single(input => input.Number == panel.Number).Prompt ?? panel.Prompt,
             (snapshot?.Panels.Single(input => input.Number == panel.Number).CharacterIds ?? panel.CharacterIds)
                 .Where(characterId => characters.Any(character => character.Id == characterId))
                 .ToArray(),
             panel.Status,
             panel.EffectivePrompt,
-            panel.ImageBlobName is null ? null : new Uri($"api/generations/{document.Id}/panels/{panel.Number}", UriKind.Relative),
+            panel.ImageBlobName is null ? null : PanelImageUri(document, panel),
             GenerationResult.GetPanelError(panel),
             panel.Traces.ToArray(),
-            GenerationResult.GetIssue(panel))).ToArray(),
-        document.BoardBlobName is null ? null : new Uri($"api/generations/{document.Id}/board", UriKind.Relative),
+            GenerationResult.GetIssue(panel),
+            panel.SelectedVersionId,
+            panel.Versions.Select(version => new PanelVersionResponse(
+                version.Id, version.Prompt, version.EffectivePrompt, version.Status,
+                version.ImageBlobName is null ? null : VersionImageUri(document, panel.Number, version.Id),
+                version.Issue, version.Traces.ToArray(), version.CreatedAt)).ToArray())).ToArray(),
+        document.BoardBlobName is null ? null : new Uri($"api/generations/{document.Id}/board?revision={document.ComposedRevision}", UriKind.Relative),
         document.Error,
         document.ScaffoldTraces.ToArray(),
         result.FailedPanelCount,
@@ -349,8 +358,19 @@ public sealed class GenerationService(
             snapshot.Characters.SelectMany(character => character.References)
                 .DistinctBy(reference => reference.Id)
                 .Select(reference => new GenerationReferenceVersionResponse(reference.Id, reference.ContentSha256))
-                .ToArray()));
+                .ToArray()),
+        document.Revision,
+        snapshot is not null,
+        document.PendingCommandId);
     }
+
+    private static Uri PanelImageUri(GenerationDocument document, GenerationPanel panel) =>
+        panel.SelectedVersionId is null
+            ? new Uri($"api/generations/{document.Id}/panels/{panel.Number}", UriKind.Relative)
+            : VersionImageUri(document, panel.Number, panel.SelectedVersionId);
+
+    private static Uri VersionImageUri(GenerationDocument document, int panelNumber, string versionId) =>
+        new($"api/generations/{document.Id}/panels/{panelNumber}/versions/{versionId}/image", UriKind.Relative);
 
     public static GenerationSummaryResponse ToSummaryResponse(GenerationDocument document)
     {

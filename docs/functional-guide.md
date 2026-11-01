@@ -98,7 +98,22 @@ Available illustrations remain visible in Scenes, with an individual **Download 
 
 Board generation continues if the page closes. Reopen the project or generation to retrieve the same durable completeness, counts, and panel diagnoses. Both started and completed progress events only request an API refresh; they cannot change the diagnosis themselves. A notification can arrive before the latest image/status is visible, so the frontend performs bounded refresh retries and explicitly renders each downloaded image. While a board is pending or processing, a five-second status refresh also recovers missed events and detects final composition. Failed artifact downloads do not change saved panel counts or prevent other images from loading; periodic refresh keeps retrying missing downloads. Normal progress does not require a manual refresh.
 
-Uncaught job failures can trigger automatic queue redelivery. Completed panels with existing blobs are reused when an unfinished board resumes; a terminal `Completed` board is not automatically replayed even if it contains failed panels. To change a prompt or retry a failed scene as a user, edit the board and submit a new version; there is no dedicated single-panel retry endpoint.
+Uncaught job failures can trigger automatic queue redelivery. Completed panels with existing blobs are reused when an unfinished board resumes; a terminal `Completed` board is not automatically replayed even if it contains failed panels.
+
+### Retry or revise one panel
+
+For saved boards with frozen inputs, the scene editor offers targeted actions:
+
+1. **Retry a failed panel** reuses that failed version's accepted inputs and any saved effective prompt. It sends no image requests for the other panels. A content-safety rejection instead requires an appropriate user revision; unchanged safety retries are unavailable, including earlier technical failures with prompts rejected in a later attempt.
+2. **Create another panel version** freezes the revised scene prompt. This text is used literally, without automatic prompt rewriting; the board's accepted characters, reference bytes, settings, and layout remain unchanged. Other unsaved board edits are not included.
+3. Inspect the panel's version history, including independent progress/failure and safety guidance. Successful previous artwork remains selected and available while a candidate runs or fails.
+4. Explicitly **select a successful version** to use it in the board. The worker recomposes from the selected panels without generating images. You can later select a previous successful version again; none is silently replaced by an arriving candidate.
+
+Only one panel/composition command runs per board at a time. Conflicts ask you to refresh rather than silently overwrite another tab's work. Closing the page does not cancel accepted work; reopening restores version history and selection. If submission or dispatch was interrupted, **resume the accepted command** rather than creating another version. This redispatch uses the saved command ID, including after reopening; ordinary queue duplicate detection may delay a repeated dispatch within ten minutes.
+
+Legacy saved boards without retained inputs remain readable and downloadable. Create a new board version first to enable targeted panel work. A failed recomposition retains the previous assembled PNG; select the desired successful panel version again to request composition. EPUB export waits for successful composition of the current selection so it cannot silently export the older board.
+
+Stable attempt IDs and durable checkpoints avoid additional artifacts for committed duplicate work and reuse saved PNGs after interruption. They do **not** guarantee exactly-once provider requests or billing: a timeout after the provider accepted a request but before its image was saved can have an uncertain outcome, and retrying may incur another request.
 
 ## Export as an EPUB eBook
 

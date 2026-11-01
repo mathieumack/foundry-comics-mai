@@ -175,7 +175,7 @@ Usage is `provider-reported` only when the response supplies counters. Missing c
 
 Chat SDK usage types can normalize absent fields to zero, so a per-request `ChatClient` decorator captures field presence from the response before agent-level normalization. It retains only allowlisted counters and correlation IDs, never the raw response. Its source is linked into the three backend projects to reuse their existing OpenAI dependency without adding that dependency to the shared entity library.
 
-Project documents use schema 3; new comic generations use schema 4 with owned trace, snapshot, and attempt data. Older documents load with empty trace/attempt collections and no snapshot. API responses expose only the allowlisted trace fields. The browser keeps them while refreshing panel state and shows compact indicators for images, effective prompts, scaffolds, book plans, and prose. Details are disclosed on hover, keyboard focus, or touch activation; unknown usage is never shown as zero.
+Project documents use schema 3; new comic generations use schema 4 with owned trace, snapshot, and attempt data, advancing to schema 5 when panel-version commands are accepted. Older documents load with empty trace/attempt/version collections and no snapshot. API responses expose only the allowlisted trace fields. The browser keeps them while refreshing panel state and shows compact indicators for images, effective prompts, scaffolds, book plans, and prose. Details are disclosed on hover, keyboard focus, or touch activation; unknown usage is never shown as zero.
 
 Scaffold usage is saved immediately as `<sha256-owner-prefix>/<scaffold-id-N>/scaffold-trace.json` in the private `generations` container. The API returns an opaque scaffold ID, not a client-editable usage claim. Saving the scaffold into a new project or board resolves its metadata under the authenticated owner and attaches the traces and sidecar ID in Cosmos. Project deletion includes these linked sidecar prefixes. Project and board identifiers remain independently generated, preserving creation/retry behavior. Only trace metadata is in the sidecar; draft text still travels through the browser until saved. Unclaimed scaffold sidecars have no automatic expiration and remain until the environment is removed. If sidecar persistence fails, the generated draft and in-memory trace are still returned without a scaffold ID.
 
@@ -194,6 +194,52 @@ Authenticated generation detail responses expose `Run` with snapshot/version met
 Snapshots and retained bytes have the same lifetime as their generation/project, with no automatic expiry. Before creating the generation or copying bytes, the API acquires an ETag-protected project submission lease. Deletion and competing submissions reject a fresh lease, preventing cleanup from racing reference retention. Capture/queueing has a three-minute cancellation deadline; the lease is released after submission and expires after 30 minutes following process loss or a release conflict with concurrent project edits. A release conflict never overwrites those edits. The generation document is then saved as a cleanup anchor; reference-copy, snapshot-save, or enqueue failures never return accepted success. They leave failed or recoverable pending state and any partial copies under that generation's deletion prefix. A crash between Cosmos persistence and enqueue remains subject to the existing non-transactional queue limitation. Project deletion removes snapshots with generation documents and all retained/partial blobs, even if source characters were removed. Source reference IDs also remain discoverable through snapshots for exclusive-reference cleanup.
 
 Legacy schema-2/3 generation documents remain readable and executable without backfilling submission-time facts: `InputSnapshot` and API `Run` remain null, and historical live-reference behavior is explicit. Board consumers accept queue schema 2 (legacy) and schema 3 (requires a valid persisted snapshot and matching run ID); new submissions emit schema 3. **Roll out compatible workers before enabling the new API producer.** Older workers reject schema 3 rather than execute accepted work using live metadata; do not allow them to consume new messages during rollout. Never downgrade a snapshot-backed message to make an older worker accept it.
+
+### Targeted panel versions and recomposition
+
+Snapshot-backed boards support `POST /api/generations/{id}/panels/{number}/attempts` and `PUT /api/generations/{id}/panels/{number}/selection`. Authentication supplies the owner; both commands use owner-partition-scoped reads and a project submission lease to coordinate with deletion. A client-generated UUID identifies each accepted attempt or selection. Commands carry `ExpectedRevision`; the board's ETag arbitrates simultaneous writers. Reusing an accepted UUID with identical inputs is a no-op (or redispatch of still-pending work), while different inputs or stale revisions return `409`. Only one command runs per board at a time.
+
+A failed-panel retry copies the specified failed version's accepted prompt and prepared effective prompt, retaining the original snapshot's references, identity guidance, settings, and layout. A revised version freezes the explicitly submitted scene text and uses it literally, without another automatic rewrite. A safety-rejected version cannot be retried unchanged: the user must appropriately revise the prompt. This guard checks the panel's full version history, including accepted and effective prompts, so an earlier technical failure cannot relaunch inputs subsequently rejected for safety. No rejection triggers evasive prompt rewriting. Legacy boards without retained inputs remain readable but require a new snapshot-backed board before targeted generation.
+
+The original panel result is retained as version UUID `00000000-0000-0000-0000-000000000000` on first use; subsequent version UUIDs equal their command IDs. Candidates have independent status, issue, traces, and private image paths. Generating a candidate neither changes the selected panel nor clears successful siblings or the last composed PNG. Only explicit selection of a successful version changes that panel's projection and queues composition; selecting an older version deliberately is supported. Completeness continues to describe selected artwork, not the latest candidate. Version image reads are authenticated at `/api/generations/{id}/panels/{number}/versions/{versionId}/image`; responses contain no private blob locators.
+
+Schema-4 queue messages add `Operation` (`panel` or `compose`), `CommandId`, `PanelNumber`, and `Revision`, with the existing owner/project/run identifiers. A stable board/command transport ID protects ordinary submission retries. Consumers continue to handle schemas 2/3, but ignore obsolete full-board deliveries after a panel command has been accepted. **Deploy the schema-4-capable workers before the new API; do not mix older workers on the queue once the producer is enabled.** Unsupported schemas fail closed, never downgrade to full-board regeneration.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Web
+    participant API
+    participant DB as Cosmos DB
+    participant Queue
+    participant Job
+    participant MAI
+    participant Blob
+    User->>Web: Retry frozen failed inputs or approve revised prompt
+    Web->>API: Attempt UUID and expected revision
+    API->>DB: Save candidate and pending command with ETag
+    API->>Queue: Schema 4 panel command
+    Queue->>Job: Deliver or resume accepted command
+    Job->>DB: Claim execution and checkpoint prepared inputs
+    Job->>MAI: Generate only the target image if no saved artifact
+    Job->>Blob: Create immutable candidate PNG
+    Job->>DB: Save candidate without changing selection
+    User->>Web: Explicitly select a successful panel version
+    Web->>API: Selection UUID and expected revision
+    API->>DB: Save selection and composition command with ETag
+    API->>Queue: Schema 4 compose command
+    Queue->>Job: Compose selected images without model requests
+    Job->>Blob: Create immutable board PNG
+    Job->>DB: Publish only for the accepted selection revision
+```
+
+Before calling a provider, the worker conditionally checkpoints a unique execution claim and a 30-minute lease. Its linked execution deadline is 25 minutes, below lease expiry. A contending delivery schedules a distinct transport wake-up for lease expiry and is completed only after scheduling succeeds; contention does not consume immediate failure retries. Abrupt process loss allows lease takeover. Every checkpoint/publication is guarded by command identity, revision, execution identity, expiry, and ETag; conflicts never blindly overwrite the stale aggregate.
+
+Panel PNGs use immutable `<owner-hash>/<run-id-N>/panel-<number>-<command-id-N>.png` names and conditional create-only uploads. Initial full-board results use separate `initial-panel-<number>-<attempt-id-N>.png` and `initial-board-<attempt-id-N>.png` paths, so an overlapping full-board execution cannot overwrite artwork retained in version history; ETags reject its stale publication. Recovery checks a valid saved PNG before requesting another image, covering a crash after upload but before the Cosmos result checkpoint. A committed duplicate produces no extra artifact or version. Composition reads only selected images (including placeholders for failed slots), never requests missing sibling images, and publishes immutable `board-<command-id-N>.png` only for its accepted selection revision. The prior board remains available on failure; EPUB export rejects a selection not yet successfully composed.
+
+The provider boundary remains **at least once, not exactly-once billing**: a timeout or crash after provider acceptance but before a usable artifact is saved has an uncertain outcome. Recovery or provider retries may issue another billed request. Deterministic crash tests verify checkpoint recovery and this uncertainty, not live provider billing guarantees.
+
+Cosmos and Service Bus are still not a transactional outbox. If dispatch fails or the API crashes after accepting a command, `PendingCommandId` remains available on detail reads. `POST /api/generations/{id}/commands/{commandId}/resume` redispatches that accepted command without revising inputs or creating another version, including after reopening the editor. Service Bus's ten-minute duplicate-detection window still applies. These operations do not provide unattended repair of a persist-before-enqueue crash gap.
 
 ### Notification delivery
 
@@ -283,8 +329,9 @@ The `core` Cosmos database contains `projects`, `documents`, and `references`, a
 | Cosmos `documents` | Generation, parent project ID, immutable input snapshot, execution attempts, layout/prompts, panel states, artifact names, and per-request AI traces. |
 | Cosmos `references` | Uploaded-reference metadata. |
 | Blob `references` | `<sha256-owner-prefix>/<reference-id>.<extension>`. |
-| Blob `generations` | `<sha256-owner-prefix>/<generation-or-book-id-N>/panel-NN.png`, `board.png`, `chapter-<chapter-id>.png`, or retained `input-<reference-id>-<content-sha256>`. |
+| Blob `generations` | `<sha256-owner-prefix>/<generation-or-book-id-N>/panel-NN.png`, `board.png`, immutable panel/composition command PNGs, `chapter-<chapter-id>.png`, or retained `input-<reference-id>-<content-sha256>`. |
 | Board message, schema 3 (schema 2 readable) | `BoardId`, `RunId`, `OwnerId`, `ProjectId`, `RewritePrompt`; snapshot values are authoritative. |
+| Panel/composition message, schema 4 | Existing owner/project/run IDs plus `Operation`, `CommandId`, `PanelNumber`, `Revision`; persisted command inputs are authoritative. |
 | Book plan message, schema 1 | `JobType=book-plan`, `RequestId`, `OwnerId`, `ProjectId`, `ChapterCount`. |
 
 The owner hash avoids embedding raw owner identifiers in blob paths; it is not authorization. Comic panels reference project character IDs; Book projects reject board creation. Layouts are persisted as Standard, Storyline, Dynamic 1, or Dynamic 2. Review queue-schema compatibility explicitly because deployed API/worker revisions can overlap.
