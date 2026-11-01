@@ -6,6 +6,13 @@ public sealed record AiGenerationTrace
     public string Provider { get; init; } = string.Empty;
     public string Model { get; init; } = string.Empty;
     public string? RequestId { get; init; }
+    public string? AttemptId { get; init; }
+    public string? RunId { get; init; }
+    public string? StageId { get; init; }
+    public int? InputVersion { get; init; }
+    public int? RetryNumber { get; init; }
+    public string? StopReason { get; init; }
+    public string ProviderOutcome { get; init; } = "unknown";
     public long? InputTokens { get; init; }
     public long? OutputTokens { get; init; }
     public long? TotalTokens { get; init; }

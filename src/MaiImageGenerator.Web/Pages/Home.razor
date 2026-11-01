@@ -67,6 +67,28 @@
                     <section class="surface" role="status" aria-label="Diagnostic du résultat">
                         <strong>@ResultLabel</strong>
                         <p>@StatusLabel(result.Status) · @result.CompletedPanelCount illustrées · @ResultFailedPanelCount en échec · @result.PanelCount au total</p>
+                        @if (result.Budget is { } budget)
+                        {
+                            <details>
+                                <summary>Étapes et limites de génération · @budget.ReservedModelCalls / @budget.MaxModelCalls appels réservés</summary>
+                                <p>Tentatives : @budget.ReservedAttempts / @budget.MaxAttempts · Limite de temps : @budget.Deadline.ToString("u")</p>
+                                @if (!budget.HistoricalConsumptionKnown)
+                                {
+                                    <p>Consommation historique inconnue avant l'activation des limites.</p>
+                                }
+                                @if (budget.StopReason is not null)
+                                {
+                                    <p>@result.Error (@budget.StopReason)</p>
+                                }
+                                <ul>
+                                    @foreach (var stage in budget.Stages)
+                                    {
+                                        <li>@stage.Id · @stage.Operation · @stage.Status · @stage.ReservedCalls appels · @stage.UpdatedAt.ToString("u")</li>
+                                    }
+                                </ul>
+                                <p>Coût indisponible : aucune source tarifaire versionnée configurée. Une réponse perdue peut avoir consommé un appel.</p>
+                            </details>
+                        }
                         @foreach (var entry in panels.Select((panel, index) => (panel, index)).Where(entry => entry.panel.Error is not null))
                         {
                             var panelIndex = entry.index;

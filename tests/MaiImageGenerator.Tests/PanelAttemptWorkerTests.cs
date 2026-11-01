@@ -30,6 +30,127 @@ namespace MaiImageGenerator.Tests;
 public sealed class PanelAttemptWorkerTests
 {
     [Fact]
+    public async Task ParallelBoardPanels_ReserveExactlyTheRunCeiling_AndKeepItOnRedelivery()
+    {
+        var h = new Harness();
+        h.Saved.Status = GenerationStatus.Pending;
+        h.Saved.Budget = new GenerationBudgetOptions { MaxModelCalls = 2 }.Create(h.Clock.GetUtcNow());
+        foreach (var panel in h.Saved.Panels)
+            panel.Status = PanelGenerationStatus.Pending;
+        h.Message = new()
+        {
+            SchemaVersion = 3, BoardId = h.Saved.Id, RunId = h.Saved.Id,
+            OwnerId = h.Saved.OwnerId, ProjectId = h.Saved.ProjectId
+        };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        h.Provider.BeforeResponseAsync = async token =>
+        {
+            if (Interlocked.Increment(ref calls) == 2) entered.TrySetResult();
+            await release.Task.WaitAsync(token);
+        };
+        // Avoid artifact side effects in this call-ceiling test.
+        h.Provider.Response = (_, _) => Json("{}", 400);
+        var run = h.RunAsync();
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(2, Volatile.Read(ref calls));
+            Assert.Equal(2, h.Saved.Budget!.ReservedModelCalls);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await run;
+        }
+        Assert.Equal(2, calls);
+        Assert.Equal(2, h.Saved.Budget!.ReservedModelCalls);
+        Assert.Equal("call-limit", h.Saved.Budget.StopReason);
+        Assert.Equal(GenerationStatus.Failed, h.Saved.Status);
+        await h.RunAsync();
+        Assert.Equal(2, calls);
+        Assert.Equal(2, h.Saved.Budget.ReservedModelCalls);
+    }
+
+    [Theory]
+    [InlineData("call-limit")]
+    [InlineData("attempt-limit")]
+    [InlineData("deadline")]
+    public async Task ExhaustedRun_StopsDurablyBeforeProvider_AndRedeliveryCannotReset(string reason)
+    {
+        var h = new Harness();
+        h.Attempt();
+        var projection = h.Projection();
+        h.Saved.Budget = new GenerationBudgetOptions().Create(h.Clock.GetUtcNow());
+        var budget = h.Saved.Budget;
+        if (reason == "call-limit") budget.ReservedModelCalls = budget.MaxModelCalls;
+        if (reason == "attempt-limit") budget.ReservedAttempts = budget.MaxAttempts;
+        if (reason == "deadline") budget.Deadline = h.Clock.GetUtcNow();
+        await h.RunAsync();
+
+        Assert.Equal(0, h.Provider.ImageCalls);
+        Assert.Equal(0, h.Provider.RewriteCalls);
+        Assert.Equal(GenerationStatus.Failed, h.Saved.Status);
+        Assert.Equal(reason, h.Saved.Budget!.StopReason);
+        Assert.Equal(GenerationRunGuard.DescribeStop(reason), h.Saved.Error);
+        Assert.Equal(PanelGenerationStatus.Failed, h.Candidate.Status);
+        Assert.Equal(projection, h.Projection());
+        var saved = Serialize(h.Saved.Budget);
+        await h.RunAsync();
+        Assert.Equal(saved, Serialize(h.Saved.Budget));
+        Assert.Equal(0, h.Provider.ImageCalls);
+    }
+
+    [Fact]
+    public async Task RunDeadline_CancelsAcceptedCall_WithDurableStopAndUnknownProviderOutcome()
+    {
+        var h = new Harness();
+        h.Attempt();
+        h.Saved.Budget = new GenerationBudgetOptions { MaxDurationSeconds = 10 }.Create(h.Clock.GetUtcNow());
+        h.Provider.BeforeResponseAsync = token =>
+        {
+            h.Clock.Advance(TimeSpan.FromSeconds(10));
+            token.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        };
+        await h.RunAsync();
+
+        Assert.Equal(1, h.Provider.ImageCalls);
+        Assert.Equal(1, h.Saved.Budget!.ReservedModelCalls);
+        Assert.Equal("deadline", h.Saved.Budget.StopReason);
+        Assert.Equal(GenerationStatus.Failed, h.Saved.Status);
+        Assert.Null(h.Saved.PendingCommandId);
+        var trace = Assert.Single(h.Candidate.Traces);
+        Assert.Equal("unknown", trace.ProviderOutcome);
+        Assert.Equal("deadline", trace.StopReason);
+        Assert.Equal("unavailable", trace.UsageSource);
+        Assert.Null(trace.TotalTokens);
+        await h.RunAsync();
+        Assert.Equal(1, h.Provider.ImageCalls);
+    }
+
+    [Fact]
+    public async Task CorrectionsShareRunCallBudget_ButSavedVersionSelectionStillComposes()
+    {
+        var h = new Harness();
+        h.Saved.Budget = new GenerationBudgetOptions { MaxModelCalls = 1 }.Create(h.Clock.GetUtcNow());
+        h.Attempt();
+        await h.RunAsync();
+        Assert.Equal(1, h.Saved.Budget!.ReservedModelCalls);
+        Assert.Throws<PanelCommandConflictException>(() => h.Attempt());
+        h.Saved.Budget.StopReason = "call-limit";
+        h.Saved.Budget.Deadline = h.Clock.GetUtcNow().AddSeconds(-1);
+        h.Select();
+        await h.RunAsync();
+
+        Assert.Equal(1, h.Provider.ImageCalls);
+        Assert.Equal(1, h.Saved.Budget.ReservedModelCalls);
+        Assert.Equal(GenerationStatus.Completed, h.Saved.Status);
+        Assert.Equal(h.CommandPath("board"), h.Saved.BoardBlobName);
+    }
+
+    [Fact]
     public async Task SixPanels_GeneratesOnlyTarget_WithoutSelectingOrRewritingLiteralPrompt()
     {
         var h = new Harness();
@@ -733,9 +854,7 @@ public sealed class PanelAttemptWorkerTests
         Assert.Equal(originalPath, h.Saved.Panels[2].Versions[0].ImageBlobName);
         Assert.Equal(GenerationStatus.Pending, h.Saved.Status);
         Assert.Equal(h.Candidate.Id, h.Saved.PendingCommandId);
-        Assert.Equal(1, h.Blobs.Uploads);
-        Assert.Contains(h.Blobs.Content.Keys, name => name.EndsWith(
-            $"initial-panel-03-{Guid.Parse(h.Running!.Attempts.Last().Id):N}.png", StringComparison.Ordinal));
+        Assert.Equal(0, h.Blobs.Uploads);
     }
 
     [Fact]
@@ -1031,11 +1150,16 @@ public sealed class PanelAttemptWorkerTests
         public Func<CancellationToken, Task>? BeforeResponseAsync { get; set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
-            Requests.Add(await request.Content!.ReadAsStringAsync(token));
+            var body = await request.Content!.ReadAsStringAsync(token);
             var rewrite = request.RequestUri!.AbsolutePath.Contains("/chat/", StringComparison.Ordinal);
-            if (rewrite) RewriteCalls++; else ImageCalls++;
+            int callNumber;
+            lock (Requests)
+            {
+                Requests.Add(body);
+                callNumber = rewrite ? ++RewriteCalls : ++ImageCalls;
+            }
             if (BeforeResponseAsync is not null) await BeforeResponseAsync(token);
-            return Response?.Invoke(rewrite, rewrite ? RewriteCalls : ImageCalls) ??
+            return Response?.Invoke(rewrite, callNumber) ??
                    Json(rewrite ? ChatResponse("Prepared frozen scene") : ImageResponse());
         }
         // A harness uses a fresh HttpClient per execution but deliberately reuses this double.

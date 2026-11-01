@@ -16,6 +16,7 @@ public sealed partial class GenerationService
         BoardGenerationRequestMessage request,
         GenerationDocument document,
         ProjectDocument project,
+        GenerationRunGuard guard,
         CancellationToken cancellationToken)
     {
         if (project.DeletionRequestedAt is not null ||
@@ -27,6 +28,7 @@ public sealed partial class GenerationService
             throw new PanelCommandBusyException(document.CommandLeaseExpiresAt!.Value);
 
         var executionId = PanelVersionCommands.Claim(document, _commandTime.GetUtcNow());
+        guard.Fence = EnsureOwnership;
         var attempt = new GenerationAttempt { Id = executionId, StartedAt = _commandTime.GetUtcNow() };
         document.Attempts.Add(attempt);
         using var executionTimeout = new CancellationTokenSource(PanelVersionCommands.ExecutionTimeout, _commandTime);
@@ -67,7 +69,8 @@ public sealed partial class GenerationService
                         await ValidateImageAsync(bytes, token);
                         images.Add(bytes);
                     }
-                    board = await composer.BuildBoardAsync(snapshot.Title, images, snapshot.Template, token);
+                    board = await guard.StageAsync($"compose-{request.CommandId}", "compose", executionId,
+                        composeToken => composer.BuildBoardAsync(snapshot.Title, images, snapshot.Template, composeToken), token);
                     EnsureOwnership();
                     await UploadCommandArtifactAsync(name, board, token);
                 }
@@ -108,10 +111,11 @@ public sealed partial class GenerationService
                             version.EffectivePrompt = source.EffectivePrompt;
                         else if (snapshot.RewritePrompt)
                         {
-                            var trace = new AiGenerationTrace { Operation = "prompt-rewrite", AttemptId = executionId };
-                            await CheckpointAsync(() => version.Traces.Add(trace), token);
-                            version.EffectivePrompt = await client.RewritePromptAsync(
-                                snapshot.Context, version.Prompt, token, trace);
+                            version.EffectivePrompt = await guard.InvokeAsync(
+                                $"panel-{target.Number}/version-{version.Id}/prompt-rewrite",
+                                "prompt-rewrite", executionId, 0, version.Traces,
+                                (trace, callToken) => client.RewritePromptAsync(
+                                    snapshot.Context, version.Prompt, callToken, trace), token);
                         }
                         else
                             version.EffectivePrompt = version.Prompt;
@@ -130,13 +134,12 @@ public sealed partial class GenerationService
                     "comic-panel",
                     async retryToken =>
                     {
-                        var trace = new AiGenerationTrace { Operation = "panel-image", AttemptId = executionId };
-                        await CheckpointAsync(() =>
-                        {
-                            version.Issue = null;
-                            version.Traces.Add(trace);
-                        }, retryToken);
-                        return await client.GenerateAsync(prompt!, sheet, slot.ColumnSpan > slot.RowSpan, retryToken, trace);
+                        await CheckpointAsync(() => version.Issue = null, retryToken);
+                        return await guard.InvokeAsync(
+                            $"panel-{target.Number}/version-{version.Id}/panel-image", "panel-image",
+                            executionId, snapshot.Settings.ImageRetryCount, version.Traces,
+                            (trace, callToken) => client.GenerateAsync(
+                                prompt!, sheet, slot.ColumnSpan > slot.RowSpan, callToken, trace), retryToken);
                     },
                     IsTransient,
                     IsThrottled,
@@ -161,7 +164,8 @@ public sealed partial class GenerationService
             await NotifyCompletedAsync(request, target.Number, CancellationToken.None);
         }
         catch (Exception exception) when (exception is DbUpdateConcurrencyException or
-                                        PanelCommandCheckpointException or PanelCommandLostException)
+                                        PanelCommandCheckpointException or PanelCommandLostException or
+                                        GenerationBudgetExceededException or GenerationBudgetCheckpointException)
         {
             // In particular, do not attempt a failure checkpoint with a stale ETag/claim.
             throw;

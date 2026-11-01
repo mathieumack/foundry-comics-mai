@@ -25,6 +25,27 @@ public sealed class PanelVersionEditorTests
     private static readonly DateTimeOffset Created = DateTimeOffset.Parse("2026-01-01T12:00:00Z");
 
     [Fact]
+    public async Task DurableBudgetStop_RendersSafeStageProgressAndUnknownCost()
+    {
+        var response = Board() with
+        {
+            Status = GenerationStatus.Failed,
+            Error = "Generation stopped because the run's time limit was reached.",
+            Budget = new(1, 4, 2, 1, Created, 3, 2, "deadline",
+                [new("panel-1/panel-image", "panel-image", "safe-attempt", 2, "stopped", Created, "deadline")])
+        };
+        await using var harness = await Harness.OpenAsync(response);
+        var html = System.Net.WebUtility.HtmlDecode(await harness.HtmlAsync());
+        Assert.Contains("time limit", html);
+        Assert.Contains("panel-1/panel-image", html);
+        Assert.Contains("stopped", html);
+        Assert.Contains("3 / 4 appels", html);
+        Assert.Contains("Coût indisponible", html);
+        Assert.Contains("<summary>", html);
+        Assert.Contains("role=\"alert\"", html);
+    }
+
+    [Fact]
     public async Task LegacyResponse_DefaultsToReadOnlyWithoutAttemptActions()
     {
         var old = JsonSerializer.Deserialize<GenerationResponse>(

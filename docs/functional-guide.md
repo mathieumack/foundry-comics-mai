@@ -115,6 +115,14 @@ Legacy saved boards without retained inputs remain readable and downloadable. Cr
 
 Stable attempt IDs and durable checkpoints avoid additional artifacts for committed duplicate work and reuse saved PNGs after interruption. They do **not** guarantee exactly-once provider requests or billing: a timeout after the provider accepted a request but before its image was saved can have an uncertain outcome, and retrying may incur another request.
 
+#### Run limits and stage diagnostics
+
+Automatic comic generation has server-controlled model-call, execution-attempt, per-stage retry, and time limits. The same saved budget covers queue redelivery and later candidate-panel corrections; neither retrying a delivery nor reopening the editor replenishes it. The time limit includes queue/backoff time. When exhausted, the board saves a plain-language stop reason and keeps already-created artwork rather than retrying indefinitely. Create a new board run if more model work is needed. You can still select and compose successfully saved panel versions without spending model-call budget.
+
+Expand **Étapes et limites de génération** in the result diagnostic to see reserved calls, execution attempts, the absolute deadline, and each stage's status and last update. A stage left processing with an old timestamp may indicate interrupted work; its persisted metadata and run/stage/attempt correlation let an operator investigate without reading your story or model prompts. Legacy runs disclose unknown historical consumption.
+
+A reservation may correspond to a failed or uncertain provider request, not an available image. Trace details retain **unknown** provider outcomes and unavailable token usage explicitly. Cost remains unavailable: no configured, versioned pricing source backs a monetary estimate. See [durable comic run budgets](architecture.md#durable-comic-run-budgets) for operator settings, rollout, and accounting limits.
+
 ## Export as an EPUB eBook
 
 Use **Export as EPUB** (`Exporter en EPUB`) in either project workspace. This is an on-demand frontend action: the signed-in user downloads their eBook directly through the authenticated API, without a GitHub workflow or export automation. Finish generation and save edits first; the action is disabled while content is incomplete or there are unsaved changes. Keep the page open until the browser starts downloading `<project-title>.epub`. The filename is sanitized automatically.

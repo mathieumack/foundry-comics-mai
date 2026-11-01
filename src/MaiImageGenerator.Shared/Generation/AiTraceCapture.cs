@@ -19,6 +19,12 @@ public static class AiTraceCapture
         Model = trace.Model,
         RequestId = trace.RequestId,
         AttemptId = trace.AttemptId,
+        RunId = trace.RunId,
+        StageId = trace.StageId,
+        InputVersion = trace.InputVersion,
+        RetryNumber = trace.RetryNumber,
+        StopReason = trace.StopReason,
+        ProviderOutcome = trace.ProviderOutcome,
         InputTokens = trace.InputTokens,
         OutputTokens = trace.OutputTokens,
         TotalTokens = trace.TotalTokens,
@@ -83,6 +89,7 @@ public static class AiTraceCapture
         try
         {
             using var document = readResponse();
+            trace.ProviderOutcome = "responded";
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object)
             {
@@ -157,7 +164,11 @@ public static class AiTraceCapture
 
         internal CaptureScope(AiGenerationTrace trace) => _trace = trace;
 
-        public void Complete() => _trace.Status = "completed";
+        public void Complete()
+        {
+            _trace.Status = "completed";
+            _trace.ProviderOutcome = "succeeded";
+        }
 
         public void Cancel() => _trace.Status = "canceled";
 

@@ -16,7 +16,8 @@ public sealed partial class GenerationService(
     ServiceBusSender jobsQueue,
     ScaffoldTraceStore scaffoldTraceStore,
     GenerationSnapshotStore snapshotStore,
-    ILogger<GenerationService> logger)
+    ILogger<GenerationService> logger,
+    Microsoft.Extensions.Options.IOptions<GenerationBudgetOptions>? budgetOptions = null)
 {
     private readonly BlobContainerClient _container = blobServiceClient.GetBlobContainerClient("generations");
 
@@ -249,6 +250,7 @@ public sealed partial class GenerationService(
         timeout.CancelAfter(BoardSubmissionLease.SubmissionTimeout);
         try
         {
+            document.Budget = (budgetOptions?.Value ?? new GenerationBudgetOptions()).Create(DateTimeOffset.UtcNow);
             dbContext.Generations.Add(document);
             await dbContext.SaveChangesAsync(timeout.Token);
             var selectedIds = document.Panels.SelectMany(panel => panel.CharacterIds).ToHashSet(StringComparer.Ordinal);
@@ -361,7 +363,8 @@ public sealed partial class GenerationService(
                 .ToArray()),
         document.Revision,
         snapshot is not null,
-        document.PendingCommandId);
+        document.PendingCommandId,
+        document.Budget);
     }
 
     private static Uri PanelImageUri(GenerationDocument document, GenerationPanel panel) =>

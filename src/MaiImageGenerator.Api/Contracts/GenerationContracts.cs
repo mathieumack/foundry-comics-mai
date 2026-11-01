@@ -65,7 +65,8 @@ public sealed record GenerationResponse(
     GenerationRunResponse? Run = null,
     long Revision = 0,
     bool CanEditPanels = false,
-    string? PendingCommandId = null);
+    string? PendingCommandId = null,
+    GenerationRunBudget? Budget = null);
 
 public sealed record GenerationRunResponse(
     string RunId,

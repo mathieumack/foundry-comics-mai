@@ -8,6 +8,7 @@ public sealed class GenerationDocument
     public int SchemaVersion { get; set; } = 3;
     public GenerationInputSnapshot? InputSnapshot { get; set; }
     public List<GenerationAttempt> Attempts { get; set; } = [];
+    public GenerationRunBudget? Budget { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string? Context { get; set; }

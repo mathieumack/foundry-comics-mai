@@ -25,6 +25,12 @@ public static class PanelVersionCommands
             return false;
         }
         EnsureEditable(document, expectedRevision);
+        if (document.Budget is { } budget &&
+            (budget.StopReason is not null || now >= budget.Deadline ||
+             budget.ReservedModelCalls >= budget.MaxModelCalls || budget.ReservedAttempts >= budget.MaxAttempts))
+            throw new PanelCommandConflictException(GenerationRunGuard.DescribeStop(
+                budget.StopReason ?? (now >= budget.Deadline ? "deadline" :
+                    budget.ReservedModelCalls >= budget.MaxModelCalls ? "call-limit" : "attempt-limit")));
         if (document.SelectionCommands.Any(item => item.Id == id))
             throw new PanelCommandConflictException("This command ID was already used.");
         if (retry && !string.IsNullOrWhiteSpace(prompt))
@@ -172,6 +178,8 @@ public static class PanelVersionCommands
     {
         Operation = trace.Operation, Provider = trace.Provider, Model = trace.Model, RequestId = trace.RequestId,
         AttemptId = trace.AttemptId, InputTokens = trace.InputTokens, OutputTokens = trace.OutputTokens,
+        RunId = trace.RunId, StageId = trace.StageId, InputVersion = trace.InputVersion,
+        RetryNumber = trace.RetryNumber, StopReason = trace.StopReason, ProviderOutcome = trace.ProviderOutcome,
         TotalTokens = trace.TotalTokens, UsageSource = trace.UsageSource, StartedAt = trace.StartedAt,
         CompletedAt = trace.CompletedAt, DurationMs = trace.DurationMs, ImageCount = trace.ImageCount,
         ImageSize = trace.ImageSize, ImageQuality = trace.ImageQuality, Status = trace.Status

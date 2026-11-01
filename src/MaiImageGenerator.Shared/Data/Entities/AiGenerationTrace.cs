@@ -7,6 +7,12 @@ public sealed class AiGenerationTrace
     public string Model { get; set; } = string.Empty;
     public string? RequestId { get; set; }
     public string? AttemptId { get; set; }
+    public string? RunId { get; set; }
+    public string? StageId { get; set; }
+    public int? InputVersion { get; set; }
+    public int? RetryNumber { get; set; }
+    public string? StopReason { get; set; }
+    public string ProviderOutcome { get; set; } = "unknown";
     public long? InputTokens { get; set; }
     public long? OutputTokens { get; set; }
     public long? TotalTokens { get; set; }
