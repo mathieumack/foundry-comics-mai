@@ -40,6 +40,19 @@ public sealed class MaiImageGeneratorDbContext(
             panel.Property(item => item.Status).HasConversion<string>();
             panel.Property(item => item.Issue).HasConversion<string>();
             panel.OwnsMany(item => item.Traces, trace => ConfigureTrace(trace, "traces"));
+            panel.OwnsMany(item => item.Versions, version =>
+            {
+                version.ToJsonProperty("versions");
+                version.Property(item => item.Id).ValueGeneratedNever();
+                version.Property(item => item.Status).HasConversion<string>();
+                version.Property(item => item.Issue).HasConversion<string>();
+                version.OwnsMany(item => item.Traces, trace => ConfigureTrace(trace, "traces"));
+            });
+        });
+        generation.OwnsMany(item => item.SelectionCommands, command =>
+        {
+            command.ToJsonProperty("selectionCommands");
+            command.Property(item => item.Id).ValueGeneratedNever();
         });
         generation.OwnsMany(item => item.Attempts, attempt =>
         {

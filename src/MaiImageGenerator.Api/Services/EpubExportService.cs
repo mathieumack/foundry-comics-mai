@@ -66,6 +66,10 @@ public sealed class EpubExportService(IEpubExportSource source)
             {
                 throw new EpubExportException("Wait for active boards to finish before exporting the comic.");
             }
+            if (boards.Any(board => board.SelectedRevision > board.ComposedRevision))
+            {
+                throw new EpubExportException("Recompose the selected panel versions before exporting the comic.");
+            }
 
             var completed = boards.Where(board => board.Status == GenerationStatus.Completed).ToArray();
             if (completed.Length == 0)

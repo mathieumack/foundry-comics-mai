@@ -124,7 +124,9 @@ public sealed record GenerationResponse(
     string? Error,
     IReadOnlyList<AiGenerationTrace>? ScaffoldTraces = null,
     int FailedPanelCount = 0,
-    GenerationCompleteness? Completeness = null);
+    GenerationCompleteness? Completeness = null,
+    long Revision = 0,
+    bool CanEditPanels = false);
 
 public sealed record PanelGenerationResponse(
     int Number,
@@ -135,7 +137,24 @@ public sealed record PanelGenerationResponse(
     Uri? ImageUri,
     string? Error,
     IReadOnlyList<AiGenerationTrace>? Traces = null,
-    PanelGenerationIssue? Issue = null);
+    PanelGenerationIssue? Issue = null,
+    string? SelectedVersionId = null,
+    IReadOnlyList<PanelVersionResponse>? Versions = null);
+
+public sealed record PanelVersionResponse(
+    string Id,
+    string Prompt,
+    string? EffectivePrompt,
+    PanelGenerationStatus Status,
+    Uri? ImageUri,
+    PanelGenerationIssue? Issue,
+    IReadOnlyList<AiGenerationTrace> Traces,
+    DateTimeOffset CreatedAt);
+
+public sealed record CreatePanelAttemptRequest(
+    Guid AttemptId, long ExpectedRevision, bool Retry, string? Prompt = null, Guid? SourceVersionId = null);
+
+public sealed record SelectPanelVersionRequest(Guid CommandId, Guid VersionId, long ExpectedRevision);
 
 public sealed record CharacterGenerationResponse(
     string Id,

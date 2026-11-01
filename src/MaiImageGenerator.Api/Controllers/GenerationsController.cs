@@ -1,7 +1,9 @@
 using MaiImageGenerator.Api.Contracts;
 using MaiImageGenerator.Api.Services;
+using MaiImageGenerator.Shared.Services;
 using MDev.Dotnet.Azure.ContainerApps.Authentication.Extensions;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace MaiImageGenerator.Api.Controllers;
 
@@ -92,6 +94,65 @@ public sealed class GenerationsController(
     public Task<IActionResult> DownloadBoard(Guid generationId, CancellationToken cancellationToken) =>
         DownloadArtifact(generationId, null, cancellationToken);
 
+    [HttpPost("{generationId:guid}/panels/{panelNumber:int}/attempts")]
+    public Task<ActionResult<GenerationResponse>> CreatePanelAttempt(Guid generationId, int panelNumber,
+        CreatePanelAttemptRequest request, CancellationToken cancellationToken) =>
+        ExecutePanelCommand(ownerId => generationService.CreatePanelAttemptAsync(
+            ownerId, generationId, panelNumber, request, cancellationToken));
+
+    [HttpPut("{generationId:guid}/panels/{panelNumber:int}/selection")]
+    public Task<ActionResult<GenerationResponse>> SelectPanelVersion(Guid generationId, int panelNumber,
+        SelectPanelVersionRequest request, CancellationToken cancellationToken) =>
+        ExecutePanelCommand(ownerId => generationService.SelectPanelVersionAsync(
+            ownerId, generationId, panelNumber, request, cancellationToken));
+
+    [HttpPost("{generationId:guid}/commands/{commandId:guid}/resume")]
+    public Task<ActionResult<GenerationResponse>> ResumePanelCommand(Guid generationId, Guid commandId,
+        CancellationToken cancellationToken) =>
+        ExecutePanelCommand(ownerId => generationService.ResumePanelCommandAsync(
+            ownerId, generationId, commandId, cancellationToken));
+
+    [HttpGet("{generationId:guid}/panels/{panelNumber:int}/versions/{versionId:guid}/image")]
+    public async Task<IActionResult> DownloadPanelVersion(Guid generationId, int panelNumber, Guid versionId,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = httpContextAccessor.GetUserId();
+        if (string.IsNullOrWhiteSpace(ownerId)) return Unauthorized();
+        var artifact = await generationService.OpenPanelVersionAsync(
+            ownerId, generationId, panelNumber, versionId, cancellationToken);
+        Response.Headers.CacheControl = "no-store";
+        return artifact is null ? NotFound() : File(artifact.Value.Content, artifact.Value.ContentType);
+    }
+
+    private async Task<ActionResult<GenerationResponse>> ExecutePanelCommand(
+        Func<string, Task<GenerationResponse?>> execute)
+    {
+        var ownerId = httpContextAccessor.GetUserId();
+        if (string.IsNullOrWhiteSpace(ownerId)) return Unauthorized();
+        try
+        {
+            var result = await execute(ownerId);
+            return result is null ? NotFound() : Ok(result);
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid panel command", Detail = exception.Message });
+        }
+        catch (PanelCommandConflictException exception)
+        {
+            return Conflict(new ProblemDetails { Title = "Panel command conflict", Detail = exception.Message });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new ProblemDetails { Title = "The board changed", Detail = "Refresh before trying again." });
+        }
+        catch (PanelCommandDispatchException)
+        {
+            return Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Panel command not queued",
+                detail: "The accepted command remains pending. Retry with the same command ID.");
+        }
+    }
+
     [HttpGet("{generationId:guid}/references/{referenceId}/content")]
     public async Task<IActionResult> DownloadReference(
         Guid generationId,
@@ -127,6 +188,7 @@ public sealed class GenerationsController(
         }
 
         var artifact = await generationService.OpenArtifactAsync(ownerId, generationId, panelNumber, cancellationToken);
+        Response.Headers.CacheControl = "no-store";
         return artifact is null ? NotFound() : File(artifact.Value.Content, artifact.Value.ContentType);
     }
 }

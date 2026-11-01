@@ -237,6 +237,26 @@ public sealed class GenerationApiClient(HttpClient httpClient)
             ?? throw new GenerationApiException("The API returned no generation status.");
     }
 
+    public async Task<GenerationResponse> CreatePanelAttemptAsync(
+        Guid generationId, int panelNumber, CreatePanelAttemptRequest request, CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            $"api/generations/{generationId:D}/panels/{panelNumber}/attempts", request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<GenerationResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no generation status.");
+    }
+
+    public async Task<GenerationResponse> SelectPanelVersionAsync(
+        Guid generationId, int panelNumber, SelectPanelVersionRequest request, CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.PutAsJsonAsync(
+            $"api/generations/{generationId:D}/panels/{panelNumber}/selection", request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<GenerationResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no generation status.");
+    }
+
     public async Task<IReadOnlyList<GenerationSummaryResponse>> ListAsync(CancellationToken cancellationToken)
     {
         using var response = await httpClient.GetAsync("api/generations", cancellationToken);
@@ -265,7 +285,7 @@ public sealed class GenerationApiClient(HttpClient httpClient)
 
         var details = await response.Content.ReadAsStringAsync(cancellationToken);
         throw new GenerationApiException(
-            $"The API returned {(int)response.StatusCode} ({response.ReasonPhrase}). {details}");
+            $"The API returned {(int)response.StatusCode} ({response.ReasonPhrase}). {details}", response.StatusCode);
     }
 
     private async Task<BookPlanResponse> GenerateBookPartAsync(
@@ -279,4 +299,7 @@ public sealed class GenerationApiClient(HttpClient httpClient)
     }
 }
 
-public sealed class GenerationApiException(string message) : Exception(message);
+public sealed class GenerationApiException(string message, System.Net.HttpStatusCode? statusCode = null) : Exception(message)
+{
+    public System.Net.HttpStatusCode? StatusCode { get; } = statusCode;
+}

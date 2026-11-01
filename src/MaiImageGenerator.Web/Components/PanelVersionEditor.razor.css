@@ -1,0 +1,4 @@
+.panel-versions { margin-block: 1.5rem; border-top: 1px solid var(--cp-border); padding-top: 1rem; }
+.version-list { display: grid; gap: 1rem; padding-left: 1.5rem; }
+.version-card { border: 1px solid var(--cp-border); border-radius: 10px; padding: 1rem; background: var(--cp-surface-soft); min-width: 0; overflow-wrap: anywhere; }
+.version-preview { display: block; width: 100%; max-height: 24rem; object-fit: contain; margin-block: 1rem; }

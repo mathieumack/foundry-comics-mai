@@ -22,6 +22,15 @@ public sealed class GenerationDocument
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public string? ETag { get; set; }
+    public long Revision { get; set; }
+    public long ComposedRevision { get; set; }
+    public long SelectedRevision { get; set; }
+    public string? PendingCommandId { get; set; }
+    public string? PendingCommandKind { get; set; }
+    public int? PendingPanelNumber { get; set; }
+    public string? CommandExecutionId { get; set; }
+    public DateTimeOffset? CommandLeaseExpiresAt { get; set; }
+    public List<PanelSelectionCommand> SelectionCommands { get; set; } = [];
 }
 
 public sealed class GenerationPanel
@@ -35,6 +44,29 @@ public sealed class GenerationPanel
     public string? Error { get; set; }
     public PanelGenerationIssue? Issue { get; set; }
     public List<AiGenerationTrace> Traces { get; set; } = [];
+    public string? SelectedVersionId { get; set; }
+    public List<PanelVersion> Versions { get; set; } = [];
+}
+
+public sealed class PanelVersion
+{
+    public string Id { get; set; } = string.Empty;
+    public string? SourceVersionId { get; set; }
+    public bool IsRetry { get; set; }
+    public string Prompt { get; set; } = string.Empty;
+    public string? EffectivePrompt { get; set; }
+    public PanelGenerationStatus Status { get; set; }
+    public string? ImageBlobName { get; set; }
+    public PanelGenerationIssue? Issue { get; set; }
+    public List<AiGenerationTrace> Traces { get; set; } = [];
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public sealed class PanelSelectionCommand
+{
+    public string Id { get; set; } = string.Empty;
+    public int PanelNumber { get; set; }
+    public string VersionId { get; set; } = string.Empty;
 }
 
 public enum PanelGenerationIssue
