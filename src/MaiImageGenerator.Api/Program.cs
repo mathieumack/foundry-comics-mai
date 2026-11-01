@@ -100,6 +100,8 @@ builder.Services.AddScoped<IProjectArtifactStore, BlobProjectArtifactStore>();
 builder.Services.AddScoped<ProjectDeletionService>();
 builder.Services.AddScoped<ProjectScaffolder>();
 builder.Services.AddScoped<BookService>();
+builder.Services.AddScoped<IEpubExportSource, EpubExportSource>();
+builder.Services.AddScoped<EpubExportService>();
 builder.Services.AddSingleton<AuthenticatedUserIdProvider>();
 builder.Services.AddSingleton<IUserIdProvider>(
     serviceProvider => serviceProvider.GetRequiredService<AuthenticatedUserIdProvider>());
@@ -129,7 +131,8 @@ builder.Services.AddHttpContextAccessor()
                     {
                         policy.AllowAnyOrigin()   // Permet n'importe quel domaine d'origine
                                 .AllowAnyMethod()   // Permet toutes les méthodes HTTP (GET, POST, PUT, DELETE, etc.)
-                                .AllowAnyHeader();  // Permet tous les headers
+                                .AllowAnyHeader()   // Permet tous les headers
+                                .WithExposedHeaders("Content-Disposition");
                     });
                 });
 

@@ -12,6 +12,21 @@ window.maiStudio = {
             console.warn("The theme preference could not be stored.", error);
         }
     },
+    async downloadFile(fileName, streamReference) {
+        const content = await streamReference.arrayBuffer();
+        const url = URL.createObjectURL(new Blob([content], { type: "application/epub+zip" }));
+        const link = document.createElement("a");
+        try {
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+        } finally {
+            link.remove();
+            // Give the browser time to start reading the download before releasing it.
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+    },
     showModal(dialog) {
         if (dialog && !dialog.open) {
             dialog.showModal();

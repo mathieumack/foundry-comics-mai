@@ -30,6 +30,8 @@
                 <AiTraceMetadata Traces="planTraces" Label="Book plan requests" />
             </div>
             <div class="header-actions">
+                <EpubExportButton @key="ProjectId" ProjectId="ProjectId"
+                                  Disabled="@(isBusy || isPlanGenerationActive || HasUnsavedChanges || chapters.Count == 0 || chapters.Any(chapter => string.IsNullOrWhiteSpace(chapter.Prose) || chapter.ProseStatus == GenerationStatus.Processing || chapter.ImageStatus == GenerationStatus.Processing))" />
                 <div class="field chapter-count-field">
                     <label for="chapter-count">Nombre de chapitres</label>
                     <input id="chapter-count"
