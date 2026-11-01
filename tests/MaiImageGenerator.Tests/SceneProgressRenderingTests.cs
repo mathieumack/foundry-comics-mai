@@ -248,6 +248,48 @@ public sealed class SceneProgressRenderingTests
         Assert.True(component!.HasPendingDownloads);
     }
 
+    [Theory]
+    [InlineData(4, "partiel")]
+    [InlineData(6, "complet")]
+    public async Task LegacyResponseWithoutNewFields_DerivesCompletenessAndKeepsBoardDownload(
+        int completed, string expected)
+    {
+        var id = Guid.NewGuid();
+        var result = Progress(id, completed) with
+        {
+            Status = GenerationStatus.Completed,
+            Panels = Progress(id, completed).Panels.Select(panel => panel.Number <= completed ? panel :
+                panel with { Status = PanelGenerationStatus.Failed }).ToArray(),
+            BoardUri = new Uri($"api/generations/{id}/board", UriKind.Relative)
+        };
+        using var client = Client((request, _) => Task.FromResult(
+            request.RequestUri!.AbsolutePath.EndsWith("/board", StringComparison.Ordinal) ||
+            request.RequestUri.AbsolutePath.Contains("/panels/", StringComparison.Ordinal)
+                ? ImageResponse(1)
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(result) }));
+        using var services = Services(client);
+        await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
+        TestHome? component = null;
+        var root = await renderer.Dispatcher.InvokeAsync(() => renderer.RenderComponentAsync<TestHome>(
+            ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                [nameof(TestHome.Prepare)] = (Action<TestHome>)(home =>
+                {
+                    component = home;
+                    home.PrepareBoard(id);
+                    home.IncludeBoard(result);
+                })
+            })));
+
+        await renderer.Dispatcher.InvokeAsync(() => component!.RefreshAsync());
+        var html = await renderer.Dispatcher.InvokeAsync(root.ToHtmlString);
+        Assert.Contains(expected, html);
+        Assert.Contains("download=\"mai-comic-board.png\"", html);
+        Assert.False(component!.IsGenerating);
+        Assert.False(component.HasPendingDownloads);
+        Assert.Equal(6 - completed, component.SavedFailedPanelCount);
+    }
+
     private static GenerationResponse Partial(Guid id) => Progress(id, 4) with
     {
         Status = GenerationStatus.Completed,
@@ -290,6 +332,7 @@ public sealed class SceneProgressRenderingTests
         public bool IsGenerating => (bool)Field("isGenerating").GetValue(this)!;
         public int SelectedPanel => (int)Field("selectedPanel").GetValue(this)!;
         public bool HasPendingDownloads => (bool)typeof(Home).GetProperty("HasPendingArtifacts", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(this)!;
+        public int SavedFailedPanelCount => ((List<GenerationSummaryResponse>)Field("projectBoards").GetValue(this)!)[0].FailedPanelCount;
         protected override Task OnInitializedAsync() { Prepare(this); return Task.CompletedTask; }
         protected override Task OnParametersSetAsync() => Task.CompletedTask;
         public void PrepareBoard(Guid id)
@@ -299,6 +342,9 @@ public sealed class SceneProgressRenderingTests
             Field("isGenerating").SetValue(this, true);
         }
         public Task RefreshAsync() => (Task)Method("RefreshGenerationAsync").Invoke(this, null)!;
+        public void IncludeBoard(GenerationResponse result) =>
+            ((List<GenerationSummaryResponse>)Field("projectBoards").GetValue(this)!)
+                .Add(new(result.GenerationId, result.Title, result.CreatedAt, result.Status, null));
         public async Task OpenAsync(Guid id) { GenerationId = id; await base.OnParametersSetAsync(); StateHasChanged(); }
         public void SelectAsync(int index) { Method("SelectPanel").Invoke(this, [index]); StateHasChanged(); }
         public void BeginPolling() =>

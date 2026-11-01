@@ -59,6 +59,11 @@ public partial class Home : IAsyncDisposable
             ? GenerationCompleteness.None
             : generationResult.Panels.All(panel => panel.Status == PanelGenerationStatus.Completed && panel.ImageUri is not null)
                 ? GenerationCompleteness.Complete : GenerationCompleteness.Partial);
+    private int ResultFailedPanelCount => generationResult is { } result
+        ? result.Completeness is null
+            ? result.Panels.Count(panel => panel.Status == PanelGenerationStatus.Failed)
+            : result.FailedPanelCount
+        : 0;
     private string ResultLabel => ResultCompleteness switch
     {
         GenerationCompleteness.Complete => "Résultat complet",
@@ -369,7 +374,7 @@ public partial class Home : IAsyncDisposable
         if (boardIndex >= 0) projectBoards[boardIndex] = projectBoards[boardIndex] with
         {
             Status = generation.Status, PanelCount = generation.PanelCount,
-            CompletedPanelCount = generation.CompletedPanelCount, FailedPanelCount = generation.FailedPanelCount,
+            CompletedPanelCount = generation.CompletedPanelCount, FailedPanelCount = ResultFailedPanelCount,
             Completeness = ResultCompleteness
         };
         foreach (var status in generation.Panels)

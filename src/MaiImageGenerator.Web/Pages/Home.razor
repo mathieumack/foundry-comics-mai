@@ -56,7 +56,7 @@
                 {
                     <section class="surface" role="status" aria-label="Diagnostic du résultat">
                         <strong>@ResultLabel</strong>
-                        <p>@StatusLabel(result.Status) · @result.CompletedPanelCount illustrées · @(result.Completeness is null ? result.Panels.Count(panel => panel.Status == PanelGenerationStatus.Failed) : result.FailedPanelCount) en échec · @result.PanelCount au total</p>
+                        <p>@StatusLabel(result.Status) · @result.CompletedPanelCount illustrées · @ResultFailedPanelCount en échec · @result.PanelCount au total</p>
                         @foreach (var entry in panels.Select((panel, index) => (panel, index)).Where(entry => entry.panel.Error is not null))
                         {
                             var panelIndex = entry.index;
