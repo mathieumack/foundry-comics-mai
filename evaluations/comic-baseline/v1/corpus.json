@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "comic-baseline-v1",
+  "rights": "Original synthetic briefs and geometric robot references contributed under the repository MIT license. No real people, external characters, or third-party reference assets.",
+  "defaults": {
+    "language": "English",
+    "readingDirection": "left-to-right, top-to-bottom",
+    "rewritePrompts": true,
+    "repetitions": 1
+  },
+  "references": [
+    {
+      "id": "pip",
+      "fileName": "pip.png",
+      "description": "Pip is a small amber box-shaped robot with two dark square eyes and a blue diamond on its chest.",
+      "sha256": "63a7df5ff8861dc75808b2a85b982947bf6610b93cef292137279a97ae987d54",
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABBElEQVR42u3bsQ3CMBAF0EyRBiZgHUZjCZajoENUFHSAHGKbmLOf9NtIydPJPluX6X67SiITAkCAAAECBAgQIAEECBCg/oEu533DAAIECBAgQIAAAQIEaDygeXd4z+I3r3oKECBAgAABAqQPAgQIECBAgAABAgQIECBAgAABMmEWs2R+XVCAAAEaC2g+ngCldJ4BlNKpaNQP0ItOLaNOgD7qVDHqASihU24UHmhRp9AoNtCXOiVGgYFW6WQbRQXK0MkzUkHWoGHXILuYPkgn7SzmNO8+yI2iO2lAgAABAgQIUNPxl81eevtZIUCAAAECBAgQIECAAAH6WyC/IgASQIAAtcgDi29+gTWraCoAAAAASUVORK5CYII="
+    },
+    {
+      "id": "moss",
+      "fileName": "moss.png",
+      "description": "Moss is a small teal box-shaped robot with two dark square eyes and a cream circle on its chest.",
+      "sha256": "c35ba9131ea1021867746a3450c1434b007de34c36e5262b6751e8c18d861d8d",
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAA5klEQVR42u3bOQqAMBAFUE9hY2fpKT2F9/IoNiJWtoL7GpcHvw0kjykyYRK1TSUziRAAAgQIECBAgAAJIECAAH0fKC3ygAEECBAgQIAAAQIECND/gOIkG2bxzJtWAQIECBAgQIDcgwABAgQIECBAgAABAgQIECBAgEyYvbNkri4oQIAAAQLUS12VgMZdhgE0SXMW0+uBFnUOGgH6NNBKnSNGgAD9FmiTzm4jFQQIECD3IEB6Md289yAvioAAAQIECBAgQCHGX27b9P2zQoAAAQIECBAgQIAAAQL0WCBfEQAJIECAQqQDSLc5dg5kIFsAAAAASUVORK5CYII="
+    }
+  ],
+  "briefs": [
+    {
+      "id": "E01-01", "title": "The windblown seed", "route": "guided", "layout": "Storyline",
+      "tags": ["silent-storytelling", "cause-and-effect"], "referenceIds": ["pip"],
+      "story": "Three silent panels in a clean flat-color style. Pip sees a seed blow past an empty flowerpot, catches it with a cup, then plants it in the pot. No words, lettering, sound effects, or speech balloons.",
+      "expectedBeats": ["Seed and empty pot are established.", "The same seed is visibly caught.", "The seed reaches the pot; no instantaneous grown plant."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-02", "title": "A place in the shade", "route": "guided", "layout": "Storyline",
+      "tags": ["silent-storytelling", "emotion"], "referenceIds": ["pip", "moss"],
+      "story": "Three silent flat-color panels. Pip sits alone under a small awning while Moss stands in bright sun. Pip moves aside and gestures. Both end seated in the shade. Communicate invitation and relief through posture, with no text.",
+      "expectedBeats": ["Unequal shade is apparent.", "Pip makes room and invites Moss.", "Both share the shade."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-03", "title": "The missing wrench", "route": "guided", "layout": "Storyline",
+      "tags": ["dialogue", "speaker-attribution"], "referenceIds": ["pip", "moss"],
+      "story": "Three flat-color panels at a workbench. Pip asks exactly 'Where is my wrench?' Moss points to a shelf and says exactly 'On the shelf.' Pip lifts the wrench and says exactly 'Found it!' Keep balloons attached to the correct speaker.",
+      "expectedBeats": ["Pip asks.", "Moss answers and points to the shelf.", "Pip retrieves the wrench."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-04", "title": "One speaker at a time", "route": "guided", "layout": "Standard",
+      "tags": ["dialogue", "reading-order"], "referenceIds": ["pip", "moss"],
+      "story": "Six flat-color panels show a polite exchange at a closed gate. Panel dialogue in order: Pip 'Is it open?', Moss 'Not yet.', Pip 'Shall we wait?', Moss 'Here is the key.', Pip 'May I help?', Moss 'Please hold the gate.' The last panel shows the gate open. Use one balloon per panel.",
+      "expectedBeats": ["Gate begins closed.", "Moss produces the key only after the waiting question.", "Pip holds the opened gate."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-05", "title": "Across the courtyard", "route": "guided", "layout": "Standard",
+      "tags": ["recurring-characters", "character-identity"], "referenceIds": ["pip"],
+      "story": "Six silent flat-color panels follow Pip leaving a workshop, crossing a courtyard, climbing three steps, reaching a blue door, knocking, and waiting. Vary close and wide views without changing Pip's amber body or blue diamond. No other robots.",
+      "expectedBeats": ["The same Pip appears in all six panels.", "Workshop to blue-door progression is clear.", "Waiting follows knocking."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-06", "title": "The parcel handoff", "route": "guided", "layout": "Storyline",
+      "tags": ["recurring-characters", "prop-continuity"], "referenceIds": ["pip", "moss"],
+      "story": "Three silent flat-color panels. Pip holds a red parcel tied with white string. Pip hands it to Moss. Moss walks away carrying the same parcel while Pip waves. Keep the two robots' colors and chest emblems distinct.",
+      "expectedBeats": ["Pip initially owns the parcel.", "There is one parcel during transfer.", "Moss finally owns the unchanged parcel."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-07", "title": "The table map", "route": "guided", "layout": "Storyline",
+      "tags": ["spatial-continuity", "screen-direction"], "referenceIds": ["pip", "moss"],
+      "story": "Three silent flat-color panels from the same side of a rectangular table. Pip stays on screen left, Moss on screen right, a yellow cup in the center. Pip slides the cup right; Moss takes it. Keep a window behind Pip and a door behind Moss.",
+      "expectedBeats": ["Left/right geography is established.", "Cup moves toward Moss.", "Background landmarks and robot sides do not swap."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-08", "title": "Around the puddle", "route": "guided", "layout": "Standard",
+      "tags": ["spatial-continuity", "movement"], "referenceIds": ["pip"],
+      "story": "Six silent flat-color panels from a fixed camera show Pip approaching a puddle from the left, stopping, looking at dry stepping stones above it, taking the first stone, crossing the last stone, and continuing to the right. A bench behind the puddle never moves.",
+      "expectedBeats": ["Puddle blocks the initial path.", "The stones provide a visible detour.", "Pip finishes beyond the puddle moving right."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-09", "title": "The mystery box", "route": "guided", "layout": "Storyline",
+      "tags": ["reveals", "information-timing"], "referenceIds": ["pip"],
+      "story": "Three flat-color panels. Pip notices a closed box with small air holes. Pip kneels and lifts the lid, but the contents remain hidden behind the box edge. Only in the final panel reveal a clockwork bird inside. No text.",
+      "expectedBeats": ["Box contents are hidden initially.", "The middle panel sustains uncertainty.", "The clockwork bird is first visible in the last panel."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-10", "title": "The enormous shadow", "route": "guided", "layout": "Standard",
+      "tags": ["reveals", "silent-storytelling"], "referenceIds": ["pip", "moss"],
+      "story": "Six silent flat-color panels at dusk. Pip sees an enormous rabbit-shaped shadow, pauses, calls Moss with a gesture, approaches the corner with Moss, looks behind a lamp, and discovers a tiny toy rabbit directly in front of it. Do not reveal the toy before the last panel.",
+      "expectedBeats": ["Shadow motivates the approach.", "Moss joins Pip without identity swaps.", "Lamp and small toy explain the shadow only at the end."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-11", "title": "The greenhouse notice", "route": "guided", "layout": "Storyline",
+      "tags": ["dense-text", "legibility"], "referenceIds": ["pip"],
+      "story": "Three clean flat-color panels. Pip reaches a greenhouse notice, reads it, and follows it by leaving a watering can on a bench. The notice must read exactly 'GREENHOUSE RULES: Close the door. Water seedlings gently. Return tools to the bench.' Show the complete notice large enough to read in the middle panel. No extra text.",
+      "expectedBeats": ["Greenhouse setting is clear.", "All three instructions are legible and ordered.", "Pip returns the can to the bench."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-12", "title": "A careful explanation", "route": "guided", "layout": "Standard",
+      "tags": ["dense-text", "dialogue", "speaker-attribution"], "referenceIds": ["pip", "moss"],
+      "story": "Six flat-color panels at a model bridge. Alternate speakers Pip, Moss, Pip, Moss, Pip, Moss with exactly these lines: 'First, we place the two supports on level ground.'; 'Then we check that neither support can wobble.'; 'Now the short beam joins the supports.'; 'I will hold it while you fasten both ends.'; 'The bridge is ready for our little cart.'; 'Let us roll it across slowly, together.' Keep each line in its own panel with no omitted or invented words.",
+      "expectedBeats": ["Supports precede the beam.", "The alternating speakers remain identifiable.", "The cart crosses only after assembly."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-13", "title": "A deliberate silhouette", "route": "guided", "layout": "Storyline",
+      "tags": ["intentional-stylistic-exceptions", "character-identity"], "referenceIds": ["pip"],
+      "story": "Three silent panels. In the first and last, show Pip in the usual flat amber colors entering and leaving a dark tunnel. The middle panel intentionally shows Pip as a black silhouette against the lit tunnel exit; its chest emblem is intentionally invisible there. Preserve the box-shaped outline.",
+      "expectedBeats": ["Entry precedes silhouette then exit.", "Pip remains recognizable by outline.", "Normal colors return after the tunnel."],
+      "intentionalExceptions": ["Black silhouette and invisible emblem in the middle panel are approved, not identity errors."]
+    },
+    {
+      "id": "E01-14", "title": "An impossible dream", "route": "guided", "layout": "Storyline",
+      "tags": ["intentional-stylistic-exceptions", "continuity"], "referenceIds": ["moss"],
+      "story": "Three silent flat-color panels. Moss dozes beside a normal-sized teacup. A clearly cloud-bordered dream panel shows a giant teacup floating above tiny Moss. Moss wakes beside the original normal-sized cup. The dream's scale change is intentional, not a continuity mistake.",
+      "expectedBeats": ["Sleep frames the dream.", "The dream has an explicit visual boundary.", "Waking restores the original scale and setting."],
+      "intentionalExceptions": ["Floating and changed scale are permitted only inside the cloud-bordered dream panel."]
+    },
+    {
+      "id": "E01-15", "title": "A marked flashback", "route": "guided", "layout": "Standard",
+      "tags": ["intentional-stylistic-exceptions", "reading-order"], "referenceIds": ["pip", "moss"],
+      "story": "Six panels. Present-time flat-color Pip finds an old kite, then looks at it. Panels three and four are an intentionally sepia memory with rounded borders: Moss gives Pip the kite, then both fly it. Panel five returns to present-time colors as Pip repairs the kite. Panel six shows it flying again. No text.",
+      "expectedBeats": ["Finding motivates the memory.", "The memory's beginning and end are visually marked.", "Repair and renewed flight happen in the present."],
+      "intentionalExceptions": ["Sepia and rounded borders in panels three and four signal an approved flashback, not inconsistent style."]
+    },
+    {
+      "id": "E01-16", "title": "From detail to discovery", "route": "guided", "layout": "Dynamic1",
+      "tags": ["reading-order", "reveals", "layout"], "referenceIds": ["pip"],
+      "story": "Five silent flat-color panels in Dynamic 1 layout. Pip finds a blue feather, looks upward, sees an empty nest in the full-width third panel, hears movement suggested by leaves without lettering, and spots the clockwork bird in the last panel. The wide view must not reveal the bird early.",
+      "expectedBeats": ["Feather leads attention upward.", "Full-width panel establishes the empty nest.", "Bird is revealed last; panel progression is unambiguous."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-17", "title": "The workshop overview", "route": "guided", "layout": "Dynamic2",
+      "tags": ["reading-order", "spatial-continuity", "layout"], "referenceIds": ["pip", "moss"],
+      "story": "Five silent flat-color panels in Dynamic 2 layout. The full-width first panel establishes Pip at a left workbench, Moss at a right shelf, and a trolley between them. Next Pip points at the trolley; Moss takes a wheel from the shelf; Moss fits the wheel; both push the repaired trolley right. Preserve the room geography.",
+      "expectedBeats": ["Wide first panel establishes positions.", "Wheel comes from the established shelf.", "Repair precedes motion to the right."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-18", "title": "The borrowed umbrella", "route": "guided", "layout": "Standard",
+      "tags": ["dialogue", "recurring-characters", "prop-continuity"], "referenceIds": ["pip", "moss"],
+      "story": "Six flat-color panels in light rain. Pip carries one blue umbrella. Moss waits uncovered. Pip offers it saying 'Take mine.' Moss accepts saying 'Thank you.' Moss opens that same blue umbrella while Pip enters a nearby dry doorway. Finally they wave to each other. Do not duplicate the umbrella.",
+      "expectedBeats": ["One umbrella changes hands.", "Offer and thanks have correct speakers.", "Pip is dry in the doorway while Moss holds the umbrella."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-19", "title": "Free-form silent repair", "route": "free-form", "layout": "Storyline",
+      "tags": ["free-form", "silent-storytelling", "prop-continuity"], "referenceIds": ["pip"],
+      "story": "Pip repairs a tipped flowerpot in three silent flat-color panels. Use the fixed panel prompts without scaffolding.",
+      "panelPrompts": ["Pip notices a tipped empty blue flowerpot on a bench. No text.", "Pip lifts that same blue flowerpot upright on the same bench. No text.", "Pip places one small seedling in the upright blue flowerpot. No text."],
+      "expectedBeats": ["The pot starts tipped and empty.", "It is righted before planting.", "Only the last panel contains the seedling."],
+      "intentionalExceptions": []
+    },
+    {
+      "id": "E01-20", "title": "Free-form deliberate color shift", "route": "free-form", "layout": "Storyline",
+      "tags": ["free-form", "intentional-stylistic-exceptions", "character-identity"], "referenceIds": ["moss"],
+      "story": "Moss steps through colored light in three silent flat-color panels. Use the fixed prompts; the middle color shift is approved.",
+      "panelPrompts": ["Moss stands to the left of a magenta glass window, in neutral light, teal body and cream chest circle. No text.", "Moss walks through the window's magenta light, intentionally appearing purple. Keep the box outline and circular chest emblem. No text.", "Moss stands right of the window in neutral light, teal body and cream chest circle restored. No text."],
+      "expectedBeats": ["Neutral light establishes Moss.", "The window visibly explains the color shift.", "Normal colors return beyond the window."],
+      "intentionalExceptions": ["Purple coloring in the middle panel is an approved lighting effect, not an identity defect."]
+    }
+  ]
+}

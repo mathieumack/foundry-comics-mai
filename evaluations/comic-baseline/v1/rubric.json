@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "rubricId": "comic-editorial-v1",
+  "instructions": "Humans rate the delivered board against the fixed brief and its approved exceptions, not against an imagined conventional comic. Record evidence with panel numbers for every score. Null means not assessable and requires a reason; never replace it with a neutral score. Technical success is separate.",
+  "dimensions": {
+    "storyClarity": {
+      "1": "The intended event or outcome cannot be reconstructed, or is contradicted.",
+      "2": "Some events are recognizable, but a missing or contradictory causal beat prevents understanding the story.",
+      "3": "The main outcome is understandable, but one transition requires guessing from the brief rather than the images.",
+      "4": "All essential causes and outcomes are clear; one minor ambiguity does not change the story.",
+      "5": "Every expected beat, motivation, and reveal is immediately understandable without consulting the brief."
+    },
+    "characterIdentity": {
+      "1": "The principal characters cannot be identified or are replaced.",
+      "2": "Repeated identity swaps or major changes in body, color, or emblems obscure who acts.",
+      "3": "Characters are mostly identifiable, with one distracting unapproved identity change.",
+      "4": "Characters remain identifiable throughout; only a small non-confusing feature drift occurs.",
+      "5": "Every appearance preserves the reference identity, including outline under approved silhouette, dream, or lighting exceptions."
+    },
+    "continuity": {
+      "1": "Space, objects, or time contradict the action so severely that the sequence is impossible to follow.",
+      "2": "Multiple unapproved position, possession, scale, or time changes break important transitions.",
+      "3": "The sequence works overall, but one unapproved continuity break needs explanation.",
+      "4": "Space, possession, and time are consistent except for a minor non-causal discrepancy.",
+      "5": "All established positions, props, and temporal transitions remain coherent; intentional exceptions are clearly signaled."
+    },
+    "readingOrder": {
+      "1": "Panel or balloon order cannot be determined, or changes the intended meaning.",
+      "2": "Several competing paths or wrong speaker attributions require repeated backtracking.",
+      "3": "The intended path is recoverable, but one panel transition, balloon, or dense text block causes rereading.",
+      "4": "The left-to-right, top-to-bottom path and speakers are clear, with one minor hesitation.",
+      "5": "Panels, attention, and any balloons lead the eye unambiguously in the intended order on the first reading."
+    }
+  }
+}

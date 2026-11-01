@@ -1,0 +1,147 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "corpusId", "corpusSha256", "rubricSha256", "harnessRevision", "pipelineRevision", "createdAtUtc", "configuration", "ceilingApproval", "reports"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "corpusId": { "const": "comic-baseline-v1" },
+    "corpusSha256": { "$ref": "#/definitions/hash" },
+    "rubricSha256": { "$ref": "#/definitions/hash" },
+    "harnessRevision": { "type": "string", "pattern": "^[a-f0-9]{40,64}$" },
+    "pipelineRevision": { "type": ["string", "null"], "pattern": "^[a-f0-9]{40,64}$" },
+    "createdAtUtc": { "type": "string", "format": "date-time" },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["promptModel", "promptModelVersion", "imageModel", "imageModelVersion", "sdkVersions", "maxParallelImages", "imageRetryCount", "imageRetryBaseDelayMilliseconds", "rewritePrompts", "safetyPolicyVersion"],
+      "properties": {
+        "promptModel": { "$ref": "#/definitions/optionalText" },
+        "promptModelVersion": { "$ref": "#/definitions/optionalText" },
+        "imageModel": { "$ref": "#/definitions/optionalText" },
+        "imageModelVersion": { "$ref": "#/definitions/optionalText" },
+        "sdkVersions": { "$ref": "#/definitions/optionalText" },
+        "maxParallelImages": { "type": ["integer", "null"], "minimum": 1, "maximum": 16 },
+        "imageRetryCount": { "type": ["integer", "null"], "minimum": 0, "maximum": 10 },
+        "imageRetryBaseDelayMilliseconds": { "type": ["integer", "null"], "minimum": 1, "maximum": 30000 },
+        "rewritePrompts": { "const": true },
+        "safetyPolicyVersion": { "$ref": "#/definitions/optionalText" }
+      }
+    },
+    "ceilingApproval": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["decisionReference", "stages"],
+      "properties": {
+        "decisionReference": { "type": "string", "minLength": 1 },
+        "stages": {
+          "type": "array", "minItems": 4, "maxItems": 4,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["name", "maxRequestsPerBrief", "maxP95DurationMs"],
+            "properties": {
+              "name": { "$ref": "#/definitions/stageName" },
+              "maxRequestsPerBrief": { "type": "integer", "minimum": 0 },
+              "maxP95DurationMs": { "type": "number", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "reports": {
+      "type": "array", "minItems": 20, "maxItems": 20,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["briefId", "technicalOutcome", "errorCategory", "artifacts", "stages", "ratings"],
+        "properties": {
+          "briefId": { "type": "string", "pattern": "^E01-(0[1-9]|1[0-9]|20)$" },
+          "technicalOutcome": { "enum": ["not-run", "succeeded", "partial", "failed", "safety-rejected", "canceled"] },
+          "errorCategory": { "$ref": "#/definitions/optionalText" },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["path", "sha256", "kind"],
+              "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "sha256": { "$ref": "#/definitions/hash" },
+                "kind": { "enum": ["approved-input", "generation-response", "configuration", "panel", "board", "annotations", "reviewer-output", "telemetry"] }
+              }
+            }
+          },
+          "stages": {
+            "type": "array", "minItems": 4, "maxItems": 4,
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["name", "state", "requestCount", "retryCount", "wallDurationMs", "measurementEvidence", "traces"],
+              "properties": {
+                "name": { "$ref": "#/definitions/stageName" },
+                "state": { "enum": ["not-run", "not-applicable", "completed", "failed", "canceled", "unknown"] },
+                "requestCount": { "$ref": "#/definitions/count" },
+                "retryCount": { "$ref": "#/definitions/count" },
+                "wallDurationMs": { "type": ["number", "null"], "minimum": 0 },
+                "measurementEvidence": { "$ref": "#/definitions/optionalText" },
+                "traces": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["operation", "provider", "model", "usageSource", "inputTokens", "outputTokens", "totalTokens", "durationMs", "status"],
+                    "properties": {
+                      "operation": { "enum": ["project-scaffold", "prompt-rewrite", "panel-image"] },
+                      "provider": { "type": "string", "minLength": 1 },
+                      "model": { "type": "string", "minLength": 1 },
+                      "usageSource": { "enum": ["provider-reported", "estimated", "unavailable"] },
+                      "inputTokens": { "$ref": "#/definitions/count" },
+                      "outputTokens": { "$ref": "#/definitions/count" },
+                      "totalTokens": { "$ref": "#/definitions/count" },
+                      "durationMs": { "$ref": "#/definitions/count" },
+                      "status": { "enum": ["started", "completed", "failed", "canceled"] }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "ratings": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["evaluator", "scores", "evidence"],
+              "properties": {
+                "evaluator": { "type": "string", "minLength": 1 },
+                "scores": {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["storyClarity", "characterIdentity", "continuity", "readingOrder"],
+                  "properties": {
+                    "storyClarity": { "$ref": "#/definitions/score" },
+                    "characterIdentity": { "$ref": "#/definitions/score" },
+                    "continuity": { "$ref": "#/definitions/score" },
+                    "readingOrder": { "$ref": "#/definitions/score" }
+                  }
+                },
+                "evidence": {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["storyClarity", "characterIdentity", "continuity", "readingOrder"],
+                  "properties": {
+                    "storyClarity": { "type": "string", "minLength": 1 },
+                    "characterIdentity": { "type": "string", "minLength": 1 },
+                    "continuity": { "type": "string", "minLength": 1 },
+                    "readingOrder": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "optionalText": { "type": ["string", "null"], "minLength": 1 },
+    "count": { "type": ["integer", "null"], "minimum": 0 },
+    "score": { "type": ["integer", "null"], "minimum": 1, "maximum": 5 },
+    "stageName": { "enum": ["scaffold", "rewrite", "image", "composition"] }
+  }
+}

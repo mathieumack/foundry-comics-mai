@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "comic-baseline-v1",
+  "status": "blocked",
+  "reason": "No approved live model evaluation or independent human ratings have been collected. These are pending evidence records, not measured baseline results.",
+  "requiredBeforeCompletion": ["Approved paid generation on the fixed corpus", "Private versioned outputs and effective configuration", "Independent anchored human ratings", "Stage measurements with explicit coverage gaps", "Product-owner latency and request ceilings"],
+  "reports": [
+    { "briefId": "E01-01", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-02", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-03", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-04", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-05", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-06", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-07", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-08", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-09", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-10", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-11", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-12", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-13", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-14", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-15", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-16", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-17", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-18", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-19", "outputVersion": null, "configurationVersion": null, "humanRatings": null },
+    { "briefId": "E01-20", "outputVersion": null, "configurationVersion": null, "humanRatings": null }
+  ]
+}
