@@ -31,7 +31,22 @@ public sealed class GenerationPanel
     public PanelGenerationStatus Status { get; set; }
     public string? ImageBlobName { get; set; }
     public string? Error { get; set; }
+    public PanelGenerationIssue? Issue { get; set; }
     public List<AiGenerationTrace> Traces { get; set; } = [];
+}
+
+public enum PanelGenerationIssue
+{
+    ProviderThrottled,
+    TechnicalFailure,
+    ContentSafetyRejected
+}
+
+public enum GenerationCompleteness
+{
+    None,
+    Partial,
+    Complete
 }
 
 public enum GenerationStatus

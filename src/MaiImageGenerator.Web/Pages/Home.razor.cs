@@ -36,6 +36,7 @@ public partial class Home : IAsyncDisposable
     private Guid? activeGenerationId, loadedProjectId, loadedGenerationId;
     private ElementReference imageViewerDialog;
     private ProjectResponse? project;
+    private GenerationResponse? generationResult;
     private IReadOnlyList<AiGenerationTrace>? scaffoldTraces;
     private Guid? scaffoldId;
     private string boardTitle = "Nouvelle planche", newCharacterName = string.Empty;
@@ -50,6 +51,25 @@ public partial class Home : IAsyncDisposable
     private bool HasUnsavedChanges => !allowNavigation && initialized && (isScaffolding || isCharacterSaving || !string.IsNullOrWhiteSpace(newCharacterName) || CaptureDraft() != baseline || CaptureCharacters() != characterBaseline);
     private BoardTemplateDefinition DisplayTemplateDefinition => BoardTemplateDefinitions.Resolve(selectedTemplate, panels.Count);
     private string BoardGridStyle => $"grid-template-columns:repeat({DisplayTemplateDefinition.Columns},minmax(0,1fr));";
+    private bool HasPendingArtifacts => generationResult is { } result &&
+        (result.BoardUri is not null && boardDataUrl is null ||
+         result.Panels.Any(panel => panel.ImageUri is not null && panels[panel.Number - 1].ImageDataUrl is null));
+    private GenerationCompleteness ResultCompleteness => generationResult?.Completeness ??
+        (generationResult?.Panels.Count(panel => panel.Status == PanelGenerationStatus.Completed && panel.ImageUri is not null) is not > 0
+            ? GenerationCompleteness.None
+            : generationResult.Panels.All(panel => panel.Status == PanelGenerationStatus.Completed && panel.ImageUri is not null)
+                ? GenerationCompleteness.Complete : GenerationCompleteness.Partial);
+    private int ResultFailedPanelCount => generationResult is { } result
+        ? result.Completeness is null
+            ? result.Panels.Count(panel => panel.Status == PanelGenerationStatus.Failed)
+            : result.FailedPanelCount
+        : 0;
+    private string ResultLabel => ResultCompleteness switch
+    {
+        GenerationCompleteness.Complete => "Résultat complet",
+        GenerationCompleteness.Partial => "Résultat partiel",
+        _ => isGenerating ? "Aucune image disponible pour le moment" : "Aucune image utilisable"
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -66,21 +86,7 @@ public partial class Home : IAsyncDisposable
                     return result.TryGetToken(out var token) ? token.Value : throw new AccessTokenNotAvailableException(Navigation, result, []);
                 };
             }).WithAutomaticReconnect().Build();
-        notificationConnection.On<PanelNotification>("PanelGenerationStarted", n => InvokeAsync(() =>
-        {
-            if (TryGetNotifiedPanel(n, out var panel))
-            {
-                if (panel.Status is PanelUiStatus.Ready or PanelUiStatus.Error)
-                {
-                    return;
-                }
-
-                panel.Status = PanelUiStatus.Generating;
-                isGenerating = true;
-                progressMessage = $"Illustration de la case {n.PanelNumber} sur {panels.Count}";
-                StateHasChanged();
-            }
-        }));
+        notificationConnection.On<PanelNotification>("PanelGenerationStarted", n => InvokeAsync(() => HandlePanelStartedAsync(n)));
         notificationConnection.On<PanelNotification>("PanelGenerationCompleted", n => InvokeAsync(() => HandlePanelCompletedAsync(n)));
         notificationConnection.Reconnected += _ => InvokeAsync(RefreshGenerationAsync);
         try { await notificationConnection.StartAsync(lifetime.Token); }
@@ -180,6 +186,7 @@ public partial class Home : IAsyncDisposable
     private void ResetBoard()
     {
         activeGenerationId = null;
+        generationResult = null;
         scaffoldTraces = null;
         scaffoldId = null;
         boardTitle = "Nouvelle planche";
@@ -249,6 +256,7 @@ public partial class Home : IAsyncDisposable
         selectedPanel = 0;
         boardDataUrl = null;
         activeGenerationId = null;
+        generationResult = null;
     }
 
     private async Task GenerateBoardAsync()
@@ -292,7 +300,7 @@ public partial class Home : IAsyncDisposable
             activeGenerationId = generation.GenerationId;
             loadedGenerationId = activeGenerationId;
             boardDataUrl = null;
-            foreach (var panel in panels) { panel.ImageDataUrl = panel.EffectivePrompt = panel.Error = null; panel.Traces = null; panel.Status = PanelUiStatus.Pending; }
+            foreach (var panel in panels) { panel.ImageDataUrl = panel.EffectivePrompt = panel.Error = null; panel.Traces = null; panel.Issue = null; panel.Status = PanelUiStatus.Pending; }
             baseline = CaptureDraft();
             characterBaseline = CaptureCharacters();
             await ApplyGenerationAsync(generation, lifetime.Token);
@@ -344,7 +352,7 @@ public partial class Home : IAsyncDisposable
             {
                 await InvokeAsync(async () =>
                 {
-                    if (!isGenerating || isBoardLoading) return;
+                    if ((!isGenerating && !HasPendingArtifacts) || isBoardLoading) return;
                     await RefreshGenerationAsync();
                 });
             }
@@ -355,6 +363,7 @@ public partial class Home : IAsyncDisposable
     private async Task ApplyGenerationAsync(GenerationResponse generation, CancellationToken token)
     {
         workspaceError = null;
+        generationResult = generation;
         scaffoldTraces = generation.ScaffoldTraces is { Count: > 0 } boardTraces
             ? boardTraces
             : project?.ScaffoldTraces;
@@ -362,25 +371,49 @@ public partial class Home : IAsyncDisposable
         generatedPanelCount = generation.CompletedPanelCount;
         progressMessage = generation.Status == GenerationStatus.Pending ? "En attente d'un atelier de génération disponible…" : $"{generatedPanelCount} / {generation.PanelCount} cases illustrées";
         var boardIndex = projectBoards.FindIndex(b => b.GenerationId == generation.GenerationId);
-        if (boardIndex >= 0) projectBoards[boardIndex] = projectBoards[boardIndex] with { Status = generation.Status };
+        if (boardIndex >= 0) projectBoards[boardIndex] = projectBoards[boardIndex] with
+        {
+            Status = generation.Status, PanelCount = generation.PanelCount,
+            CompletedPanelCount = generation.CompletedPanelCount, FailedPanelCount = ResultFailedPanelCount,
+            Completeness = ResultCompleteness
+        };
         foreach (var status in generation.Panels)
         {
             var panel = panels[status.Number - 1];
             panel.Status = status.Status switch { PanelGenerationStatus.Processing => PanelUiStatus.Generating, PanelGenerationStatus.Completed => PanelUiStatus.Ready, PanelGenerationStatus.Failed => PanelUiStatus.Error, _ => PanelUiStatus.Pending };
             panel.EffectivePrompt = status.EffectivePrompt;
-            panel.Error = status.Error;
+            panel.Issue = status.Issue;
+            panel.Error = PanelErrorLabel(status);
             panel.Traces = status.Traces;
+        }
+        StateHasChanged();
+        foreach (var status in generation.Panels)
+        {
+            var panel = panels[status.Number - 1];
             if (panel.ImageDataUrl is null && status.ImageUri is not null)
             {
-                panel.ImageDataUrl = await GenerationClient.DownloadDataUrlAsync(status.ImageUri, token);
+                panel.ImageDataUrl = await DownloadArtifactAsync(status.ImageUri, token);
                 StateHasChanged();
             }
         }
-        if (generation.Status == GenerationStatus.Completed && generation.BoardUri is not null && boardDataUrl is null)
-            boardDataUrl = await GenerationClient.DownloadDataUrlAsync(generation.BoardUri, token);
+        if (generation.BoardUri is not null && boardDataUrl is null)
+            boardDataUrl = await DownloadArtifactAsync(generation.BoardUri, token);
         if (generation.Status is GenerationStatus.Failed or GenerationStatus.Canceled)
             workspaceError = generation.Error ?? (generation.Status == GenerationStatus.Failed ? "La planche n'a pas pu être générée. Vous pouvez créer une nouvelle version." : "La génération a été annulée.");
     }
+
+    private async Task<string?> DownloadArtifactAsync(Uri uri, CancellationToken token)
+    {
+        try { return await GenerationClient.DownloadDataUrlAsync(uri, token); }
+        catch (Exception exception) when (exception is GenerationApiException or HttpRequestException)
+        {
+            workspaceError = "Une image n'a pas pu être téléchargée. L'actualisation réessaiera sans modifier le diagnostic sauvegardé.";
+            return null;
+        }
+    }
+
+    private Task HandlePanelStartedAsync(PanelNotification notification) =>
+        TryGetNotifiedPanel(notification, out _) ? RefreshGenerationAsync() : Task.CompletedTask;
 
     private bool TryGetNotifiedPanel(PanelNotification n, out ComicPanelDraft panel)
     {
@@ -414,6 +447,7 @@ public partial class Home : IAsyncDisposable
         scaffoldTraces = null;
         scaffoldId = null;
         activeGenerationId = null;
+        generationResult = null;
         boardDataUrl = null;
         selectedPanel = generatedPanelCount = 0;
     }
@@ -563,13 +597,35 @@ public partial class Home : IAsyncDisposable
         NotificationService.Notify(new NotificationMessage { Severity = severity, Summary = summary, Detail = detail, Duration = 6000 });
     private static string StatusLabel(GenerationStatus status) => status switch
     {
-        GenerationStatus.Pending => "En attente", GenerationStatus.Processing => "En cours", GenerationStatus.Completed => "Prête à lire",
-        GenerationStatus.Failed => "À relancer", GenerationStatus.Canceled => "Annulée", _ => status.ToString()
+        GenerationStatus.Pending => "En attente dans la file", GenerationStatus.Processing => "Traitement en cours", GenerationStatus.Completed => "Traitement terminé",
+        GenerationStatus.Failed => "Échec technique du traitement", GenerationStatus.Canceled => "Annulée", _ => status.ToString()
+    };
+    private static string StatusLabel(GenerationSummaryResponse board) => board.Completeness switch
+    {
+        GenerationCompleteness.Partial => $"Résultat partiel · {board.CompletedPanelCount}/{board.PanelCount} illustrées · {board.FailedPanelCount} en échec",
+        GenerationCompleteness.Complete => "Résultat complet",
+        GenerationCompleteness.None when board.Status is GenerationStatus.Completed or GenerationStatus.Failed => "Aucune image utilisable",
+        _ => StatusLabel(board.Status)
     };
     private static string PanelStatusClass(PanelUiStatus status) => status switch
     { PanelUiStatus.Generating => "is-generating", PanelUiStatus.Ready => "is-ready", PanelUiStatus.Error => "has-error", _ => string.Empty };
-    private static string PanelStatusLabel(PanelUiStatus status) => status switch
-    { PanelUiStatus.Generating => "Illustration en cours…", PanelUiStatus.Ready => "Illustrée", PanelUiStatus.Error => "Image indisponible", _ => "Votre scène, bientôt illustrée" };
+    private static string PanelStatusLabel(ComicPanelDraft panel) => panel.Status switch
+    {
+        PanelUiStatus.Ready => "Illustrée",
+        _ when panel.Issue == PanelGenerationIssue.ProviderThrottled => "Limite du fournisseur atteinte",
+        PanelUiStatus.Error when panel.Issue == PanelGenerationIssue.ContentSafetyRejected => "Refus de sécurité du contenu",
+        PanelUiStatus.Error => "Échec technique de l'image",
+        PanelUiStatus.Generating => "Illustration en cours…",
+        _ => "En attente de traitement"
+    };
+    private static string? PanelErrorLabel(PanelGenerationResponse panel) => panel.Issue switch
+    {
+        PanelGenerationIssue.ContentSafetyRejected => "Image refusée par la sécurité du contenu. Revoyez la scène et les références avant de créer une nouvelle version.",
+        PanelGenerationIssue.ProviderThrottled when panel.Status == PanelGenerationStatus.Processing => "Le fournisseur limite les requêtes. Attente avant une nouvelle tentative automatique.",
+        PanelGenerationIssue.ProviderThrottled => "Le fournisseur est occupé. Créez une nouvelle version plus tard.",
+        _ when panel.Status == PanelGenerationStatus.Failed => "Échec technique de cette image. Vous pouvez générer une nouvelle version.",
+        _ => null
+    };
     private enum StudioTab { Scenes, Characters, Preview }
     private sealed record PanelNotification(string BoardId, int PanelNumber);
     public async ValueTask DisposeAsync()

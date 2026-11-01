@@ -155,6 +155,51 @@ public sealed class ImageGenerationCoordinatorTests
     }
 
     [Fact]
+    public async Task ExecuteWithRetryAsync_CheckpointsThrottlingBeforeRetrying()
+    {
+        var attempts = 0;
+        var checkpoints = 0;
+        var coordinator = CreateCoordinator(retryCount: 1);
+        var result = await coordinator.ExecuteWithRetryAsync(
+            "test",
+            _ =>
+            {
+                if (++attempts == 1) throw new RetryAfterException(TimeSpan.FromMilliseconds(1));
+                Assert.Equal(1, checkpoints);
+                return Task.FromResult(42);
+            },
+            _ => true,
+            _ => true,
+            CancellationToken.None,
+            (exception, _) =>
+            {
+                Assert.IsType<RetryAfterException>(exception);
+                Assert.Equal(1, attempts);
+                checkpoints++;
+                return Task.CompletedTask;
+            });
+
+        Assert.Equal(42, result);
+        Assert.Equal(2, attempts);
+    }
+
+    [Fact]
+    public async Task ExecuteWithRetryAsync_CancellationAfterCheckpointStopsRetry()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var attempts = 0;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            CreateCoordinator(retryCount: 1).ExecuteWithRetryAsync<int>(
+                "test",
+                _ => { attempts++; throw new RetryAfterException(TimeSpan.FromMinutes(1)); },
+                _ => true,
+                _ => true,
+                cancellation.Token,
+                (_, _) => { cancellation.Cancel(); return Task.CompletedTask; }));
+        Assert.Equal(1, attempts);
+    }
+
+    [Fact]
     public async Task ExecuteWithRetryAsync_DoesNotRetryPermanentFailure()
     {
         var coordinator = CreateCoordinator(retryCount: 3);

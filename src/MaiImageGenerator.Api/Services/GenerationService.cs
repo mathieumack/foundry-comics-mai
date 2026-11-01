@@ -244,7 +244,10 @@ public sealed class GenerationService(
         }
     }
 
-    public static GenerationResponse ToResponse(GenerationDocument document, ProjectDocument project) => new(
+    public static GenerationResponse ToResponse(GenerationDocument document, ProjectDocument project)
+    {
+        var result = GenerationResult.From(document);
+        return new(
         Guid.Parse(document.Id),
         document.Title,
         document.Description,
@@ -259,8 +262,8 @@ public sealed class GenerationService(
                 reference.Id,
                 reference.FileName)).ToArray())).ToArray(),
         document.Status,
-        document.Panels.Count,
-        document.Panels.Count(panel => panel.Status == PanelGenerationStatus.Completed),
+        result.PanelCount,
+        result.CompletedPanelCount,
         document.Panels.Select(panel => new PanelGenerationResponse(
             panel.Number,
             panel.Prompt,
@@ -270,14 +273,19 @@ public sealed class GenerationService(
             panel.Status,
             panel.EffectivePrompt,
             panel.ImageBlobName is null ? null : new Uri($"api/generations/{document.Id}/panels/{panel.Number}", UriKind.Relative),
-            panel.Error,
-            panel.Traces.ToArray())).ToArray(),
+            GenerationResult.GetPanelError(panel),
+            panel.Traces.ToArray(),
+            GenerationResult.GetIssue(panel))).ToArray(),
         document.BoardBlobName is null ? null : new Uri($"api/generations/{document.Id}/board", UriKind.Relative),
         document.Error,
-        document.ScaffoldTraces.ToArray());
+        document.ScaffoldTraces.ToArray(),
+        result.FailedPanelCount,
+        result.Completeness);
+    }
 
-    private static GenerationSummaryResponse ToSummaryResponse(GenerationDocument document)
+    public static GenerationSummaryResponse ToSummaryResponse(GenerationDocument document)
     {
+        var result = GenerationResult.From(document);
         var thumbnailPanel = document.Panels
             .Where(panel => panel.ImageBlobName is not null)
             .OrderBy(panel => panel.Number)
@@ -289,7 +297,11 @@ public sealed class GenerationService(
             document.Status,
             thumbnailPanel is null
                 ? null
-                : new Uri($"api/generations/{document.Id}/panels/{thumbnailPanel.Number}", UriKind.Relative));
+                : new Uri($"api/generations/{document.Id}/panels/{thumbnailPanel.Number}", UriKind.Relative),
+            result.PanelCount,
+            result.CompletedPanelCount,
+            result.FailedPanelCount,
+            result.Completeness);
     }
 
     private sealed record GenerationDocumentReference(string FileName);

@@ -38,6 +38,7 @@ public sealed class MaiImageGeneratorDbContext(
         {
             panel.ToJsonProperty("panels");
             panel.Property(item => item.Status).HasConversion<string>();
+            panel.Property(item => item.Issue).HasConversion<string>();
             panel.OwnsMany(item => item.Traces, trace => ConfigureTrace(trace, "traces"));
         });
         var project = modelBuilder.Entity<ProjectDocument>();
