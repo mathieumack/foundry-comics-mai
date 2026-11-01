@@ -1,0 +1,55 @@
+@implements IDisposable
+@inject GenerationApiClient GenerationClient
+@inject Microsoft.JSInterop.IJSRuntime JS
+@using Microsoft.JSInterop
+
+<div>
+    <button class="btn quiet" type="button" disabled="@(Disabled || isExporting)"
+            title="Export du contenu enregistré. Terminez les générations et enregistrez vos modifications."
+            @onclick="ExportAsync">
+        <RadzenIcon Icon="download" />@(isExporting ? "Préparation de l’EPUB…" : "Exporter en EPUB")
+    </button>
+    @if (error is not null)
+    {
+        <p class="error" role="alert">@error</p>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid ProjectId { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    private readonly CancellationTokenSource cancellation = new();
+    private bool isExporting;
+    private string? error;
+
+    private async Task ExportAsync()
+    {
+        if (Disabled || isExporting) return;
+        error = null;
+        isExporting = true;
+        try
+        {
+            using var response = await GenerationClient.ExportEpubAsync(ProjectId, cancellation.Token);
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellation.Token);
+            using var reference = new DotNetStreamReference(stream);
+            var fileName = response.Content.Headers.ContentDisposition?.FileNameStar
+                ?? response.Content.Headers.ContentDisposition?.FileName?.Trim('"')
+                ?? "project.epub";
+            await JS.InvokeVoidAsync("maiStudio.downloadFile", cancellation.Token, fileName, reference);
+        }
+        catch (AccessTokenNotAvailableException exception) { exception.Redirect(); }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (Exception exception) when (exception is GenerationApiException or HttpRequestException or JSException or OperationCanceledException)
+        {
+            error = $"Export EPUB impossible. Réessayez après avoir vérifié le contenu du projet. {exception.Message}";
+        }
+        finally { isExporting = false; }
+    }
+
+    public void Dispose()
+    {
+        cancellation.Cancel();
+        cancellation.Dispose();
+    }
+}

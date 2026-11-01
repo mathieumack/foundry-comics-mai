@@ -52,6 +52,22 @@ public sealed class GenerationApiClient(HttpClient httpClient)
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
+    public async Task<HttpResponseMessage> ExportEpubAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        var response = await httpClient.GetAsync(
+            $"api/projects/{projectId:D}/export/epub", HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        try
+        {
+            await EnsureSuccessAsync(response, cancellationToken);
+            return response;
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
+    }
+
     public async Task<BookPlanResponse> GetBookPlanAsync(Guid projectId, CancellationToken cancellationToken)
     {
         using var response = await httpClient.GetAsync($"api/projects/{projectId:D}/book/plan", cancellationToken);
