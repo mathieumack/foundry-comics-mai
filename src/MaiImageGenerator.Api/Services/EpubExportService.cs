@@ -57,22 +57,27 @@ public sealed class EpubExportService(IEpubExportSource source)
         else if (project.Type == ProjectType.Comic)
         {
             var boards = await source.ListBoardsAsync(ownerId, project.Id, cancellationToken);
-            if (boards.Count == 0)
-            {
-                throw new EpubExportException("No readable boards are available. Generate a completed board, then retry export.");
-            }
-
             if (boards.Any(board => board.OwnerId != ownerId || board.ProjectId != project.Id))
             {
                 throw new EpubExportException("A board does not belong to this project.");
             }
 
-            if (boards.Any(board => board.Status != GenerationStatus.Completed || string.IsNullOrWhiteSpace(board.BoardBlobName)))
+            if (boards.Any(board => board.Status is GenerationStatus.Pending or GenerationStatus.Processing))
             {
-                throw new EpubExportException("Finish or retry incomplete boards before exporting the comic.");
+                throw new EpubExportException("Wait for active boards to finish before exporting the comic.");
             }
 
-            pages.AddRange(boards.OrderBy(board => board.CreatedAt).ThenBy(board => board.Id, StringComparer.Ordinal)
+            var completed = boards.Where(board => board.Status == GenerationStatus.Completed).ToArray();
+            if (completed.Length == 0)
+            {
+                throw new EpubExportException("No readable boards are available. Generate a completed board, then retry export.");
+            }
+            if (completed.Any(board => string.IsNullOrWhiteSpace(board.BoardBlobName)))
+            {
+                throw new EpubExportException("A composed board image is missing. Regenerate that board, then retry export.");
+            }
+
+            pages.AddRange(completed.OrderBy(board => board.CreatedAt).ThenBy(board => board.Id, StringComparer.Ordinal)
                 .Select(board => new Page(board.Title, null, board.BoardBlobName, Guid.Parse(board.Id))));
         }
         else
@@ -81,10 +86,19 @@ public sealed class EpubExportService(IEpubExportSource source)
         }
 
         // Spool to an automatically deleted file so private images do not accumulate in API memory.
-        var output = new FileStream(
-            Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
-            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920,
-            FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.ReadWrite,
+            Share = FileShare.None,
+            BufferSize = 81920,
+            Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
+        };
+        if (!OperatingSystem.IsWindows())
+        {
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        }
+        var output = new FileStream(Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()), options);
         try
         {
             await WriteAsync(output, project, pages, cancellationToken);

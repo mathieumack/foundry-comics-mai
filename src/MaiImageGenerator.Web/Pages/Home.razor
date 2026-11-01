@@ -17,7 +17,7 @@
             @if (project is not null)
             {
                 <EpubExportButton @key="project.ProjectId" ProjectId="project.ProjectId"
-                                  Disabled="@(EditingLocked || isProjectLoading || HasUnsavedChanges || projectBoards.Count == 0 || projectBoards.Any(board => board.Status != GenerationStatus.Completed))" />
+                                  Disabled="@(EditingLocked || isProjectLoading || HasUnsavedChanges || !projectBoards.Any(board => board.Status == GenerationStatus.Completed) || projectBoards.Any(board => board.Status is GenerationStatus.Pending or GenerationStatus.Processing))" />
             }
         </div>
     </header>

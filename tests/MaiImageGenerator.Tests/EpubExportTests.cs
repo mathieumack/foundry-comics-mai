@@ -102,6 +102,8 @@ public sealed class EpubExportTests
         var image = page.Descendants(Xhtml + "img").Single();
         Assert.Equal("640", (string?)image.Attribute("width"));
         Assert.Equal("960", (string?)image.Attribute("height"));
+        Assert.Equal("width=960, height=640", (string?)Xml(archive, "EPUB/page-2.xhtml")
+            .Descendants(Xhtml + "meta").Single().Attribute("content"));
         Assert.Equal(source.ImageBytes, Bytes(archive, "EPUB/images/page-1.png"));
         AssertManifestComplete(archive, package);
     }
@@ -145,14 +147,47 @@ public sealed class EpubExportTests
     [Theory]
     [InlineData(GenerationStatus.Pending)]
     [InlineData(GenerationStatus.Processing)]
-    [InlineData(GenerationStatus.Failed)]
-    [InlineData(GenerationStatus.Canceled)]
     public async Task IncompleteComicsAreRejected(GenerationStatus status)
     {
         var source = await CreateSourceAsync(ProjectType.Comic);
         source.Boards[0].Status = status;
         await Assert.ThrowsAsync<EpubExportException>(() => ExportAsync(source));
         Assert.Equal(0, source.ImageCalls);
+    }
+
+    [Theory]
+    [InlineData(GenerationStatus.Failed)]
+    [InlineData(GenerationStatus.Canceled)]
+    public async Task TerminalBoardAttemptsDoNotBlockExportAfterSuccessfulRegeneration(GenerationStatus status)
+    {
+        var source = await CreateSourceAsync(ProjectType.Comic);
+        source.Boards[0].Status = status;
+        var export = await ExportAsync(source);
+        await using (var stream = export.Content)
+        {
+            using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+            Assert.Single(Xml(archive, "EPUB/package.opf").Descendants(Opf + "itemref"));
+            Assert.Equal("First board", Xml(archive, "EPUB/nav.xhtml").Descendants(Xhtml + "a").Single().Value);
+        }
+        source.Boards.ForEach(board => board.Status = status);
+        var error = await Assert.ThrowsAsync<EpubExportException>(() => ExportAsync(source));
+        Assert.Contains("No readable", error.Message);
+    }
+
+    [Fact]
+    public async Task TemporaryOutputIsPrivateAndDeletedAfterDownload()
+    {
+        var source = await CreateSourceAsync(ProjectType.Book);
+        var export = await ExportAsync(source);
+        var file = Assert.IsType<FileStream>(export.Content);
+        var path = file.Name;
+        Assert.True(File.Exists(path));
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
+        }
+        await file.DisposeAsync();
+        Assert.False(File.Exists(path));
     }
 
     [Fact]
@@ -310,11 +345,13 @@ public sealed class EpubExportTests
     }
 
     [EpubCheckTheory]
-    [InlineData(ProjectType.Book)]
-    [InlineData(ProjectType.Comic)]
-    public async Task RepresentativeExportsPassEpubCheck(ProjectType type)
+    [InlineData(ProjectType.Book, false)]
+    [InlineData(ProjectType.Book, true)]
+    [InlineData(ProjectType.Comic, false)]
+    public async Task RepresentativeExportsPassEpubCheck(ProjectType type, bool missingImages)
     {
         var source = await CreateSourceAsync(type);
+        source.MissingImages = missingImages;
         var export = await ExportAsync(source);
         await using var stream = export.Content;
         var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.epub");
@@ -362,11 +399,8 @@ public sealed class EpubExportTests
 
     private static async Task<FakeSource> CreateSourceAsync(ProjectType type)
     {
-        using var image = new Image<Rgba32>(640, 960);
-        using var png = new MemoryStream();
-        await image.SaveAsPngAsync(png);
         var project = new ProjectDocument { Id = Guid.NewGuid().ToString("D"), OwnerId = "private-owner", Type = type, Title = "An adventure" };
-        var source = new FakeSource(project, png.ToArray());
+        var source = new FakeSource(project, await PngAsync(640, 960));
         if (type == ProjectType.Book)
         {
             project.BookPlan = new BookPlan
@@ -381,6 +415,7 @@ public sealed class EpubExportTests
         }
         else
         {
+            source.Images["2.png"] = await PngAsync(960, 640);
             source.Boards.AddRange(new[] { 2, 1 }.Select(number => new GenerationDocument
             {
                 Id = Guid.NewGuid().ToString("D"), OwnerId = project.OwnerId, ProjectId = project.Id,
@@ -391,12 +426,21 @@ public sealed class EpubExportTests
         return source;
     }
 
+    private static async Task<byte[]> PngAsync(int width, int height)
+    {
+        using var image = new Image<Rgba32>(width, height);
+        using var png = new MemoryStream();
+        await image.SaveAsPngAsync(png);
+        return png.ToArray();
+    }
+
     private sealed class FakeSource(ProjectDocument project, byte[] imageBytes) : IEpubExportSource
     {
         public ProjectDocument Project { get; } = project;
         public byte[] ImageBytes { get; } = imageBytes;
         public List<GenerationDocument> Boards { get; } = [];
         public List<TrackedStream> Streams { get; } = [];
+        public Dictionary<string, byte[]> Images { get; } = [];
         public int ProjectCalls { get; private set; }
         public int ImageCalls { get; private set; }
         public bool MissingImages { get; set; }
@@ -414,7 +458,7 @@ public sealed class EpubExportTests
             Assert.True(artifactId.ToString("D") == Project.Id || Boards.Any(board => board.Id == artifactId.ToString("D")));
             ImageCalls++;
             if (MissingImages) return Task.FromResult<Stream?>(null);
-            var stream = new TrackedStream(ImageBytes, CancelDuringRead);
+            var stream = new TrackedStream(Images.GetValueOrDefault(blobName, ImageBytes), CancelDuringRead);
             Streams.Add(stream);
             return Task.FromResult<Stream?>(stream);
         }
