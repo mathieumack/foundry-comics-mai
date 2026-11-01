@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/MaiImageGenerator.Api/MaiImageGenerator.Api.csproj" />
+    <ProjectReference Include="../../src/MaiImageGenerator.Jobs.BoardGeneration/MaiImageGenerator.Jobs.BoardGeneration.csproj" />
     <ProjectReference Include="../../src/MaiImageGenerator.Web/MaiImageGenerator.Web.csproj" />
   </ItemGroup>
 

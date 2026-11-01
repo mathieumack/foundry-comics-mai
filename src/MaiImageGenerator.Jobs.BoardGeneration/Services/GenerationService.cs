@@ -59,6 +59,7 @@ public sealed class GenerationService(
         {
             failedPanel.Status = PanelGenerationStatus.Pending;
             failedPanel.Error = null;
+            failedPanel.Issue = null;
         }
         document.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -88,6 +89,7 @@ public sealed class GenerationService(
 
                 panel.Status = PanelGenerationStatus.Processing;
                 panel.Error = null;
+                panel.Issue = null;
                 panelIndexesToGenerate.Add(panelIndex);
             }
 
@@ -138,7 +140,8 @@ public sealed class GenerationService(
                 {
                     panel.Status = PanelGenerationStatus.Failed;
                     panel.ImageBlobName = null;
-                    panel.Error = GetPanelError(exception);
+                    panel.Issue = GetPanelIssue(exception);
+                    panel.Error = GenerationResult.GetPanelError(panel);
                     document.UpdatedAt = DateTimeOffset.UtcNow;
                     await dbContext.SaveChangesAsync(CancellationToken.None);
                     await NotifyCompletedAsync(request, panel.Number, CancellationToken.None);
@@ -153,20 +156,34 @@ public sealed class GenerationService(
                 {
                     await NotifyStartedAsync(request, workItem.Panel.Number, token);
                     byte[]? image = null;
-                    string? error = null;
+                    PanelGenerationIssue? issue = null;
                     try
                     {
                         image = await imageGeneration.ExecuteWithRetryAsync(
                             "comic-panel",
-                            retryToken => foundryClient.GenerateAsync(
-                                workItem.Prompt,
-                                workItem.ReferenceSheet,
-                                workItem.Landscape,
-                                retryToken,
-                                workItem.Trace),
+                            async retryToken =>
+                            {
+                                if (workItem.Panel.Issue is not null)
+                                {
+                                    await SaveIssueAsync(null, retryToken);
+                                }
+                                return await foundryClient.GenerateAsync(
+                                    workItem.Prompt,
+                                    workItem.ReferenceSheet,
+                                    workItem.Landscape,
+                                    retryToken,
+                                    workItem.Trace);
+                            },
                             IsTransient,
                             IsThrottled,
-                            token);
+                            token,
+                            async (exception, retryToken) =>
+                            {
+                                if (IsThrottled(exception))
+                                {
+                                    await SaveIssueAsync(PanelGenerationIssue.ProviderThrottled, retryToken);
+                                }
+                            });
                         var blobName = ArtifactPathBuilder.GetGenerationBlobName(
                             request.OwnerId,
                             Guid.Parse(document.Id),
@@ -176,13 +193,13 @@ public sealed class GenerationService(
                     catch (Exception exception) when (
                         exception is not OperationCanceledException || !token.IsCancellationRequested)
                     {
-                        error = GetPanelError(exception);
+                        issue = GetPanelIssue(exception);
                     }
 
                     await persistenceLock.WaitAsync(CancellationToken.None);
                     try
                     {
-                        if (image is not null && error is null)
+                        if (image is not null && issue is null)
                         {
                             panelImages[workItem.Index] = image;
                             workItem.Panel.ImageBlobName = ArtifactPathBuilder.GetGenerationBlobName(
@@ -191,12 +208,14 @@ public sealed class GenerationService(
                                 $"panel-{workItem.Panel.Number:00}.png");
                             workItem.Panel.Status = PanelGenerationStatus.Completed;
                             workItem.Panel.Error = null;
+                            workItem.Panel.Issue = null;
                         }
                         else
                         {
                             workItem.Panel.Status = PanelGenerationStatus.Failed;
                             workItem.Panel.ImageBlobName = null;
-                            workItem.Panel.Error = error;
+                            workItem.Panel.Issue = issue;
+                            workItem.Panel.Error = GenerationResult.GetPanelError(workItem.Panel);
                         }
 
                         document.UpdatedAt = DateTimeOffset.UtcNow;
@@ -208,6 +227,22 @@ public sealed class GenerationService(
                     }
 
                     await NotifyCompletedAsync(request, workItem.Panel.Number, CancellationToken.None);
+
+                    async Task SaveIssueAsync(PanelGenerationIssue? currentIssue, CancellationToken retryToken)
+                    {
+                        await persistenceLock.WaitAsync(retryToken);
+                        try
+                        {
+                            workItem.Panel.Issue = currentIssue;
+                            workItem.Panel.Error = GenerationResult.GetPanelError(workItem.Panel);
+                            document.UpdatedAt = DateTimeOffset.UtcNow;
+                            await dbContext.SaveChangesAsync(retryToken);
+                        }
+                        finally
+                        {
+                            persistenceLock.Release();
+                        }
+                    }
                 },
                 cancellationToken);
 
@@ -231,12 +266,14 @@ public sealed class GenerationService(
             foreach (var panel in document.Panels.Where(panel => panel.Status == PanelGenerationStatus.Processing))
             {
                 panel.Status = PanelGenerationStatus.Pending;
+                panel.Issue = null;
+                panel.Error = null;
             }
             document.UpdatedAt = DateTimeOffset.UtcNow;
             await dbContext.SaveChangesAsync(CancellationToken.None);
             throw;
         }
-        catch (Exception exception)
+        catch (Exception)
         {
             document.Status = GenerationStatus.Failed;
             document.Error = "The generation could not be completed.";
@@ -244,7 +281,8 @@ public sealed class GenerationService(
             foreach (var panel in document.Panels.Where(panel => panel.Status == PanelGenerationStatus.Processing))
             {
                 panel.Status = PanelGenerationStatus.Failed;
-                panel.Error = exception.GetType().Name;
+                panel.Issue = PanelGenerationIssue.TechnicalFailure;
+                panel.Error = GenerationResult.GetPanelError(panel);
             }
             await dbContext.SaveChangesAsync(CancellationToken.None);
             throw;
@@ -328,8 +366,12 @@ public sealed class GenerationService(
         }
     }
 
-    private static string GetPanelError(Exception exception) =>
-        exception is FoundryContentSafetyException ? exception.Message : exception.GetType().Name;
+    internal static PanelGenerationIssue GetPanelIssue(Exception exception) => exception switch
+    {
+        FoundryContentSafetyException => PanelGenerationIssue.ContentSafetyRejected,
+        FoundryGenerationException { Status: 429 } => PanelGenerationIssue.ProviderThrottled,
+        _ => PanelGenerationIssue.TechnicalFailure
+    };
 
     private static bool IsTransient(Exception exception) =>
         exception is TimeoutException ||

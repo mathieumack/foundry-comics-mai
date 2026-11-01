@@ -54,7 +54,9 @@ public sealed record GenerationResponse(
     IReadOnlyList<PanelGenerationResponse> Panels,
     Uri? BoardUri,
     string? Error,
-    IReadOnlyList<AiGenerationTrace>? ScaffoldTraces = null);
+    IReadOnlyList<AiGenerationTrace>? ScaffoldTraces = null,
+    int FailedPanelCount = 0,
+    GenerationCompleteness Completeness = GenerationCompleteness.None);
 
 public sealed record PanelGenerationResponse(
     int Number,
@@ -64,7 +66,8 @@ public sealed record PanelGenerationResponse(
     string? EffectivePrompt,
     Uri? ImageUri,
     string? Error,
-    IReadOnlyList<AiGenerationTrace>? Traces = null);
+    IReadOnlyList<AiGenerationTrace>? Traces = null,
+    PanelGenerationIssue? Issue = null);
 
 public sealed record CharacterGenerationResponse(
     string Id,
@@ -78,4 +81,8 @@ public sealed record GenerationSummaryResponse(
     string Title,
     DateTimeOffset CreatedAt,
     GenerationStatus Status,
-    Uri? ThumbnailUri);
+    Uri? ThumbnailUri,
+    int PanelCount = 0,
+    int CompletedPanelCount = 0,
+    int FailedPanelCount = 0,
+    GenerationCompleteness Completeness = GenerationCompleteness.None);

@@ -103,12 +103,14 @@ public sealed class ImageGenerationCoordinator
         Func<CancellationToken, Task<T>> operation,
         Func<Exception, bool> isTransient,
         Func<Exception, bool> isThrottled,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<Exception, CancellationToken, Task>? onRetry = null)
     {
         for (var attempt = 0; ; attempt++)
         {
             var generationStarted = Stopwatch.GetTimestamp();
             TimeSpan? retryDelay = null;
+            Exception? retryException = null;
             ActiveRequests.Add(1, new KeyValuePair<string, object?>("workflow", workflow));
             try
             {
@@ -143,6 +145,7 @@ public sealed class ImageGenerationCoordinator
                 {
                     retryDelay = providerDelay;
                 }
+                retryException = exception;
             }
             finally
             {
@@ -153,6 +156,10 @@ public sealed class ImageGenerationCoordinator
                     new KeyValuePair<string, object?>("attempt", attempt + 1));
             }
 
+            if (onRetry is not null)
+            {
+                await onRetry(retryException!, cancellationToken);
+            }
             await Task.Delay(retryDelay!.Value, cancellationToken);
         }
     }

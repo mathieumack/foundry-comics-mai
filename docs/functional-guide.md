@@ -83,9 +83,18 @@ flowchart TD
     Worker -->|Uncaught job or persistence failure| Failed[Save board failure and allow queue redelivery]
 ```
 
-The board can be `Completed` while individual panels are `Failed`, including content-safety rejections or exhausted image-provider retries. Those slots contain placeholders; completion does not mean every scene produced an image. An isolated panel failure does not cancel other panels.
+Processing and output completeness are separate. The existing processing states (`Pending`, `Processing`, `Completed`, `Failed`, `Canceled`) retain their meaning: a board can be `Completed` while individual panels are `Failed`. Those slots contain placeholders; completion does not mean every scene produced an image. An isolated panel failure does not cancel other panels.
 
-Board generation continues if the page closes. Reopen the project or generation to retrieve durable status. Progress events help refresh the editor but are not the authoritative record; stored API status is. A notification can arrive before the latest image/status is visible, so the frontend performs bounded refresh retries and explicitly renders each downloaded image. While a board is pending or processing, a five-second status refresh also recovers missed events and detects final composition. Normal progress does not require a manual refresh.
+The saved result diagnosis appears in every board tab and in the board navigator. It shows completed, failed, and total panel counts, with **Complete**, **Partial**, or **No usable image** output. For example, four generated images and two failures in a six-panel board appear as **Partial**, **4 completed / 2 failed / 6 total**, even after processing finishes. A composed PNG with placeholders does not count as successful panel images. Completeness describes artifact availability, not image quality or editorial approval; editorial review is a separate future concept.
+
+- **Queue waiting:** the API has saved `Pending`; processing has not started.
+- **Provider throttling:** a panel's saved diagnosis indicates the provider request limit, including automatic retry waiting. After retry exhaustion, it suggests trying a new version later.
+- **Technical failure:** a fixed, safe explanation suggests generating a new version.
+- **Content-safety rejection:** the affected panel explicitly asks you to review the scene and references before creating a new version. Safety controls are not bypassed.
+
+Available illustrations remain visible in Scenes, with an individual **Download panel** action, even when other panels or board composition fail. The assembled PNG remains downloadable when available, but may contain placeholders. Failed panels have actionable guidance in the result diagnosis and beside the selected scene. Historical records without a saved issue category use a generic technical-failure explanation rather than exposing old provider details.
+
+Board generation continues if the page closes. Reopen the project or generation to retrieve the same durable completeness, counts, and panel diagnoses. Both started and completed progress events only request an API refresh; they cannot change the diagnosis themselves. A notification can arrive before the latest image/status is visible, so the frontend performs bounded refresh retries and explicitly renders each downloaded image. While a board is pending or processing, a five-second status refresh also recovers missed events and detects final composition. Failed artifact downloads do not change saved panel counts or prevent other images from loading; periodic refresh keeps retrying missing downloads. Normal progress does not require a manual refresh.
 
 Uncaught job failures can trigger automatic queue redelivery. Completed panels with existing blobs are reused when an unfinished board resumes; a terminal `Completed` board is not automatically replayed even if it contains failed panels. To change a prompt or retry a failed scene as a user, edit the board and submit a new version; there is no dedicated single-panel retry endpoint.
 

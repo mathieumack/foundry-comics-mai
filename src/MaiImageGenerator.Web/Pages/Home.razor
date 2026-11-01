@@ -39,7 +39,7 @@
                     <nav aria-label="Planches">
                         @foreach (var board in projectBoards)
                         {
-                            <NavLink class="board-link" href="@($"/projects/{projectId:D}/boards/{board.GenerationId:D}")" Match="NavLinkMatch.All"><span>@board.Title</span><small>@StatusLabel(board.Status)</small></NavLink>
+                            <NavLink class="board-link" href="@($"/projects/{projectId:D}/boards/{board.GenerationId:D}")" Match="NavLinkMatch.All"><span>@board.Title</span><small>@StatusLabel(board)</small></NavLink>
                         }
                     </nav>
                     @if (projectBoards.Count == 0) { <p class="hint">Votre première planche vous attend.</p> }
@@ -52,6 +52,22 @@
                     <button class="segment" aria-pressed="@(activeTab == StudioTab.Characters ? "true" : "false")" @onclick="() => activeTab = StudioTab.Characters">2. Les personnages</button>
                     <button class="segment" aria-pressed="@(activeTab == StudioTab.Preview ? "true" : "false")" @onclick="() => activeTab = StudioTab.Preview">3. La planche</button>
                 </div>
+                @if (generationResult is { } result)
+                {
+                    <section class="surface" role="status" aria-label="Diagnostic du résultat">
+                        <strong>@ResultLabel</strong>
+                        <p>@StatusLabel(result.Status) · @result.CompletedPanelCount illustrées · @(result.Completeness is null ? result.Panels.Count(panel => panel.Status == PanelGenerationStatus.Failed) : result.FailedPanelCount) en échec · @result.PanelCount au total</p>
+                        @foreach (var entry in panels.Select((panel, index) => (panel, index)).Where(entry => entry.panel.Error is not null))
+                        {
+                            var panelIndex = entry.index;
+                            <p><button class="btn quiet" @onclick="() => SelectPanel(panelIndex)">Case @(panelIndex + 1) · @PanelStatusLabel(entry.panel)</button> @entry.panel.Error</p>
+                        }
+                        @if (ResultCompleteness != GenerationCompleteness.Complete)
+                        {
+                            <p class="hint">Les images disponibles restent consultables et téléchargeables dans les scènes. Une planche assemblée peut contenir des emplacements sans image.</p>
+                        }
+                    </section>
+                }
                 @if (activeTab == StudioTab.Characters)
                 {
                     <section class="surface">
@@ -113,13 +129,17 @@
                                     {
                                         <div class="scene-placeholder @PanelStatusClass(panel.Status)" role="status">
                                             <RadzenIcon Icon="@(panel.Status == PanelUiStatus.Generating ? "hourglass_top" : "image")" />
-                                            <span>@PanelStatusLabel(panel.Status)</span>
+                                            <span>@PanelStatusLabel(panel)</span>
                                         </div>
                                     }
-                                    <figcaption>Case @(selectedPanel + 1) · @PanelStatusLabel(panel.Status)@(panel.ImageDataUrl is not null ? " · Cliquez pour agrandir" : "")</figcaption>
+                                    <figcaption>Case @(selectedPanel + 1) · @PanelStatusLabel(panel)@(panel.ImageDataUrl is not null ? " · Cliquez pour agrandir" : "")</figcaption>
                                 </figure>
+                                @if (panel.ImageDataUrl is not null)
+                                {
+                                    <a class="btn" href="@panel.ImageDataUrl" download="@($"mai-comic-panel-{selectedPanel + 1}.png")"><RadzenIcon Icon="download" />Télécharger la case @(selectedPanel + 1)</a>
+                                }
                                 <AiTraceMetadata Traces="panel.Traces" Images="true" Label="Panel image requests" />
-                                @if (panel.Status == PanelUiStatus.Error)
+                                @if (panel.Error is not null)
                                 {
                                     <p class="error" role="alert">@panel.Error</p>
                                 }
@@ -163,7 +183,7 @@
                                 {
                                     var panelIndex = index;
                                     var panel = panels[index];
-                                    <button class="panel-preview @PanelStatusClass(panel.Status)" style="@PanelSlotStyle(index)" aria-label="@($"Modifier la case {index + 1} : {PanelStatusLabel(panel.Status)}")" aria-pressed="@(selectedPanel == index ? "true" : "false")" @onclick="() => SelectPanel(panelIndex)">
+                                    <button class="panel-preview @PanelStatusClass(panel.Status)" style="@PanelSlotStyle(index)" aria-label="@($"Modifier la case {index + 1} : {PanelStatusLabel(panel)}")" aria-pressed="@(selectedPanel == index ? "true" : "false")" @onclick="() => SelectPanel(panelIndex)">
                                         <span class="panel-number">@(index + 1)</span>
                                         @if (panel.ImageDataUrl is not null)
                                         {
@@ -173,17 +193,11 @@
                                         {
                                             <RadzenIcon Icon="@(panel.Status == PanelUiStatus.Generating ? "hourglass_top" : "image")" />
                                         }
-                                        <small>@PanelStatusLabel(panel.Status)</small>
+                                        <small>@PanelStatusLabel(panel)</small>
                                     </button>
                                 }
                             </div></div>
                             <p class="hint" style="text-align:center">APERÇU · @panels.Count cases · Cliquez sur une case pour la modifier.</p>
-                            @if (panels.Any(panel => panel.Status == PanelUiStatus.Error))
-                            {
-                                <div class="error" role="alert"><strong>Certaines images n'ont pas pu être créées.</strong><ul>
-                                    @for (var index = 0; index < panels.Count; index++) { if (panels[index].Status == PanelUiStatus.Error) { <li>Case @(index + 1) : @panels[index].Error</li> } }
-                                </ul><p>Les autres cases restent disponibles. Modifiez les scènes concernées puis générez une nouvelle version de la planche.</p></div>
-                            }
                             @if (panels.Any(p => !string.IsNullOrWhiteSpace(p.EffectivePrompt)))
                             {
                                 <details><summary>Consignes finales envoyées au modèle</summary><ol>@foreach (var panel in panels) { <li>@panel.EffectivePrompt</li> }</ol></details>

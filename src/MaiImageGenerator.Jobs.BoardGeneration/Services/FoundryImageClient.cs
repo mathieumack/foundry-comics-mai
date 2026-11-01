@@ -68,9 +68,22 @@ public sealed class FoundryImageClient(
         }
         catch (ClientResultException exception)
         {
+            if (exception.Status == 400 &&
+                exception.Message.Contains("content_safety_violation", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new FoundryContentSafetyException(
+                    "The prompt was blocked by the content safety policy.",
+                    exception);
+            }
             throw new FoundryGenerationException(
                 $"Prompt rewriting failed with HTTP status {exception.Status}.",
-                exception);
+                exception,
+                exception.Status)
+            {
+                RetryAfter = ImageGenerationRetry.ReadRetryAfter(name =>
+                    exception.GetRawResponse() is { } response &&
+                    response.Headers.TryGetValue(name, out var value) ? value : null)
+            };
         }
     }
 
