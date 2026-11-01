@@ -18,6 +18,7 @@ public static class AiTraceCapture
         Provider = trace.Provider,
         Model = trace.Model,
         RequestId = trace.RequestId,
+        AttemptId = trace.AttemptId,
         InputTokens = trace.InputTokens,
         OutputTokens = trace.OutputTokens,
         TotalTokens = trace.TotalTokens,

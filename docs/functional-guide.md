@@ -38,7 +38,9 @@ The [editable Excalidraw source](images/functional-workflow.excalidraw) accompan
 7. In **Scenes** (`1. Les scènes`), follow per-panel progress: the selected illustration and layout thumbnails update as each image becomes available, without waiting for the composed board. Changing the selected scene remains your choice.
 8. Inspect the effective prompts and any panel errors. **The board** (`3. La planche`) shows the assembled PNG after composition; download available panel PNGs and the composed board PNG.
 
-Character references guide identity but do not guarantee visual consistency. The worker uses the project's character/reference metadata when it processes the board; avoid changing that metadata during generation.
+Character references guide identity but do not guarantee visual consistency. New submissions freeze the reviewed prompts, context, layout, selected character names/descriptions, reference bytes, and generation settings before queueing. Later character edits or reference replacement/deletion apply only to future submissions. Saved versions display their accepted character selections. Legacy versions without a snapshot keep historical live-metadata behavior and do not claim frozen inputs.
+
+Accepted runs retain private copies of their references until permanent project deletion; removing a source character/reference does not erase those copies. Generation detail responses expose run/attempt IDs, deployment/template versions, settings, and reference content hashes for correlation, without private blob paths. Unknown actual model versions remain unknown. Reproducible inputs do not promise identical model output; provider upgrades and model nondeterminism still apply.
 
 ### Layouts and limits
 

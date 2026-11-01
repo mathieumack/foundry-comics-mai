@@ -112,16 +112,18 @@ sequenceDiagram
     API->>Blob: Save uploaded references
     User->>Web: Review layout, prompts and selected characters
     Web->>API: Submit board within project
-    API->>DB: Persist Pending generation
-    API->>Queue: Enqueue schema-2 message
+    API->>DB: Persist Pending generation as cleanup anchor
+    API->>Blob: Retain private owner/run-scoped reference bytes
+    API->>DB: Persist versioned immutable input snapshot
+    API->>Queue: Enqueue schema-3 message with run ID
     API-->>Web: Return saved board, not generated output
     Queue->>Job: Deliver work
-    Job->>DB: Resolve project and mark Processing
+    Job->>DB: Check owner/project lifecycle; persist execution attempt
     loop Prepare panel prompts and references
         opt Rewrite enabled
             Job->>MAI: Rewrite scene prompt
         end
-        Job->>Blob: Read selected character references
+        Job->>Blob: Read and verify retained snapshot references
     end
     Note over Web,API: Also refresh status every 5 s while Pending or Processing
     par Each prepared image within the configured concurrency limit
@@ -159,7 +161,7 @@ The worker requests regular panels at 1024 x 1024 and full-width slots at 1365 x
 
 ### Image invocation paths
 
-- **Comic panels:** the board job optionally rewrites context and scene text with an Agent Framework chat agent. It resolves current project characters and combines their reference images into a sheet. Text-only generation calls `/mai/v1/images/generations` with integer `width` and `height`; reference-guided generation uses the image-edit SDK operation against `/mai/v1` with multipart `size`. Image requests use the Cognitive Services token scope.
+- **Comic panels:** the board job optionally rewrites frozen context and scene text with an Agent Framework chat agent. Snapshot-backed runs resolve selected characters and retained reference bytes from their accepted snapshot, not current project metadata, then combine references into a sheet. Legacy runs retain the historical live-reference path. Text-only generation calls `/mai/v1/images/generations` with integer `width` and `height`; reference-guided generation uses the image-edit SDK operation against `/mai/v1` with multipart `size`. Image requests use the Cognitive Services token scope.
 - **Chapter illustrations:** `BookService` uses the saved image prompt or constructs one from context, title, summary, and continuity. It passes no reference sheet to the API's `FoundryImageGenerator`, which calls `/mai/v1/images/generations` with integer `width` and `height` for a 1024 x 1024 image.
 - **Text:** API/job chat agents use `/openai/v1/` with the `https://ai.azure.com/.default` token scope.
 
@@ -173,11 +175,25 @@ Usage is `provider-reported` only when the response supplies counters. Missing c
 
 Chat SDK usage types can normalize absent fields to zero, so a per-request `ChatClient` decorator captures field presence from the response before agent-level normalization. It retains only allowlisted counters and correlation IDs, never the raw response. Its source is linked into the three backend projects to reuse their existing OpenAI dependency without adding that dependency to the shared entity library.
 
-Generation/project documents use schema 3 with owned trace collections. Older documents load with empty collections; queue schemas remain unchanged because messages still reference owner-scoped documents, not trace payloads. API responses expose only the allowlisted trace fields. The browser keeps them while refreshing panel state and shows compact indicators for images, effective prompts, scaffolds, book plans, and prose. Details are disclosed on hover, keyboard focus, or touch activation; unknown usage is never shown as zero.
+Project documents use schema 3; new comic generations use schema 4 with owned trace, snapshot, and attempt data. Older documents load with empty trace/attempt collections and no snapshot. API responses expose only the allowlisted trace fields. The browser keeps them while refreshing panel state and shows compact indicators for images, effective prompts, scaffolds, book plans, and prose. Details are disclosed on hover, keyboard focus, or touch activation; unknown usage is never shown as zero.
 
 Scaffold usage is saved immediately as `<sha256-owner-prefix>/<scaffold-id-N>/scaffold-trace.json` in the private `generations` container. The API returns an opaque scaffold ID, not a client-editable usage claim. Saving the scaffold into a new project or board resolves its metadata under the authenticated owner and attaches the traces and sidecar ID in Cosmos. Project deletion includes these linked sidecar prefixes. Project and board identifiers remain independently generated, preserving creation/retry behavior. Only trace metadata is in the sidecar; draft text still travels through the browser until saved. Unclaimed scaffold sidecars have no automatic expiration and remain until the environment is removed. If sidecar persistence fails, the generated draft and in-memory trace are still returned without a scaffold ID.
 
 Request history describes the model calls, not authorship of subsequent manual edits or a billing ledger. See [responsible AI](responsible-ai.md#what-generation-trace-and-usage-data-is-retained) for retention and privacy limits.
+
+### Immutable comic inputs and correlation
+
+Both project-board submission and free-form generation persist an `InputSnapshot` version 1 before enqueueing. It freezes the title, description, context, rewrite decision, layout, ordered panel prompts/selections, and selected character names/descriptions (currently the character's `Name` field). Each selected reference is copied into the private `generations` container as `<sha256-owner-prefix>/<run-id-N>/input-<reference-id>-<content-sha256>`. The snapshot retains its original filename/content type and SHA-256 content version. Uploads do not overwrite retained inputs; workers validate the exact owner/run-scoped path and bytes. Replacing, detaching, or deleting a source reference cannot invalidate an accepted run.
+
+The snapshot also records configured text/image deployment names, optional model-version labels, image size, parallelism, retry settings, and explicit prompt/layout implementation versions (`board-prompts/1`, `board-layouts/1`). These versions cover rewrite instructions/envelopes, character guidance, reference-sheet preparation, dimensions (1024 square or 1365 × 768 landscape), and layout/composition rules. Changes to these implementations require a version bump and explicit consumer support; unsupported snapshots fail rather than silently using different inputs. Workers use the frozen deployments/settings, including for composition. The endpoint, credentials, safety policy, and installed runtime remain deployment operations, not user-approved creative inputs. Model-version labels are nullable; unknown actual model versions are never inferred from deployment names. Provider deployment upgrades can still change output.
+
+`RunId` equals the generation ID. Every execution that begins processing appends a new persisted attempt UUID and start time; cancellation, failure, and completion record an end time/outcome. Provider retries within an execution share its attempt ID but append separate invocation traces. Queue redelivery creates another attempt under the same run; it reuses successfully checkpointed effective prompts and completed panels. A process lost before its final checkpoint can leave an attempt without an end time. This is correlation, not an exactly-once or deterministic-output guarantee.
+
+Authenticated generation detail responses expose `Run` with snapshot/version metadata, settings, reference content hashes, and attempt history; panel traces carry `AttemptId`. They do not expose retained blob locators. Snapshot character references include an authenticated `ContentUri` under `/api/generations/{generationId}/references/{referenceId}/content`, which validates owner/run scope and content hashes without using source metadata. Legacy records without retained references return `404` on that route. Detail responses for snapshot-backed runs use frozen selections without querying current project creative metadata. Workers still read the parent project exclusively for owner/relationship/deletion lifecycle checks. Script/bible version facts are not synthesized: these inputs do not exist yet and will require an explicit snapshot evolution when introduced.
+
+Snapshots and retained bytes have the same lifetime as their generation/project, with no automatic expiry. Before creating the generation or copying bytes, the API acquires an ETag-protected project submission lease. Deletion and competing submissions reject a fresh lease, preventing cleanup from racing reference retention. Capture/queueing has a three-minute cancellation deadline; the lease is released after submission and expires after 30 minutes following process loss or a release conflict with concurrent project edits. A release conflict never overwrites those edits. The generation document is then saved as a cleanup anchor; reference-copy, snapshot-save, or enqueue failures never return accepted success. They leave failed or recoverable pending state and any partial copies under that generation's deletion prefix. A crash between Cosmos persistence and enqueue remains subject to the existing non-transactional queue limitation. Project deletion removes snapshots with generation documents and all retained/partial blobs, even if source characters were removed. Source reference IDs also remain discoverable through snapshots for exclusive-reference cleanup.
+
+Legacy schema-2/3 generation documents remain readable and executable without backfilling submission-time facts: `InputSnapshot` and API `Run` remain null, and historical live-reference behavior is explicit. Board consumers accept queue schema 2 (legacy) and schema 3 (requires a valid persisted snapshot and matching run ID); new submissions emit schema 3. **Roll out compatible workers before enabling the new API producer.** Older workers reject schema 3 rather than execute accepted work using live metadata; do not allow them to consume new messages during rollout. Never downgrade a snapshot-backed message to make an older worker accept it.
 
 ### Notification delivery
 
@@ -264,20 +280,20 @@ The `core` Cosmos database contains `projects`, `documents`, and `references`, a
 | Store or message | Contents and boundary |
 | --- | --- |
 | Cosmos `projects` | Project type, characters/references, source idea, embedded book plan/chapters, and per-request AI traces. |
-| Cosmos `documents` | Generation, parent project ID, layout, prompts, panel states, board/panel blob names, and per-request AI traces. |
+| Cosmos `documents` | Generation, parent project ID, immutable input snapshot, execution attempts, layout/prompts, panel states, artifact names, and per-request AI traces. |
 | Cosmos `references` | Uploaded-reference metadata. |
 | Blob `references` | `<sha256-owner-prefix>/<reference-id>.<extension>`. |
-| Blob `generations` | `<sha256-owner-prefix>/<generation-or-book-id-N>/panel-NN.png`, `board.png`, or `chapter-<chapter-id>.png`. |
-| Board message, schema 2 | `BoardId`, `OwnerId`, `ProjectId`, `RewritePrompt`. |
+| Blob `generations` | `<sha256-owner-prefix>/<generation-or-book-id-N>/panel-NN.png`, `board.png`, `chapter-<chapter-id>.png`, or retained `input-<reference-id>-<content-sha256>`. |
+| Board message, schema 3 (schema 2 readable) | `BoardId`, `RunId`, `OwnerId`, `ProjectId`, `RewritePrompt`; snapshot values are authoritative. |
 | Book plan message, schema 1 | `JobType=book-plan`, `RequestId`, `OwnerId`, `ProjectId`, `ChapterCount`. |
 
 The owner hash avoids embedding raw owner identifiers in blob paths; it is not authorization. Comic panels reference project character IDs; Book projects reject board creation. Layouts are persisted as Standard, Storyline, Dynamic 1, or Dynamic 2. Review queue-schema compatibility explicitly because deployed API/worker revisions can overlap.
 
 ### Permanent project deletion
 
-`DELETE /api/projects/{projectId}` resolves the authenticated owner and never accepts an owner ID from the browser. The API first saves a deletion marker, cancels queued or failed generation state, and makes both workers ignore stale messages. If a board, plan, prose request, or image request is already processing, deletion returns `409`; the user can retry after that operation finishes.
+`DELETE /api/projects/{projectId}` resolves the authenticated owner and never accepts an owner ID from the browser. The API first saves a deletion marker, cancels queued or failed generation state, and makes both workers ignore stale messages. If a board submission lease is active or a board, plan, prose request, or image request is already processing, deletion returns `409`; the user can retry after that operation finishes.
 
-Cleanup enumerates the project's book prefix, every comic-generation prefix, and each reference prefix not shared by another project owned by the same user. It deletes base blobs, snapshots, and every stored version. Missing blobs are successful no-ops. Any storage failure is logged, returned as retryable `503`, and prevents Cosmos deletion.
+Cleanup enumerates the project's book prefix, every comic-generation prefix (including retained snapshot inputs), and each source reference prefix not shared by another project owned by the same user. Source references are discovered from current characters and saved snapshots. It deletes base blobs, snapshots, and every stored version. Missing blobs are successful no-ops. Any storage failure is logged, returned as retryable `503`, and prevents Cosmos deletion.
 
 After storage succeeds, the API deletes generation documents, exclusive reference documents, and finally the root project document. Cosmos cannot transact across these containers, so root-last ordering preserves the deletion marker as a retry anchor after a partial database failure. A successful response therefore means that no attributable database record or blob remains. Blob soft delete is disabled by the deployment so deleted artifacts are not retained for recovery; account versioning remains enabled for normal overwrites, and deletion removes all versions explicitly.
 
@@ -300,7 +316,7 @@ Generation states are `Pending`, `Processing`, `Completed`, `Failed`, and `Cance
 
 Board processing status is independent of output completeness and does not imply editorial approval. API detail and summary responses add `Completeness` (`None`, `Partial`, `Complete`) and completed/failed/total panel counts (`CompletedPanelCount`, `FailedPanelCount`, `PanelCount`), derived from saved panels. Only completed panels with saved image references count as usable output; the composed board may contain placeholders. No editorial-review status is inferred or implemented by these fields; future review state must remain separate from processing and completeness.
 
-An optional persisted panel `Issue` distinguishes `ProviderThrottled`, `TechnicalFailure`, and `ContentSafetyRejected`. The worker checkpoints surfaced throttling before retry backoff under its existing persistence semaphore, clears it on a new attempt/success/cancellation, and saves terminal classifications before notifications. Both image generation and prompt rewriting preserve provider status for diagnosis. API errors are fixed application-authored guidance, never raw provider bodies or exception details. Old documents and workers can omit `Issue`; failed panels then receive generic technical guidance. Existing status enum values, document schema 3, and queue schema 2 are unchanged: this is an additive contract, and legacy `Completed` documents still load. The Web client tolerates older responses without completeness and derives a fallback from their panel states and authenticated image references; old summary responses say processing finished, not unqualified success.
+An optional persisted panel `Issue` distinguishes `ProviderThrottled`, `TechnicalFailure`, and `ContentSafetyRejected`. The worker checkpoints surfaced throttling before retry backoff under its existing persistence semaphore, clears it on a new attempt/success/cancellation, and saves terminal classifications before notifications. Both image generation and prompt rewriting preserve provider status for diagnosis. API errors are fixed application-authored guidance, never raw provider bodies or exception details. Old documents and workers can omit `Issue`; failed panels then receive generic technical guidance. Existing status enum values remain unchanged, and legacy `Completed` documents still load. The Web client tolerates older responses without completeness and derives a fallback from their panel states and authenticated image references; old summary responses say processing finished, not unqualified success.
 
 Notifications only trigger reads. Polling/reopening restores the authoritative diagnosis even with lost, duplicate, or delayed notifications. Individual panel and composed-board downloads remain independent of processing/completeness; an artifact download failure neither changes saved counts nor prevents loading sibling images.
 
@@ -333,6 +349,7 @@ Paths are relative to the API origin; IDs are server-issued. User-facing stored-
 | `/api/generations/scaffold` | `POST` runs foreground scaffolding. |
 | `/api/generations` | `GET` lists; legacy/free-form `POST` creates a project and queued board (`200`). |
 | `/api/generations/{generationId}` | `GET` reads status; `/board` and `/panels/{panelNumber}` stream available PNGs. |
+| `/api/generations/{generationId}/references/{referenceId}/content` | `GET` streams a retained snapshot reference under the authenticated owner; legacy/missing selections return `404`. |
 | `/api/references` | Legacy/free-form multipart `POST`; `GET` on `/{referenceId}/content`. |
 | `/api/projects/{projectId}/book/plan` | `GET` reads; `PUT` saves chapter edits/prose. |
 | `/api/projects/{projectId}/book/plan/generate` | `POST` queues planning (`202`); poll the plan route. |
@@ -350,6 +367,7 @@ Bicep injects backend environment variables; double underscores map to .NET conf
 | --- | --- |
 | `AZURE_CLIENT_ID` | User-assigned managed identity selection. |
 | `Foundry__Endpoint`, `Foundry__PromptModel`, `Foundry__ImageModel`, `Foundry__ImageSize` | Endpoint, deployments, square image size (`1024`). |
+| `Foundry__PromptModelVersion`, `Foundry__ImageModelVersion` | Optional verified model-version labels captured at comic submission; unset means unknown, not a deployment-name inference. These labels do not pin or override provider deployments. |
 | `Foundry__MaxParallelImages` | Per-batch image concurrency (1 to 16, default 3); Bicep maps `IMAGE_GENERATION_MAX_PARALLELISM`. |
 | `Foundry__ImageRetryCount`, `Foundry__ImageRetryBaseDelayMilliseconds` | Image retries (0 to 10, default 3) and exponential-backoff base (1 to 30,000 ms, default 1,000). Provider delays can exceed the 30-second exponential cap. |
 | `CosmosDb__Endpoint`, `CosmosDb__DatabaseName` | Cosmos endpoint and `core` database. |

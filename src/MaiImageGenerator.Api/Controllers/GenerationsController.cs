@@ -92,6 +92,22 @@ public sealed class GenerationsController(
     public Task<IActionResult> DownloadBoard(Guid generationId, CancellationToken cancellationToken) =>
         DownloadArtifact(generationId, null, cancellationToken);
 
+    [HttpGet("{generationId:guid}/references/{referenceId}/content")]
+    public async Task<IActionResult> DownloadReference(
+        Guid generationId,
+        string referenceId,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = httpContextAccessor.GetUserId();
+        if (ownerId is null)
+        {
+            return Unauthorized();
+        }
+        var reference = await generationService.OpenReferenceAsync(ownerId, generationId, referenceId, cancellationToken);
+        Response.Headers.CacheControl = "no-store";
+        return reference is null ? NotFound() : File(reference.Value.Content, reference.Value.ContentType);
+    }
+
     [HttpGet("{generationId:guid}/panels/{panelNumber:int}")]
     public Task<IActionResult> DownloadPanel(
         Guid generationId,

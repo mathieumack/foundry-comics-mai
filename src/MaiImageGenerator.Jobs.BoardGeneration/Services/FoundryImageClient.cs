@@ -25,17 +25,17 @@ public sealed class FoundryImageClient(
     private const int LandscapeWidth = 1365;
     private const int LandscapeHeight = 768;
     private static readonly string[] CognitiveServicesScopes = ["https://cognitiveservices.azure.com/.default"];
-    internal const string RewriteInstructions = """
-        You are an art director specializing in image-generation prompts. Rewrite the supplied context and panel
-        description into one autonomous prompt. Preserve the requested characters, action, framing, visual style,
-        displayed text, dialogue, and constraints. Return only the final prompt without Markdown or commentary.
-        """;
+    internal const string RewriteInstructions = BoardInputVersions.RewriteInstructions;
 
     private readonly FoundryOptions _options = options.Value;
     private readonly Uri _generationsEndpoint = GetGenerationsEndpoint(options.Value.Endpoint);
     private readonly int _squareImageSize = options.Value.ImageSize == 1024
         ? options.Value.ImageSize
         : throw new InvalidOperationException("MAI image generation supports ImageSize=1024 for square panels.");
+
+    public FoundryImageClient ForSnapshot(GenerationInputSnapshot snapshot) =>
+        new(openAIClient, imageClient, httpClient, credential,
+            Options.Create(snapshot.Settings.ToOptions(_options.Endpoint)));
 
     public async Task<string> RewritePromptAsync(
         string? context,

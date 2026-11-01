@@ -82,6 +82,7 @@ builder.Services.AddSingleton(serviceProvider =>
     return serviceProvider.GetRequiredService<OpenAIClient>().GetImageClient(options.ImageModel);
 });
 builder.Services.AddScoped<IPromptRewriter, MafPromptRewriter>();
+builder.Services.AddScoped<GenerationSnapshotStore>();
 builder.Services.AddScoped<IImageGenerator, FoundryImageGenerator>();
 builder.Services.AddSingleton(serviceProvider =>
     new ImageGenerationCoordinator(serviceProvider.GetRequiredService<IOptions<FoundryOptions>>().Value));

@@ -6,6 +6,8 @@ public sealed class GenerationDocument
     public string OwnerId { get; set; } = string.Empty;
     public string ProjectId { get; set; } = string.Empty;
     public int SchemaVersion { get; set; } = 3;
+    public GenerationInputSnapshot? InputSnapshot { get; set; }
+    public List<GenerationAttempt> Attempts { get; set; } = [];
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string? Context { get; set; }
