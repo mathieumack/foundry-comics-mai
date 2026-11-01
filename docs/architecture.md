@@ -376,6 +376,8 @@ Bicep selects `OnceNewDefaultVersionAvailable` upgrades and the `GuardrailNoLimi
 
 ## Development and validation
 
+See [agent development](agent-development.md) for GitHub Copilot roles, scoped instructions, setup, and required-check administration. The credential-free validation workflow builds/tests the solution, compiles the active Bicep graph, and checks local Markdown links before the Azure deployment job can run.
+
 | Directory | Ownership |
 | --- | --- |
 | [`MaiImageGenerator.Web`](../src/MaiImageGenerator.Web) | UI, authentication, API client, editor state. |

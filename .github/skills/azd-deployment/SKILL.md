@@ -23,12 +23,11 @@ description: "Prepare, review, validate, or troubleshoot MAI Comic Studio Azure 
 
 ## Validation
 
-Run locally before proposing deployment:
+Run credential-free compilation before proposing deployment:
 
 ```powershell
-az bicep build --file .\infra\main.bicep
-azd show --output json
+az bicep build --file .\infra\main.bicep --stdout > $null
 dotnet build .\src\MaiImageGenerator.slnx
 ```
 
-Use Azure preflight or what-if validation when credentials and subscription context are available. Distinguish local compilation from live quota and permission validation.
+Run `azd show --output json` only when an azd environment is configured. Use Azure preflight or what-if validation only with approved credentials and subscription context. Ordinary PR validation and Copilot setup must not require Azure login. Distinguish local compilation from live quota and permission validation.

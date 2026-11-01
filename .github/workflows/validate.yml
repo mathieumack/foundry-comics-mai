@@ -1,0 +1,63 @@
+name: Validate
+
+on:
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            src/**/*.csproj
+            tests/**/*.csproj
+      - name: Restore
+        run: dotnet restore src/MaiImageGenerator.slnx
+      - name: Build
+        run: dotnet build src/MaiImageGenerator.slnx --configuration Release --no-restore
+      - name: Test both projects
+        run: dotnet test src/MaiImageGenerator.slnx --configuration Release --no-build --logger trx --results-directory TestResults
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/**/*.trx
+          retention-days: 7
+
+  bicep:
+    name: Compile Bicep
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Bicep
+        run: az bicep install
+      - name: Compile active graph without Azure login
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null
+
+  documentation:
+    name: Documentation links
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Check local Markdown links
+        shell: pwsh
+        run: ./scripts/validate-doc-links.ps1

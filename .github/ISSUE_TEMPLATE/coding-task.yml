@@ -1,0 +1,57 @@
+name: Coding agent task
+description: Define a bounded, verifiable change for a GitHub coding agent.
+title: "[Task] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Select the relevant custom agent when assigning the task. Labels do not route agents automatically.
+        Use synthetic examples only; do not include credentials, private prompts, or tenant-specific configuration.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: What observable behavior should change?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Include happy paths, failures/retries, and ownership or authorization expectations.
+      placeholder: |
+        - [ ] Expected behavior
+        - [ ] Failure and cancellation behavior
+        - [ ] Owner isolation remains intact
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and dependencies
+      description: Affected components, explicit exclusions, contract decisions, and prerequisite issues or PRs.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: Required regression tests/checks and any approved live verification.
+    validations:
+      required: true
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Documentation
+      description: Which canonical guides may change? State why none are needed if applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      value: |
+        No deployment, live model calls, live data changes, secrets, or unrelated refactoring.
+        Report checks passed, failed, skipped, and remaining limitations.
+    validations:
+      required: true

@@ -4,6 +4,7 @@
 - [Architecture](architecture.md): application components, Azure resources, data flow, identity, and networking.
 - [Requirements](requirements.md): local tools, Azure permissions, model availability, quota, and operational considerations.
 - [Deployment](deployment.md): provision, deploy, verify, update, troubleshoot, and remove an environment with `azd`.
+- [Agent development](agent-development.md): GitHub Copilot specialists, scoped instructions, skills, task assignment, credential-free validation, and setup.
 - [Responsible AI and transparency FAQ](responsible-ai.md): educational purpose, model limitations, human review, data handling, copyright, and MIT licensing.
 - [UX redesign proposal](ux-design.md): frontend findings, proposed user journeys, Radzen mapping, and a standalone [interactive HTML prototype](ux-prototype.html).
 

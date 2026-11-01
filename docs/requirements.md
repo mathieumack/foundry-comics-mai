@@ -15,6 +15,8 @@ This environment is intended solely for training and discovery of Azure services
 
 GitHub Actions setup additionally requires [GitHub CLI](https://cli.github.com/) locally. The workflow installs .NET 10 and azd, and signs both azd and Azure CLI in with OIDC. Parameter mappings for pipeline configuration are maintained in `infra/main.parameters.json` alongside `infra/main.bicepparam`; see [deployment](deployment.md#configure-github-actions).
 
+Pull-request validation and GitHub Actions-based Copilot setup are separate, credential-free workflows using .NET 10, PowerShell, and Azure CLI/Bicep on Ubuntu. They do not need an azd environment or Azure login. See [agent development](agent-development.md#setup-and-validation) for execution-environment limits and required-check setup.
+
 ```powershell
 dotnet --version
 pwsh --version

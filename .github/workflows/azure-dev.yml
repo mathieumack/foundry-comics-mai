@@ -17,7 +17,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    uses: ./.github/workflows/validate.yml
+    permissions:
+      contents: read
+
   build:
+    needs: validate
     runs-on: ubuntu-latest
     env:
       AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}

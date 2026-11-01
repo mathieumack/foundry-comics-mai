@@ -15,6 +15,8 @@ Ensure both CLIs target the same tenant and subscription.
 
 For GitHub Actions, see [Configure GitHub Actions](#configure-github-actions) after selecting the local environment.
 
+The checked-in deployment workflow first calls the [credential-free validation workflow](../.github/workflows/validate.yml). Both test projects, the solution build, active Bicep compilation, and local Markdown links must pass before its Azure deployment job starts. PR checks and Copilot setup do not receive deployment credentials; see [agent development](agent-development.md) for branch protection and agent environment setup.
+
 ## 2. Create an environment
 
 ```powershell

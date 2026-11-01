@@ -118,6 +118,8 @@ These are educational scenarios, not claims of business suitability or productio
 
 [Deployment](docs/deployment.md): the supported `azd` lifecycle. [Documentation index](docs/README.md): all guides, including the UX design proposal.
 
+[Developing with GitHub Copilot agents](docs/agent-development.md): specialist roles, task scoping, skills, and credential-free pull-request validation.
+
 #### Security guidelines
 
 The reference deployment uses Entra authentication, a user-assigned managed identity, RBAC, owner-partitioned Cosmos queries, and private endpoints for backend data and model services. The frontend, authenticated API, and SignalR service have public entry points. AI Search and the Foundry capability host are provisioned but are not used for retrieval or hosted-agent orchestration in the current generation flows.

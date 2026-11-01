@@ -8,3 +8,4 @@
 - Treat `azure.yaml`, `infra/main.bicep`, and `infra/main.bicepparam` as the deployment sources of truth. Keep lifecycle hooks idempotent.
 - Before completion, run the narrowest relevant checks. For shared or deployment changes, build the solution and compile the active Bicep graph.
 - Use the project skills for detailed workflows instead of expanding this always-loaded file.
+- For GitHub agent roles, task scoping, and validation setup, follow `docs/agent-development.md`; keep one feature owner responsible for integration and delegate only bounded independent work.
