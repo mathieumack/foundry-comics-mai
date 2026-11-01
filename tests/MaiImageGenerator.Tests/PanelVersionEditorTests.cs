@@ -154,6 +154,28 @@ public sealed class PanelVersionEditorTests
     }
 
     [Fact]
+    public async Task SafetyHistory_HidesOlderTechnicalRetry_AndBlocksRejectedEffectivePrompt()
+    {
+        var source = Version(FailedVersion, PanelGenerationStatus.Failed) with
+        {
+            Prompt = "Earlier accepted scene", EffectivePrompt = "Earlier prepared scene"
+        };
+        var rejected = source with { Id = Alternative.ToString("D"), Issue = PanelGenerationIssue.ContentSafetyRejected };
+        var response = WithVersions(Board(failed: true), source, rejected);
+        await using var harness = await Harness.OpenAsync(response);
+
+        Assert.DoesNotContain("Réessayer cette version", await harness.HtmlAsync());
+        await harness.RunAsync(() => harness.Home.AttemptAsync(1, true, FailedVersion));
+        await harness.RunAsync(() => harness.Home.Revise(1, " Earlier prepared scene "));
+        await harness.RunAsync(() => harness.Home.AttemptAsync(1, false));
+        Assert.Empty(harness.Commands);
+
+        await harness.RunAsync(() => harness.Home.Revise(1, "A genuinely revised scene"));
+        await harness.RunAsync(() => harness.Home.AttemptAsync(1, false));
+        Assert.False(Assert.Single(harness.Commands).Json<CreatePanelAttemptRequest>().Retry);
+    }
+
+    [Fact]
     public async Task NewAttempt_PreservesSelectedArtSceneAndUnsavedDraft_AndBlocksDoubleClick()
     {
         var response = Board();
@@ -431,6 +453,49 @@ public sealed class PanelVersionEditorTests
     }
 
     [Fact]
+    public async Task ReopenedPendingCommand_CanResumeWithoutCreatingAnotherVersion_AndRetryDispatchFailure()
+    {
+        var id = Guid.NewGuid();
+        var response = WithVersions(Board() with
+        {
+            Status = GenerationStatus.Pending, PendingCommandId = id.ToString("D")
+        }, Version(id, PanelGenerationStatus.Pending));
+        await using var harness = await Harness.OpenAsync(response);
+        Assert.Contains("Reprendre la commande accept", await harness.HtmlAsync());
+        harness.CommandHandler = (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        await harness.RunAsync(harness.Home.ResumePendingAsync);
+        Assert.Contains("Envoi non confirm", await harness.HtmlAsync());
+        harness.CommandHandler = (_, _) => Task.FromResult(Json(response));
+        await harness.RunAsync(harness.Home.ResubmitAsync);
+        Assert.Equal(2, harness.Commands.Count);
+        Assert.All(harness.Commands, command =>
+        {
+            Assert.Equal(HttpMethod.Post, command.Method);
+            Assert.Equal($"/api/generations/{response.GenerationId:D}/commands/{id:D}/resume", command.Path);
+            Assert.Empty(command.Body);
+        });
+        Assert.DoesNotContain("Envoi non confirm", await harness.HtmlAsync());
+        Assert.True(harness.Home.IsGenerating);
+    }
+
+    [Fact]
+    public async Task FailedComposition_CanReselectCurrentVersion_WithoutChangingSceneOrDraft()
+    {
+        var response = WithVersions(Board() with { Status = GenerationStatus.Failed },
+            Version(Guid.Empty, PanelGenerationStatus.Completed, image: "api/original-image"));
+        await using var harness = await Harness.OpenAsync(response);
+        Assert.Contains("Réessayer la composition", WebUtility.HtmlDecode(await harness.HtmlAsync()));
+        await harness.RunAsync(() => harness.Home.EditDraft(0, "Unsaved scene"));
+        await harness.RunAsync(() => harness.Home.SelectVersionAsync(1, Guid.Empty));
+        var command = Assert.Single(harness.Commands).Json<SelectPanelVersionRequest>();
+        Assert.Equal(Guid.Empty, command.VersionId);
+        Assert.Equal(response.Revision, command.ExpectedRevision);
+        Assert.Equal(0, harness.Home.SelectedPanel);
+        Assert.Equal("Unsaved scene", harness.Home.DraftPrompt(0));
+        Assert.True(harness.Home.Dirty);
+    }
+
+    [Fact]
     public async Task Navigation_CancelsPendingCommandAndIgnoresLateResponse()
     {
         var first = Board();
@@ -617,6 +682,7 @@ public sealed class PanelVersionEditorTests
         public Task AttemptAsync(int number, bool retry, Guid? source = null) => Call("CreatePanelAttemptAsync", number, retry, source);
         public Task SelectVersionAsync(int number, Guid version) => Call("SelectPanelVersionAsync", number, version);
         public Task ResubmitAsync() => Call("ResubmitUncertainPanelCommandAsync");
+        public Task ResumePendingAsync() => Call("ResumePendingPanelCommandAsync");
         public void Revise(int number, string value) { Method("SetRevisedPrompt").Invoke(this, [number, value]); StateHasChanged(); }
         public string Revised(int number) => (string)Method("RevisedPrompt").Invoke(this, [number])!;
         public void Select(int index) { Method("SelectPanel").Invoke(this, [index]); StateHasChanged(); }

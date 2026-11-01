@@ -703,6 +703,106 @@ public sealed class PanelAttemptWorkerTests
     }
 
     [Fact]
+    public async Task InFlightFullBoard_CannotOverwriteOriginalArtworkAfterPanelEditingBegins()
+    {
+        var h = new Harness();
+        h.Saved.Status = GenerationStatus.Pending;
+        h.Saved.Panels[2].Status = PanelGenerationStatus.Pending;
+        var originalPath = h.Saved.Panels[2].ImageBlobName!;
+        var originalBytes = Png(100);
+        h.Blobs.Content[originalPath] = BinaryData.FromBytes(originalBytes);
+        h.Message = new()
+        {
+            SchemaVersion = 3, BoardId = h.Saved.Id, RunId = h.Saved.Id,
+            OwnerId = h.Saved.OwnerId, ProjectId = h.Saved.ProjectId
+        };
+        h.Provider.Response = (_, _) =>
+        {
+            // A competing delivery finishes and the API accepts a targeted command
+            // while this execution's provider request is in flight.
+            h.Saved.Status = GenerationStatus.Completed;
+            h.Saved.Panels[2].Status = PanelGenerationStatus.Completed;
+            h.Attempt();
+            h.BumpETag();
+            return Json(ImageResponse());
+        };
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => h.RunAsync());
+
+        Assert.Equal(originalBytes, h.Blobs.Content[originalPath].ToArray());
+        Assert.Equal(originalPath, h.Saved.Panels[2].Versions[0].ImageBlobName);
+        Assert.Equal(GenerationStatus.Pending, h.Saved.Status);
+        Assert.Equal(h.Candidate.Id, h.Saved.PendingCommandId);
+        Assert.Equal(1, h.Blobs.Uploads);
+        Assert.Contains(h.Blobs.Content.Keys, name => name.EndsWith(
+            $"initial-panel-03-{Guid.Parse(h.Running!.Attempts.Last().Id):N}.png", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task InFlightFullBoard_CannotOverwritePriorBoardAfterPanelEditingBegins()
+    {
+        var h = new Harness();
+        h.Saved.Status = GenerationStatus.Pending;
+        var originalPath = h.Saved.BoardBlobName!;
+        var originalBytes = h.Blobs.Content[originalPath].ToArray();
+        h.Message = new()
+        {
+            SchemaVersion = 3, BoardId = h.Saved.Id, RunId = h.Saved.Id,
+            OwnerId = h.Saved.OwnerId, ProjectId = h.Saved.ProjectId
+        };
+        h.Blobs.BeforeUpload = _ =>
+        {
+            h.Saved.Status = GenerationStatus.Completed;
+            h.Attempt();
+            h.BumpETag();
+        };
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => h.RunAsync());
+
+        Assert.Equal(originalBytes, h.Blobs.Content[originalPath].ToArray());
+        Assert.Equal(originalPath, h.Saved.BoardBlobName);
+        Assert.Equal(h.Candidate.Id, h.Saved.PendingCommandId);
+        Assert.Equal(1, h.Blobs.Uploads);
+        Assert.Contains(h.Blobs.Content.Keys, name => name.EndsWith(
+            $"initial-board-{Guid.Parse(h.Running!.Attempts.Last().Id):N}.png", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SelectionCommandUsingInitialAttemptId_CannotRecoverTheInitialBoard()
+    {
+        var h = new Harness();
+        h.Saved.Status = GenerationStatus.Pending;
+        h.Message = new()
+        {
+            SchemaVersion = 3, BoardId = h.Saved.Id, RunId = h.Saved.Id,
+            OwnerId = h.Saved.OwnerId, ProjectId = h.Saved.ProjectId
+        };
+        await h.RunAsync();
+        var initialAttemptId = Guid.Parse(Assert.Single(h.Saved.Attempts).Id);
+        var initialBoardPath = h.Saved.BoardBlobName!;
+        var initialBoardBytes = h.Blobs.Content[initialBoardPath].ToArray();
+        h.Attempt();
+        h.Provider.Response = (_, _) =>
+            Json($$"""{"data":[{"b64_json":"{{Convert.ToBase64String(Png(200))}}"}]}""");
+        await h.RunAsync();
+        PanelVersionCommands.SelectVersion(h.Saved, 3, initialAttemptId, Guid.Parse(h.Candidate.Id),
+            h.Saved.Revision, DateTimeOffset.UtcNow);
+        h.Message = h.Message with
+        {
+            Operation = "compose", CommandId = initialAttemptId.ToString("D"), Revision = h.Saved.Revision
+        };
+        var uploads = h.Blobs.Uploads;
+
+        await h.RunAsync();
+
+        Assert.Equal(uploads + 1, h.Blobs.Uploads);
+        Assert.Equal(h.CommandPath("board"), h.Saved.BoardBlobName);
+        Assert.NotEqual(initialBoardPath, h.Saved.BoardBlobName);
+        Assert.False(initialBoardBytes.SequenceEqual(h.Blobs.Content[h.Saved.BoardBlobName!].ToArray()));
+        Assert.Equal(initialBoardBytes, h.Blobs.Content[initialBoardPath].ToArray());
+    }
+
+    [Fact]
     public async Task Wakeup_UsesDistinctDeterministicTransportIdentity_AndExpiryMargin()
     {
         var sender = new Queue();
@@ -1027,6 +1127,20 @@ public sealed class PanelAttemptWorkerTests
         }
         private sealed class Blob(Blobs blobs, string name) : BlobClient
         {
+            public override Task<Response<BlobContentInfo>> UploadAsync(BinaryData content, bool overwrite = false,
+                CancellationToken cancellationToken = default)
+            {
+                Assert.False(overwrite);
+                return UploadAsync(content, new BlobUploadOptions
+                {
+                    Conditions = new() { IfNoneMatch = ETag.All },
+                    HttpHeaders = new() { ContentType = "image/png" }
+                }, cancellationToken);
+            }
+            public override Task<Response<BlobInfo>> SetHttpHeadersAsync(BlobHttpHeaders httpHeaders,
+                BlobRequestConditions? conditions = null, CancellationToken cancellationToken = default) =>
+                Task.FromResult(Response.FromValue(BlobsModelFactory.BlobInfo(new ETag("test"), DateTimeOffset.UtcNow), null!));
+
             public override Task<Response<BlobDownloadResult>> DownloadContentAsync(CancellationToken cancellationToken = default)
             {
                 cancellationToken.ThrowIfCancellationRequested();

@@ -126,7 +126,8 @@ public sealed record GenerationResponse(
     int FailedPanelCount = 0,
     GenerationCompleteness? Completeness = null,
     long Revision = 0,
-    bool CanEditPanels = false);
+    bool CanEditPanels = false,
+    string? PendingCommandId = null);
 
 public sealed record PanelGenerationResponse(
     int Number,

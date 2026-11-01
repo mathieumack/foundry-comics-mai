@@ -26,7 +26,11 @@
     @if (panelCommandError is not null) { <div class="error" role="alert">@panelCommandError</div> }
     @if (uncertainPanelCommand is not null)
     {
-        <button type="button" class="btn" disabled="@UncertainCommandRetryLocked" @onclick="ResubmitUncertainPanelCommandAsync">Réessayer l'envoi non confirmé · même commande · case @uncertainPanelCommand.Number</button>
+        <button type="button" class="btn" disabled="@UncertainCommandRetryLocked" @onclick="ResubmitUncertainPanelCommandAsync">Réessayer l'envoi non confirmé · même commande @(uncertainPanelCommand.Resume is null ? $"· case {uncertainPanelCommand.Number}" : "")</button>
+    }
+    @if (generationResult?.CanEditPanels == true && generationResult.PendingCommandId is not null)
+    {
+        <button type="button" class="btn" disabled="@UncertainCommandRetryLocked" @onclick="ResumePendingPanelCommandAsync">Reprendre la commande acceptée</button>
     }
     @if (isPanelCommandSubmitting) { <p role="status">Envoi de la commande de case…</p> }
     @if (isProjectLoading || isBoardLoading)
@@ -162,6 +166,7 @@
                                 {
                                     <PanelVersionEditor @key="(activeGenerationId, panel.Id)" Panel="savedPanel"
                                                         CanEdit="generationResult.CanEditPanels" Disabled="PanelCommandsLocked"
+                                                        RetryComposition="@(generationResult.Status == GenerationStatus.Failed)"
                                                         RevisedPrompt="@RevisedPrompt(savedPanel.Number)"
                                                         RevisedPromptChanged="value => SetRevisedPrompt(savedPanel.Number, value)"
                                                         OnCreate="() => CreatePanelAttemptAsync(savedPanel.Number, false)"

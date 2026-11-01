@@ -95,6 +95,45 @@ public sealed class PanelVersionCommandsTests
     }
 
     [Fact]
+    public void SafetyHistoryBlocksEarlierTechnicalRetries_AndRejectedEffectivePrompts()
+    {
+        var document = Board();
+        var retryId = Guid.NewGuid();
+        PanelVersionCommands.CreateAttempt(document, 1, retryId, 0, true, null, null, Now);
+        var rejected = document.Panels[0].Versions.Last();
+        rejected.Status = PanelGenerationStatus.Failed;
+        rejected.Issue = PanelGenerationIssue.ContentSafetyRejected;
+        document.Status = GenerationStatus.Completed;
+        document.PendingCommandId = null;
+        var saved = JsonSerializer.Serialize(document);
+
+        Assert.Throws<ArgumentException>(() =>
+            PanelVersionCommands.CreateAttempt(document, 1, Guid.NewGuid(), 1, true, null, Guid.Empty, Now));
+        Assert.Throws<ArgumentException>(() =>
+            PanelVersionCommands.CreateAttempt(document, 1, Guid.NewGuid(), 1, false, " Accepted 1 ", null, Now));
+        Assert.Throws<ArgumentException>(() =>
+            PanelVersionCommands.CreateAttempt(document, 1, Guid.NewGuid(), 1, false, " Prepared 1 ", null, Now));
+        Assert.Equal(saved, JsonSerializer.Serialize(document));
+
+        document.Panels[0].Versions[0].Prompt = "Another accepted prompt";
+        Assert.Throws<ArgumentException>(() =>
+            PanelVersionCommands.CreateAttempt(document, 1, Guid.NewGuid(), 1, true, null, Guid.Empty, Now));
+        document.Panels[0].Versions[0].EffectivePrompt = "Another prepared prompt";
+        Assert.True(PanelVersionCommands.CreateAttempt(document, 1, Guid.NewGuid(), 1, true, null, Guid.Empty, Now));
+    }
+
+    [Fact]
+    public void SafetyRejectedOriginalEffectivePromptRequiresRevision()
+    {
+        var document = Board();
+        document.Panels[0].Issue = PanelGenerationIssue.ContentSafetyRejected;
+        var saved = JsonSerializer.Serialize(document);
+        Assert.Throws<ArgumentException>(() =>
+            PanelVersionCommands.CreateAttempt(document, 1, Guid.NewGuid(), 0, false, "Prepared 1", null, Now));
+        Assert.Equal(saved, JsonSerializer.Serialize(document));
+    }
+
+    [Fact]
     public void ExecutionLeaseBlocksDuplicates_AndExpiredOwnershipCannotPublish()
     {
         var document = Board();

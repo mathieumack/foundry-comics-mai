@@ -46,7 +46,7 @@
                     @if (version.Status == PanelGenerationStatus.Failed)
                     {
                         <p class="error" role="status">@VersionFailure(version)</p>
-                        @if (CanEdit && validId && version.Issue != PanelGenerationIssue.ContentSafetyRejected)
+                        @if (CanEdit && validId && CanRetry(Panel, version))
                         {
                             <button type="button" class="btn" disabled="@Disabled" @onclick="() => OnRetry.InvokeAsync(versionId)"
                                     aria-label="@($"Réessayer la version {version.Id} de la case {Panel.Number}, entrées figées")">Réessayer cette version · entrées figées</button>
@@ -59,8 +59,8 @@
                                     aria-label="@($"Aperçu et téléchargement de la version {version.Id} de la case {Panel.Number}")">@(loading.Contains(version.Id) ? "Chargement…" : "Aperçu / téléchargement")</button>
                             @if (CanEdit && validId)
                             {
-                                <button type="button" class="btn" disabled="@(Disabled || selected)" @onclick="() => OnSelect.InvokeAsync(versionId)"
-                                        aria-label="@($"Sélectionner la version {version.Id} pour la case {Panel.Number}")">@(selected ? "Déjà sélectionnée" : "Sélectionner pour la planche")</button>
+                                <button type="button" class="btn" disabled="@(Disabled || (selected && !RetryComposition))" @onclick="() => OnSelect.InvokeAsync(versionId)"
+                                        aria-label="@($"Sélectionner la version {version.Id} pour la case {Panel.Number}")">@(selected ? RetryComposition ? "Réessayer la composition" : "Déjà sélectionnée" : "Sélectionner pour la planche")</button>
                             }
                         </div>
                         @if (previews.TryGetValue(version.Id, out var preview) && preview.Uri == version.ImageUri)
@@ -87,6 +87,7 @@
     [Parameter, EditorRequired] public PanelGenerationResponse Panel { get; set; } = default!;
     [Parameter] public bool CanEdit { get; set; }
     [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool RetryComposition { get; set; }
     [Parameter] public string RevisedPrompt { get; set; } = string.Empty;
     [Parameter] public EventCallback<string> RevisedPromptChanged { get; set; }
     [Parameter] public EventCallback OnCreate { get; set; }
@@ -100,7 +101,20 @@
 
     public static bool IsRevisedPrompt(PanelGenerationResponse panel, string? prompt) =>
         !string.IsNullOrWhiteSpace(prompt) && prompt.Trim() != panel.Prompt.Trim() &&
-        panel.Versions?.Any(v => v.Issue == PanelGenerationIssue.ContentSafetyRejected && v.Prompt.Trim() == prompt.Trim()) != true;
+        !(panel.Issue == PanelGenerationIssue.ContentSafetyRejected && SamePrompt(panel.EffectivePrompt, prompt)) &&
+        !HasSafetyRejection(panel, prompt, prompt);
+
+    public static bool CanRetry(PanelGenerationResponse panel, PanelVersionResponse version) =>
+        version.Status == PanelGenerationStatus.Failed && version.Issue != PanelGenerationIssue.ContentSafetyRejected &&
+        !HasSafetyRejection(panel, version.Prompt, version.EffectivePrompt);
+
+    private static bool HasSafetyRejection(PanelGenerationResponse panel, string prompt, string? effectivePrompt) =>
+        panel.Versions?.Any(item => item.Issue == PanelGenerationIssue.ContentSafetyRejected &&
+            (SamePrompt(item.Prompt, prompt) || SamePrompt(item.EffectivePrompt, prompt) ||
+             SamePrompt(item.Prompt, effectivePrompt) || SamePrompt(item.EffectivePrompt, effectivePrompt))) == true;
+
+    private static bool SamePrompt(string? left, string? right) =>
+        left is not null && right is not null && string.Equals(left.Trim(), right.Trim(), StringComparison.Ordinal);
 
     private async Task LoadPreviewAsync(PanelVersionResponse version)
     {

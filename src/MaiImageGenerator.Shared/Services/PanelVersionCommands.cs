@@ -36,12 +36,12 @@ public static class PanelVersionCommands
             (panel.Versions.Count == 0 && sourceId == OriginalVersionId ? Original(document, panel) : null) : null;
         if (retry && (source is null || source.Status != PanelGenerationStatus.Failed))
             throw new ArgumentException("Only a failed panel version can be retried.");
-        if (retry && source!.Issue == PanelGenerationIssue.ContentSafetyRejected)
+        if (retry && (source!.Issue == PanelGenerationIssue.ContentSafetyRejected ||
+            HasSafetyRejection(panel, source.Prompt, source.EffectivePrompt)))
             throw new ArgumentException("Content safety rejection requires an appropriate prompt revision.");
-        if (!retry && (panel.Versions.Any(item =>
-                item.Issue == PanelGenerationIssue.ContentSafetyRejected && item.Prompt == prompt!.Trim()) ||
+        if (!retry && (HasSafetyRejection(panel, prompt!, prompt) ||
             (panel.Versions.Count == 0 && panel.Issue == PanelGenerationIssue.ContentSafetyRejected &&
-             Original(document, panel).Prompt == prompt!.Trim())))
+             (SamePrompt(Original(document, panel).Prompt, prompt) || SamePrompt(panel.EffectivePrompt, prompt)))))
             throw new ArgumentException("Revise the rejected scene before creating another version.");
 
         PreserveOriginal(document, panel);
@@ -138,6 +138,14 @@ public static class PanelVersionCommands
     private static GenerationPanel FindPanel(GenerationDocument document, int number) =>
         document.Panels.SingleOrDefault(item => item.Number == number)
         ?? throw new ArgumentException("The panel was not found.");
+
+    private static bool HasSafetyRejection(GenerationPanel panel, string prompt, string? effectivePrompt) =>
+        panel.Versions.Any(item => item.Issue == PanelGenerationIssue.ContentSafetyRejected &&
+            (SamePrompt(item.Prompt, prompt) || SamePrompt(item.EffectivePrompt, prompt) ||
+             SamePrompt(item.Prompt, effectivePrompt) || SamePrompt(item.EffectivePrompt, effectivePrompt)));
+
+    private static bool SamePrompt(string? left, string? right) =>
+        left is not null && right is not null && string.Equals(left.Trim(), right.Trim(), StringComparison.Ordinal);
 
     private static void ValidateId(Guid id)
     {

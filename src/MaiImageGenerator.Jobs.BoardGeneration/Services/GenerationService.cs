@@ -71,7 +71,7 @@ public sealed partial class GenerationService(
             await ProcessPanelCommandAsync(request, document, project, cancellationToken);
             return;
         }
-        // Old deliveries must never enter the stable-path writer after panel editing begins.
+        // Old deliveries must never regenerate a board after panel editing begins.
         if (document.Revision > 0)
         {
             return;
@@ -206,7 +206,8 @@ public sealed partial class GenerationService(
                         slot.ColumnSpan > slot.RowSpan));
                 }
                 catch (Exception exception) when (
-                    exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                    exception is not DbUpdateConcurrencyException &&
+                    (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested))
                 {
                     panel.Status = PanelGenerationStatus.Failed;
                     panel.ImageBlobName = null;
@@ -269,11 +270,12 @@ public sealed partial class GenerationService(
                         var blobName = ArtifactPathBuilder.GetGenerationBlobName(
                             request.OwnerId,
                             Guid.Parse(document.Id),
-                            $"panel-{workItem.Panel.Number:00}.png");
+                            $"initial-panel-{workItem.Panel.Number:00}-{Guid.Parse(attempt.Id):N}.png");
                         await UploadPngAsync(blobName, image, token);
                     }
                     catch (Exception exception) when (
-                        exception is not OperationCanceledException || !token.IsCancellationRequested)
+                        exception is not DbUpdateConcurrencyException &&
+                        (exception is not OperationCanceledException || !token.IsCancellationRequested))
                     {
                         issue = GetPanelIssue(exception);
                     }
@@ -287,7 +289,7 @@ public sealed partial class GenerationService(
                             workItem.Panel.ImageBlobName = ArtifactPathBuilder.GetGenerationBlobName(
                                 request.OwnerId,
                                 Guid.Parse(document.Id),
-                                $"panel-{workItem.Panel.Number:00}.png");
+                                $"initial-panel-{workItem.Panel.Number:00}-{Guid.Parse(attempt.Id):N}.png");
                             workItem.Panel.Status = PanelGenerationStatus.Completed;
                             workItem.Panel.Error = null;
                             workItem.Panel.Issue = null;
@@ -336,13 +338,17 @@ public sealed partial class GenerationService(
             document.BoardBlobName = ArtifactPathBuilder.GetGenerationBlobName(
                 request.OwnerId,
                 Guid.Parse(document.Id),
-                "board.png");
+                $"initial-board-{Guid.Parse(attempt.Id):N}.png");
             await UploadPngAsync(document.BoardBlobName, board, cancellationToken);
             document.Status = GenerationStatus.Completed;
             attempt.Status = "completed";
             attempt.CompletedAt = DateTimeOffset.UtcNow;
             document.UpdatedAt = DateTimeOffset.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -531,7 +537,7 @@ public sealed partial class GenerationService(
     private async Task UploadPngAsync(string blobName, byte[] bytes, CancellationToken cancellationToken)
     {
         var blob = _container.GetBlobClient(blobName);
-        await blob.UploadAsync(BinaryData.FromBytes(bytes), overwrite: true, cancellationToken);
+        await blob.UploadAsync(BinaryData.FromBytes(bytes), overwrite: false, cancellationToken);
         await blob.SetHttpHeadersAsync(
             new BlobHttpHeaders { ContentType = "image/png" },
             cancellationToken: cancellationToken);

@@ -257,6 +257,16 @@ public sealed class GenerationApiClient(HttpClient httpClient)
             ?? throw new GenerationApiException("The API returned no generation status.");
     }
 
+    public async Task<GenerationResponse> ResumePanelCommandAsync(
+        Guid generationId, Guid commandId, CancellationToken cancellationToken)
+    {
+        using var response = await httpClient.PostAsync(
+            $"api/generations/{generationId:D}/commands/{commandId:D}/resume", null, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<GenerationResponse>(cancellationToken)
+            ?? throw new GenerationApiException("The API returned no generation status.");
+    }
+
     public async Task<IReadOnlyList<GenerationSummaryResponse>> ListAsync(CancellationToken cancellationToken)
     {
         using var response = await httpClient.GetAsync("api/generations", cancellationToken);

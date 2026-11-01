@@ -47,7 +47,7 @@ public partial class Home
             if (source is null
                 ? sourceVersionId is not null || panel.Versions is { Count: > 0 } ||
                   panel.Status != PanelGenerationStatus.Failed || panel.Issue == PanelGenerationIssue.ContentSafetyRejected
-                : source.Status != PanelGenerationStatus.Failed || source.Issue == PanelGenerationIssue.ContentSafetyRejected)
+                : !PanelVersionEditor.CanRetry(panel, source))
                 return Task.CompletedTask;
         }
         else if (!PanelVersionEditor.IsRevisedPrompt(panel, prompt))
@@ -64,8 +64,9 @@ public partial class Home
         if (generationResult?.CanEditPanels != true || PanelCommandsLocked ||
             panel?.Versions?.Any(v => Guid.TryParse(v.Id, out var id) && id == versionId &&
                 v.Status == PanelGenerationStatus.Completed && v.ImageUri is not null) != true ||
-            (Guid.TryParse(panel.SelectedVersionId, out var selected) && selected == versionId ||
-             panel.SelectedVersionId is null && versionId == Guid.Empty))
+            (generationResult.Status != GenerationStatus.Failed &&
+             (Guid.TryParse(panel.SelectedVersionId, out var selected) && selected == versionId ||
+              panel.SelectedVersionId is null && versionId == Guid.Empty)))
             return Task.CompletedTask;
         return SendPanelCommandAsync(new(number, false, null, null, versionId));
     }
@@ -74,10 +75,15 @@ public partial class Home
         uncertainPanelCommand is { } key && panelCommands.ContainsKey(key) && !UncertainCommandRetryLocked
             ? SendPanelCommandAsync(key, resubmitUncertain: true) : Task.CompletedTask;
 
+    private Task ResumePendingPanelCommandAsync() =>
+        Guid.TryParse(generationResult?.PendingCommandId, out var id) && id != Guid.Empty
+            ? SendPanelCommandAsync(new(0, false, null, null, null, id)) : Task.CompletedTask;
+
     private async Task SendPanelCommandAsync(PanelCommandKey key, bool resubmitUncertain = false)
     {
         if (activeGenerationId is not Guid boardId || generationResult?.CanEditPanels != true ||
-            (resubmitUncertain ? UncertainCommandRetryLocked || uncertainPanelCommand != key || !panelCommands.ContainsKey(key) : PanelCommandsLocked)) return;
+            (resubmitUncertain || key.Resume is not null ? UncertainCommandRetryLocked : PanelCommandsLocked) ||
+            (resubmitUncertain && (uncertainPanelCommand != key || !panelCommands.ContainsKey(key)))) return;
         var token = boardCancellation?.Token ?? lifetime.Token;
         // Keep both the UUID and the original revision after an uncertain submission.
         // A changed payload gets its own identity, even after an intervening status refresh.
@@ -88,7 +94,9 @@ public partial class Home
         StateHasChanged();
         try
         {
-            var result = key.Selection is Guid versionId
+            var result = key.Resume is Guid resumeId
+                ? await GenerationClient.ResumePanelCommandAsync(boardId, resumeId, token)
+                : key.Selection is Guid versionId
                 ? await GenerationClient.SelectPanelVersionAsync(boardId, key.Number,
                     new(command.Id, versionId, command.Revision), token)
                 : await GenerationClient.CreatePanelAttemptAsync(boardId, key.Number,
@@ -139,6 +147,6 @@ public partial class Home
         }
     }
 
-    private sealed record PanelCommandKey(int Number, bool Retry, string? Prompt, Guid? Source, Guid? Selection);
+    private sealed record PanelCommandKey(int Number, bool Retry, string? Prompt, Guid? Source, Guid? Selection, Guid? Resume = null);
     private sealed record PanelCommand(Guid Id, long Revision);
 }

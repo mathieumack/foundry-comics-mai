@@ -104,7 +104,7 @@ Uncaught job failures can trigger automatic queue redelivery. Completed panels w
 
 For saved boards with frozen inputs, the scene editor offers targeted actions:
 
-1. **Retry a failed panel** reuses that failed version's accepted inputs and any saved effective prompt. It sends no image requests for the other panels. A content-safety rejection instead requires an appropriate user revision; unchanged safety retries are unavailable.
+1. **Retry a failed panel** reuses that failed version's accepted inputs and any saved effective prompt. It sends no image requests for the other panels. A content-safety rejection instead requires an appropriate user revision; unchanged safety retries are unavailable, including earlier technical failures with prompts rejected in a later attempt.
 2. **Create another panel version** freezes the revised scene prompt. This text is used literally, without automatic prompt rewriting; the board's accepted characters, reference bytes, settings, and layout remain unchanged. Other unsaved board edits are not included.
 3. Inspect the panel's version history, including independent progress/failure and safety guidance. Successful previous artwork remains selected and available while a candidate runs or fails.
 4. Explicitly **select a successful version** to use it in the board. The worker recomposes from the selected panels without generating images. You can later select a previous successful version again; none is silently replaced by an arriving candidate.
