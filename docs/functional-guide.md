@@ -91,7 +91,7 @@ Uncaught job failures can trigger automatic queue redelivery. Completed panels w
 
 ## Export as an EPUB eBook
 
-Use **Export as EPUB** (`Exporter en EPUB`) in either project workspace. Finish generation and save edits first; the action is disabled while content is incomplete or there are unsaved changes. Keep the page open until the browser starts downloading `<project-title>.epub`. The filename is sanitized automatically.
+Use **Export as EPUB** (`Exporter en EPUB`) in either project workspace. This is an on-demand frontend action: the signed-in user downloads their eBook directly through the authenticated API, without a GitHub workflow or export automation. Finish generation and save edits first; the action is disabled while content is incomplete or there are unsaved changes. Keep the page open until the browser starts downloading `<project-title>.epub`. The filename is sanitized automatically.
 
 - **Illustrated books:** reflowable EPUB 3.3 with a title-page cover, project title and identifier, table of contents, chapter prose in saved chapter-number order, and available PNG illustrations. The first available illustration also appears on the cover. Missing optional images do not block export, including books with no illustrations. Every chapter must have saved prose. Plain text, paragraph breaks, and line breaks are preserved; typed HTML is text, not markup.
 - **Comics:** fixed-layout EPUB 3.3 with one page per completed composed board, oldest creation time first (identifier breaks ties). All completed board versions in the project are included; terminal failed/canceled attempts are skipped so a successful regeneration restores export. There is no separate curated page-order field. Each page uses the actual PNG dimensions and preserves its aspect ratio and panel layout. Any placeholders already in the composed board remain in the export.
@@ -113,9 +113,9 @@ The following is a manual smoke-test checklist, **not a claim that these readers
 | Thorium Reader | Open, contents, prose and images | Fixed-layout pages, navigation, aspect ratio | Manual verification pending |
 | A fixed-layout-capable reader (Apple Books or Thorium) | — | Compare every exported page with its source PNG and test mixed dimensions | Manual verification pending |
 
-Automated tests check ZIP/container structure, XML encoding, metadata, chapter/board order, embedded assets, owner isolation, cancellation, and both layouts. The **Validate EPUB exports** workflow downloads checksum-pinned EPUBCheck 5.3.0 and requires representative book and comic files to pass without errors or warnings. No EPUB runtime library is added: the API uses .NET ZIP/XML APIs and reads PNG headers without decoding images.
+Automated tests check ZIP/container structure, XML encoding, metadata, chapter/board order, embedded assets, owner isolation, cancellation, and both layouts. Optional local EPUBCheck 5.3.0 tests validate representative book and comic files without errors or warnings; they do not export user projects. No EPUB runtime library is added: the API uses .NET ZIP/XML APIs and reads PNG headers without decoding images.
 
-To run the same validator tests locally, install Java 17 or later, download and extract the [EPUBCheck 5.3.0 release](https://github.com/w3c/epubcheck/releases/tag/v5.3.0), then run from the repository root:
+To run the optional validator tests locally, install Java 17 or later, download and extract the [EPUBCheck 5.3.0 release](https://github.com/w3c/epubcheck/releases/tag/v5.3.0), then run from the repository root:
 
 ```bash
 export EPUBCHECK_JAR=/absolute/path/to/epubcheck-5.3.0/epubcheck.jar

@@ -483,7 +483,7 @@ public sealed class EpubCheckTheoryAttribute : TheoryAttribute
     {
         if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("EPUBCHECK_JAR")))
         {
-            Skip = "Set EPUBCHECK_JAR to run EPUBCheck integration tests (required in EPUB export CI).";
+            Skip = "Set EPUBCHECK_JAR to run optional local EPUBCheck integration tests.";
         }
     }
 }
